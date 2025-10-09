@@ -73,6 +73,12 @@ method m443() {
 }
 ```
 
+# (Temporary) Link to README datasets from Google BigQuery
+
+[[Link][https://drive.google.com/file/d/1CYAxgFezCMd6E6LdHgnt6rMYYPkKI1fy/view?usp=sharing]] -- the ReadmeInspiredIdeaGenerator uses this
+
+TODO: add the script that generates this
+
 # To-Dos:
 
 - [ ] Implement distributed agenda
