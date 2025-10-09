@@ -7,7 +7,10 @@ For now we only have a local implementation of the agenda, but the idea is that 
 be distributed so that we can spawn async workers on many machines.
 """
 
+import atexit
 import asyncio
+import signal
+import threading
 import pickle
 import os
 import uuid
@@ -192,8 +195,12 @@ class LocalAgenda(Agenda):
         self._clock = 0
         self._checkpoint_path = checkpoint_path
         self._checkpoint_interval = checkpoint_interval
+        self._signal_ckpt_once = threading.Event()
 
         self._load()
+        # FIXME: add handlers to handle SIGTERM, SIGINT, etc.
+        # atexit alone is not really robust.
+        atexit.register(self._checkpoint)
 
 
     def _load(self):
@@ -239,6 +246,7 @@ class LocalAgenda(Agenda):
                     os.remove(tmp_path)
             except Exception:
                 pass
+
 
     def tick(self):
         """

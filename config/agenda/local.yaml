@@ -1,0 +1,4 @@
+_target_: agenda.LocalAgenda
+
+checkpoint_path: "local-agenda.pkl"
+checkpoint_interval: 1000

@@ -1,0 +1,8 @@
+_target_: scheduler.RoundRobinScheduler
+turn_fuel: 10
+workers:
+  - _target_: worker.readme_idea_generator.ReadmeInspiredIdeaGenerator
+    jsonl_path: data/gh-readmes-100k.jsonl
+    llm:
+        _target_: langchain_openai.ChatOpenAI
+        model: gpt-4o-mini
