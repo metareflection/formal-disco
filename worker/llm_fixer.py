@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from typing import Any, Optional
+import logging
 
 from agenda import Agenda, Object, Task, WorkStatus
 
@@ -10,6 +11,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from dafny import DafnyProgram, VerificationOutcome
+
+logger = logging.getLogger(__name__)
 
 
 class LLMFixer(Worker):
@@ -105,7 +108,21 @@ class LLMFixer(Worker):
 
                 # Verify repaired program
                 repaired_prog = DafnyProgram(repaired_text, name=repaired_obj_path)
+
+                # Log repaired program before verification (truncate for logs)
+                try:
+                    short_repaired = repaired_text if len(repaired_text) < 2000 else repaired_text[:2000] + "..."
+                    logger.info("Verifying repaired Dafny program for task %s: %s", task.id, short_repaired)
+                except Exception:
+                    logger.exception("Failed while preparing repaired verification log for task %s", task.id)
+
                 ver = repaired_prog.verify()
+
+                # Log verification outcome
+                try:
+                    logger.info("Verification outcome for repair task %s: %s", task.id, ver.outcome.name)
+                except Exception:
+                    logger.exception("Failed to log verification outcome for repair task %s", task.id)
 
                 # Save verification output on the repaired object
                 await agenda.update_object(repaired_obj_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})

@@ -14,11 +14,14 @@ import threading
 import pickle
 import os
 import uuid
+import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Optional, Iterable, Protocol
 
 from logger import AgendaLogger
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -218,10 +221,9 @@ class LocalAgenda(Agenda):
                 self._objects = data.get('objects', {})
                 self._clock = data.get('clock', 0)
         except FileNotFoundError:
-            print('No checkpoint; starting empty agenda.')
-            pass
+            logger.info('No checkpoint; starting empty agenda.')
         except Exception as e:
-            print(f"Warning: failed to load checkpoint: {e}")
+            logger.warning(f"Failed to load checkpoint: {e}")
 
     def _checkpoint(self):
         if self._checkpoint_path is None:
@@ -241,9 +243,9 @@ class LocalAgenda(Agenda):
                 os.fsync(f.fileno())
             # Atomic rename: overwrite target with new file
             os.replace(tmp_path, self._checkpoint_path)
-            print(f"Checkpointed agenda to {self._checkpoint_path}.")
+            logger.info(f"Checkpointed agenda to {self._checkpoint_path}.")
         except Exception as e:
-            print(f"Warning: failed to write checkpoint: {e}")
+            logger.warning(f"Failed to write checkpoint: {e}")
             # Clean up tmp file if something went wrong
             try:
                 if os.path.exists(tmp_path):

@@ -3,6 +3,7 @@
 # Add this to worker.py
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -14,6 +15,8 @@ from agenda import Agenda, Object, Task, WorkStatus  # already used above
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+
+logger = logging.getLogger(__name__)
 
 
 class ReadmeInspiredIdeaGenerator(Worker):
@@ -121,7 +124,7 @@ class ReadmeInspiredIdeaGenerator(Worker):
                 if isinstance(obj, dict) and "repo" in obj and "readme" in obj:
                     rows.append(obj)
 
-        print(f"Loaded {len(rows)} repositories with README from {path}")
+        logger.info(f"Loaded {len(rows)} repositories with README from {path}")
 
         return rows
 

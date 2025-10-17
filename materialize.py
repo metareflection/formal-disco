@@ -9,9 +9,12 @@ Example usage:
 """
 
 import argparse
+import logging
 import os
 import pickle
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def materialize(checkpoint: Path, out_dir: Path, overwrite: bool) -> None:
@@ -60,7 +63,7 @@ def materialize(checkpoint: Path, out_dir: Path, overwrite: bool) -> None:
         with full_path.open("wb") as wf:
             wf.write(data_bytes)
 
-        print(f"Wrote {full_path}")
+        logger.info(f"Wrote {full_path}")
 
 
 def parse_args() -> argparse.Namespace:

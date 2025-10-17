@@ -83,6 +83,7 @@ TODO: add the script that generates this
 
 - [ ] Implement distributed agenda
 - [X] Implement initial API-based workers
+- [ ] Bug: Make workers (implementer, fixer) read a batch of tasks at once to avoid taking the same task twice in one round
 - [ ] Design edit/extend actions (we have an Implementer but not an "Editor" yet to implement "extend" tasks)
 - [ ] Implement local LLM workers
 - [ ] Make local LLM workers self-improving

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from typing import Any, Optional
+import logging
 
 from agenda import Agenda, Object, Task, WorkStatus
 
@@ -10,6 +11,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from dafny import DafnyProgram, VerificationOutcome
+
+logger = logging.getLogger(__name__)
 
 
 class LLMImplementer(Worker):
@@ -97,9 +100,15 @@ class LLMImplementer(Worker):
                                                                   content=program_text.encode("utf-8")))
 
                 prog = DafnyProgram(program_text, name=prog_path)
+
+                short_prog = program_text if len(program_text) < 2000 else program_text[:2000] + "..."
+                logger.info("Verifying generated Dafny program for task %s: %s", task.id, short_prog)
+
                 ver = prog.verify()
 
-                # Save verification output into the program object's properties for later use
+                logger.info("Verification outcome for task %s: %s", task.id, ver.outcome.name)
+
+                # Save verification output into the program object's properties.
                 await agenda.update_object(prog_obj_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
 
                 notes = {"program_path": prog_obj_path, "verification": ver.outcome.name}
@@ -107,13 +116,17 @@ class LLMImplementer(Worker):
                 if ver.outcome == VerificationOutcome.SUCCESS:
                     follow = Task(id="ext", type="extend", properties={"program": prog_obj_path})
                     await agenda.add_task(follow)
+                    # Done implementing this idea.
+                    await agenda.update_task(task.id,
+                                             work_status=WorkStatus.DONE,
+                                             new_notes=notes)
                 else:
                     follow = Task(id="rep", type="repair", properties={"program": prog_obj_path})
                     await agenda.add_task(follow)
-
-                await agenda.update_task(task.id,
-                                         work_status=WorkStatus.DONE,
-                                         new_notes=notes)
+                    # Leave it as ATTEMPTED so it can be retried later.
+                    await agenda.update_task(task.id,
+                                             work_status=WorkStatus.ATTEMPTED,
+                                             new_notes=notes)
 
             except Exception as e:
                 await agenda.update_task(task.id, work_status=WorkStatus.FAILED, new_notes={"error": str(e)})

@@ -1,7 +1,8 @@
-defaults:
-  - logger: noop
-
 _target_: agenda.LocalAgenda
+
+defaults:
+  - _self_
+  - logger: wandb # noop
 
 checkpoint_path: "local-agenda.pkl"
 checkpoint_interval: 1000

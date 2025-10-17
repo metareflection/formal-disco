@@ -1,8 +1,24 @@
 _target_: scheduler.RoundRobinScheduler
+
+defaults:
+  - _self_
+  - agenda: null
+
 turn_fuel: 10
+
 workers:
   - _target_: worker.readme_idea_generator.ReadmeInspiredIdeaGenerator
     jsonl_path: data/gh-readmes-100k.jsonl
     llm:
         _target_: langchain_openai.ChatOpenAI
         model: gpt-4o-mini
+
+  - _target_: worker.llm_implementer.LLMImplementer
+    llm:
+        _target_: langchain_openai.ChatOpenAI
+        model: gpt-5-mini
+
+  - _target_: worker.llm_fixer.LLMFixer
+    llm:
+        _target_: langchain_openai.ChatOpenAI
+        model: gpt-5-mini

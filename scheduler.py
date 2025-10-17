@@ -7,6 +7,7 @@ Usage example (actual configs are in config/):
 """
 
 import asyncio
+import logging
 from typing import Protocol
 
 from hydra import main
@@ -15,6 +16,8 @@ from omegaconf import DictConfig
 
 from agenda import Agenda
 from worker import Worker
+
+logger = logging.getLogger(__name__)
 
 
 class Scheduler(Protocol):
@@ -35,8 +38,9 @@ class RoundRobinScheduler:
         idx = 0
         while True:
             worker = self.workers[idx]
+            logger.info(f"Scheduling {type(worker).__name__} to work.")
             await worker.work(agenda, self.turn_fuel)
-            print(f"Worker {type(worker).__name__} finished a turn.")
+            logger.info(f"Worker {type(worker).__name__} finished a turn.")
             idx = (idx + 1) % len(self.workers)
 
 
