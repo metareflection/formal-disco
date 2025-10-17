@@ -10,21 +10,24 @@ from . import AgendaLogger
 class WandbLogger(AgendaLogger):
     """
     Logger that tracks and logs metrics to Weights & Biases (wandb).
-    
+
     Maintains counters for each task type (created, done, failed, assigned) and
     aggregates statistics on working programs.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, project: str = "formal-disco") -> None:
         try:
             import wandb
             self._wandb = wandb
         except ImportError:
             raise RuntimeError("wandb is required to use WandbLogger; install it with `pip install wandb`")
 
+        # Initialize wandb project
+        self._wandb.init(project=project)
+
         # Counters per task type: {task_type: {metric: count}}
         self._counters: dict[str, dict[str, int]] = {}
-        
+
         # Program statistics
         self._program_count = 0
         self._program_total_lines = 0
@@ -62,7 +65,7 @@ class WandbLogger(AgendaLogger):
         self._program_count += 1
         num_lines = len([line for line in program_text.split('\n') if line.strip()])
         self._program_total_lines += num_lines
-        
+
         self._wandb.log({
             "program/count": self._program_count,
             "program/total_lines": self._program_total_lines,

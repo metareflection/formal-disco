@@ -1,3 +1,6 @@
+defaults:
+  - logger: noop
+
 _target_: agenda.LocalAgenda
 
 checkpoint_path: "local-agenda.pkl"
