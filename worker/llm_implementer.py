@@ -97,11 +97,14 @@ class LLMImplementer(Worker):
                                                                   content=program_text.encode("utf-8")))
 
                 prog = DafnyProgram(program_text, name=prog_path)
-                outcome = prog.verify()
+                ver = prog.verify()
 
-                notes = {"program_path": prog_obj_path, "verification": outcome.name}
+                # Save verification output into the program object's properties for later use
+                await agenda.update_object(prog_obj_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
 
-                if outcome == VerificationOutcome.SUCCESS:
+                notes = {"program_path": prog_obj_path, "verification": ver.outcome.name}
+
+                if ver.outcome == VerificationOutcome.SUCCESS:
                     follow = Task(id="ext", type="extend", properties={"program": prog_obj_path})
                     await agenda.add_task(follow)
                 else:

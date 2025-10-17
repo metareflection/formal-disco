@@ -2,6 +2,7 @@
 
 
 from execute import execute
+from dataclasses import dataclass
 
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -30,6 +31,14 @@ class VerificationOutcome(Enum):
     SUCCESS = 2
 
 
+@dataclass
+class VerificationOutput:
+    outcome: VerificationOutcome
+    status: int
+    stdout: str
+    stderr: str
+
+
 ANNOTATION_KEYWORDS = ['assert', 'invariant', 'decreases']
 
 
@@ -40,7 +49,7 @@ class DafnyProgram:
     A program has an implicit focused method, which is the method that is under
     editing, and is at the bottom of the file.
 
-    Methods tend to be immutable (returning a new DafnyProgram instance).
+    Methods don't mutate (returning a new DafnyProgram instance).
     """
 
     def __init__(self, program: str, name: str = None):  # noqa
@@ -111,19 +120,23 @@ class DafnyProgram:
                 return i
         return None
 
-    def verify(self) -> VerificationOutcome:
-        """Call Dafny on the program and return the outcome."""
-        result = dafny.check(str(self))
+    def verify(self) -> VerificationOutput:
+        """Call Dafny on the program and return the outcome plus stdout/stderr."""
+        result = check(str(self))
+        out = result.get('out', '')
+        log = result.get('log', '')
 
-        if '0 errors' in result['out']:
-            return VerificationOutcome.SUCCESS
+        if '0 errors' in out:
+            outcome = VerificationOutcome.SUCCESS
+        elif 'postcondition' in out:
+            outcome = VerificationOutcome.GOAL_UNPROVEN
+        else:
+            outcome = VerificationOutcome.FAIL
 
-        # TODO: check if return status 1024 is more reliable than this.
-        if 'postcondition' in result['out']:
-            return VerificationOutcome.GOAL_UNPROVEN
-
-        # TODO: check if return status 512 is more reliable than this.
-        return VerificationOutcome.FAIL
+        return VerificationOutput(outcome=outcome,
+                                  status=result.get('status', -1),
+                                  stdout=out,
+                                  stderr=log)
 
     def strip_annotations(self) -> 'DafnyProgram':
         """Remove all annotations in the focused method's body."""
@@ -141,7 +154,7 @@ class DafnyProgram:
 
         return DafnyProgram('\n'.join(new_lines), self.name)
 
-    def strip_first_annotation(self) -> (int, str, 'DafnyProgram'):
+    def strip_first_annotation(self) -> tuple[int, str, 'DafnyProgram']:
         """Remove the first annotation in the focused method's body."""
         start_line = self.first_line()
 
@@ -193,8 +206,12 @@ class DafnyProgram:
         return examples
 
 
-def verify_program_with_timeout(program: DafnyProgram, timeout: float):
-    """Verify a DafnyProgram in a separate process with a timeout."""
+def verify_program_with_timeout(program: DafnyProgram, timeout: float) -> VerificationOutput:
+    """Verify a DafnyProgram in a separate process with a timeout.
+
+    Returns a VerificationOutput. On timeout or exception the outcome will be FAIL and
+    the log will contain the error message.
+    """
     def worker(q, program):
         try:
             result = program.verify()
@@ -209,23 +226,23 @@ def verify_program_with_timeout(program: DafnyProgram, timeout: float):
     if p.is_alive():
         p.terminate()
         p.join()
-        return VerificationOutcome.FAIL
+        return VerificationOutput(outcome=VerificationOutcome.FAIL, status=-1, stdout="", stderr="timeout")
     else:
         if not q.empty():
             res = q.get()
             if isinstance(res, Exception):
-                return VerificationOutcome.ERROR
+                return VerificationOutput(outcome=VerificationOutcome.FAIL, status=-1, stdout="", stderr=str(res))
             else:
                 return res
         else:
-            return VerificationOutcome.ERROR
+            return VerificationOutput(outcome=VerificationOutcome.FAIL, status=-1, stdout="", stderr="")
 
 
 def parallel_verify_batch(
     programs: list[DafnyProgram],
     timeout: float = 10,
     num_processes: int = None,
-) -> list[VerificationOutcome]:
+) -> list[VerificationOutput]:
     """
     Verify a batch of DafnyProgram instances in parallel.
 
@@ -252,7 +269,7 @@ def parallel_verify_batch(
             try:
                 result = future.result()
                 results[idx] = result
-            except Exception:
-                results[idx] = VerificationOutcome.FAIL
+            except Exception as e:
+                results[idx] = VerificationOutput(outcome=VerificationOutcome.FAIL, status=-1, stdout="", stderr=str(e))
 
     return results

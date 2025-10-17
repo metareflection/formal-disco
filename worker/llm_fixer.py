@@ -87,23 +87,16 @@ class LLMFixer(Worker):
                 assert prog_obj and prog_obj.content
 
                 prog_text = prog_obj.content.decode("utf-8")
-                notes = task.notes or {}
 
-                # Ask LLM to repair
-                repaired_text = self._chain.invoke({"program": prog_text, "notes": str(notes)}).strip()
+                # Attempt to read verification logs from object properties (set by implementer)
+                props = getattr(prog_obj, 'properties', {}) or {}
+                ver_out = props.get('verification_stdout', '')
+                ver_err = props.get('verification_stderr', '')
 
-                if not repaired_text:
-                    # No output - fail this attempt
-                    attempts = int(task.properties.get("attempts", 0)) + 1
-                    if attempts < self._max_attempts:
-                        new_task = Task(id="rep", type="repair", properties={"program": program_path, "attempts": attempts})
-                        await agenda.add_task(new_task)
-                        await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes={"error": "empty LLM output", "attempts": attempts})
-                    else:
-                        await agenda.update_task(task.id, work_status=WorkStatus.FAILED, new_notes={"error": "empty LLM output", "attempts": attempts})
+                prompt_notes = f"Output of dafny verify on this program:\nstdout:\n{ver_out}\n\nstderr:\n{ver_err}\n"
 
-                    remaining -= 1
-                    continue
+                # Ask LLM to repair, providing verification logs
+                repaired_text = self._chain.invoke({"program": prog_text, "notes": prompt_notes}).strip()
 
                 # Persist repaired program
                 repaired_obj_path = await agenda.create_object(Object(path=program_path,
@@ -112,22 +105,19 @@ class LLMFixer(Worker):
 
                 # Verify repaired program
                 repaired_prog = DafnyProgram(repaired_text, name=repaired_obj_path)
-                outcome = repaired_prog.verify()
+                ver = repaired_prog.verify()
 
-                if outcome == VerificationOutcome.SUCCESS:
-                    # Enqueue extend task
+                # Save verification output on the repaired object
+                await agenda.update_object(repaired_obj_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
+
+                if ver.outcome == VerificationOutcome.SUCCESS:
+                    # Enqueue extend task and mark DONE
                     follow = Task(id="ext", type="extend", properties={"program": repaired_obj_path})
                     await agenda.add_task(follow)
-                    await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes={"program_path": repaired_obj_path, "verification": outcome.name})
+                    await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes={"program_path": repaired_obj_path, "verification": ver.outcome.name})
                 else:
-                    # Retry or fail based on attempts
-                    attempts = int(task.properties.get("attempts", 0)) + 1
-                    if attempts < self._max_attempts:
-                        new_task = Task(id="rep", type="repair", properties={"program": repaired_obj_path, "attempts": attempts})
-                        await agenda.add_task(new_task)
-                        await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes={"program_path": repaired_obj_path, "verification": outcome.name, "attempts": attempts})
-                    else:
-                        await agenda.update_task(task.id, work_status=WorkStatus.FAILED, new_notes={"program_path": repaired_obj_path, "verification": outcome.name, "attempts": attempts})
+                    # Mark the existing repair task as ATTEMPTED so it can be retried later
+                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, new_notes={"program_path": repaired_obj_path, "verification": ver.outcome.name})
 
             except Exception as e:
                 await agenda.update_task(task.id, work_status=WorkStatus.FAILED, new_notes={"error": str(e)})
