@@ -1,0 +1,8 @@
+discoveries/
+data/
+outputs/
+readme-ideas/
+
+*.pyc
+__pycache__/
+*.pkl
