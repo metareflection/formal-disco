@@ -82,5 +82,8 @@ TODO: add the script that generates this
 # To-Dos:
 
 - [ ] Implement distributed agenda
-- [ ] Implement actual workers
+- [X] Implement initial API-based workers
+- [ ] Design edit/extend actions (we have an Implementer but not an "Editor" yet to implement "extend" tasks)
+- [ ] Implement local LLM workers
+- [ ] Make local LLM workers self-improving
 - [ ] Profit

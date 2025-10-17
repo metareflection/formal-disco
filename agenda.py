@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Optional, Iterable, Protocol
 
+from logger import AgendaLogger
+
 
 @dataclass(slots=True, kw_only=True)
 class Object:
@@ -186,6 +188,7 @@ class LocalAgenda(Agenda):
             self,
             checkpoint_path: Optional[str] = None,
             checkpoint_interval: Optional[int] = 50,
+            logger: Optional[AgendaLogger] = None,
     ) -> None:
         self._lock = asyncio.Lock()
         self._tasks: dict[str, Task] = {}
@@ -196,6 +199,7 @@ class LocalAgenda(Agenda):
         self._checkpoint_path = checkpoint_path
         self._checkpoint_interval = checkpoint_interval
         self._signal_ckpt_once = threading.Event()
+        self._logger = logger
 
         self._load()
         # FIXME: add handlers to handle SIGTERM, SIGINT, etc.
@@ -290,6 +294,11 @@ class LocalAgenda(Agenda):
 
             self._tasks[task.id] = task
             self._status[task.id] = TaskStatus()
+
+            # Log task creation
+            if self._logger:
+                self._logger.log_task_created(task.type, task.id)
+
             return task.id
 
     async def get_tasks(
@@ -367,6 +376,19 @@ class LocalAgenda(Agenda):
             if work_status is not None:
                 if work_status in (WorkStatus.ATTEMPTED, WorkStatus.DOING):
                     status.attempts += 1
+
+                # Log status changes
+                task = self._tasks[task_id]
+                if work_status == WorkStatus.DOING:
+                    if self._logger:
+                        self._logger.log_task_assigned(task.type, task_id)
+                elif work_status == WorkStatus.DONE:
+                    if self._logger:
+                        self._logger.log_task_done(task.type, task_id)
+                elif work_status == WorkStatus.FAILED:
+                    if self._logger:
+                        self._logger.log_task_failed(task.type, task_id)
+
                 status.work_status = work_status
 
             if new_notes:
