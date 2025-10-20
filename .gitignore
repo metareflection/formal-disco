@@ -2,6 +2,7 @@ discoveries/
 data/
 outputs/
 readme-ideas/
+wandb/
 
 *.pyc
 __pycache__/
