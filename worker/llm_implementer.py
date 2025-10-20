@@ -28,8 +28,9 @@ class LLMImplementer(Worker):
     task DONE with {'program_path': ...} in notes.
     """
 
-    def __init__(self, llm: Any, prompt_template: Optional[ChatPromptTemplate] = None) -> None:
+    def __init__(self, llm: Any, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9) -> None:
         self._llm = llm
+        self._attempt_priority_factor = float(attempt_priority_factor)
 
         if prompt_template is None:
             self._prompt = ChatPromptTemplate.from_messages(
@@ -123,9 +124,10 @@ class LLMImplementer(Worker):
                 else:
                     follow = Task(id="rep", type="repair", properties={"program": prog_obj_path})
                     await agenda.add_task(follow)
-                    # Leave it as ATTEMPTED so it can be retried later.
+                    # Leave it as ATTEMPTED so it can be retried later and reduce priority
                     await agenda.update_task(task.id,
                                              work_status=WorkStatus.ATTEMPTED,
+                                             priority_factor=self._attempt_priority_factor,
                                              new_notes=notes)
 
             except Exception as e:

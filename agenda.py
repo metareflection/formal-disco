@@ -72,7 +72,7 @@ class TaskStatus:
     """
     Mutable runtime status for a Task.
     """
-    priority: float = 0.0
+    priority: float = 1.0
     work_status: WorkStatus = WorkStatus.NEW
     attempts: int = 0
     worker_notes: dict[str, Any] = field(default_factory=dict)

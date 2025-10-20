@@ -29,9 +29,10 @@ class LLMFixer(Worker):
         otherwise mark the repair task FAILED.
     """
 
-    def __init__(self, llm: Any, max_attempts: int = 3, prompt_template: Optional[ChatPromptTemplate] = None) -> None:
+    def __init__(self, llm: Any, max_attempts: int = 3, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9) -> None:
         self._llm = llm
         self._max_attempts = max_attempts
+        self._attempt_priority_factor = float(attempt_priority_factor)
 
         if prompt_template is None:
             self._prompt = ChatPromptTemplate.from_messages(
@@ -109,20 +110,12 @@ class LLMFixer(Worker):
                 # Verify repaired program
                 repaired_prog = DafnyProgram(repaired_text, name=repaired_obj_path)
 
-                # Log repaired program before verification (truncate for logs)
-                try:
-                    short_repaired = repaired_text if len(repaired_text) < 2000 else repaired_text[:2000] + "..."
-                    logger.info("Verifying repaired Dafny program for task %s: %s", task.id, short_repaired)
-                except Exception:
-                    logger.exception("Failed while preparing repaired verification log for task %s", task.id)
+                short_repaired = repaired_text if len(repaired_text) < 2000 else repaired_text[:2000] + "..."
+                logger.info("Verifying repaired Dafny program for task %s: %s", task.id, short_repaired)
 
                 ver = repaired_prog.verify()
 
-                # Log verification outcome
-                try:
-                    logger.info("Verification outcome for repair task %s: %s", task.id, ver.outcome.name)
-                except Exception:
-                    logger.exception("Failed to log verification outcome for repair task %s", task.id)
+                logger.info("Verification outcome for repair task %s: %s", task.id, ver.outcome.name)
 
                 # Save verification output on the repaired object
                 await agenda.update_object(repaired_obj_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
@@ -134,7 +127,8 @@ class LLMFixer(Worker):
                     await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes={"program_path": repaired_obj_path, "verification": ver.outcome.name})
                 else:
                     # Mark the existing repair task as ATTEMPTED so it can be retried later
-                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, new_notes={"program_path": repaired_obj_path, "verification": ver.outcome.name})
+                    # Also decrease priority slightly.
+                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"program_path": repaired_obj_path, "verification": ver.outcome.name})
 
             except Exception as e:
                 await agenda.update_task(task.id, work_status=WorkStatus.FAILED, new_notes={"error": str(e)})

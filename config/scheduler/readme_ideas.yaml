@@ -4,7 +4,7 @@ defaults:
   - _self_
   - agenda: null
 
-turn_fuel: 10
+turn_fuel: 5
 
 workers:
   - _target_: worker.readme_idea_generator.ReadmeInspiredIdeaGenerator
@@ -14,11 +14,13 @@ workers:
         model: gpt-4o-mini
 
   - _target_: worker.llm_implementer.LLMImplementer
+    attempt_priority_factor: 0.9
     llm:
         _target_: langchain_openai.ChatOpenAI
         model: gpt-5-mini
 
   - _target_: worker.llm_fixer.LLMFixer
+    attempt_priority_factor: 0.9
     llm:
         _target_: langchain_openai.ChatOpenAI
         model: gpt-5-mini
