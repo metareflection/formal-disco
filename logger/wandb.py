@@ -4,6 +4,8 @@
 Weights & Biases logger implementation for tracking agenda metrics.
 """
 
+import collections
+
 from . import AgendaLogger
 
 
@@ -25,40 +27,45 @@ class WandbLogger(AgendaLogger):
         # Initialize wandb project
         self._wandb.init(project=project)
 
-        # Counters per task type: {task_type: {metric: count}}
-        self._counters: dict[str, dict[str, int]] = {}
+
+        # Track unique task ids seen per (task_type, state)
+        # { task_type: { state: set(task_id) } }
+        self._unique_ids: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
+
+        # Track current state per task_id.
+        self._task_state: dict[str, str] = {}
 
         # Program statistics
         self._program_count = 0
         self._program_total_lines = 0
 
-    def log_task_created(self, task_type: str, task_id: str) -> None:
-        """Increment task creation counter for the task type."""
-        if task_type not in self._counters:
-            self._counters[task_type] = {"created": 0, "done": 0, "failed": 0, "assigned": 0}
-        self._counters[task_type]["created"] += 1
-        self._wandb.log({f"task/{task_type}/created": self._counters[task_type]["created"]})
 
-    def log_task_done(self, task_type: str, task_id: str) -> None:
-        """Increment task done counter for the task type."""
-        if task_type not in self._counters:
-            self._counters[task_type] = {"created": 0, "done": 0, "failed": 0, "assigned": 0}
-        self._counters[task_type]["done"] += 1
-        self._wandb.log({f"task/{task_type}/done": self._counters[task_type]["done"]})
+    def log_task_state(self, task_type: str, task_id: str, new_state: str) -> None:
+        """Update internal per-state sets and log the current counts for the task type.
 
-    def log_task_failed(self, task_type: str, task_id: str) -> None:
-        """Increment task failed counter for the task type."""
-        if task_type not in self._counters:
-            self._counters[task_type] = {"created": 0, "done": 0, "failed": 0, "assigned": 0}
-        self._counters[task_type]["failed"] += 1
-        self._wandb.log({f"task/{task_type}/failed": self._counters[task_type]["failed"]})
+        This method will add the task_id to the set for `new_state` and remove it
+        from any other state sets so that the per-state counts represent the
+        number of tasks currently in each state.
+        """
+        # Remove task_id from its current state, if we know it.
+        current_state = self._task_state.get(task_id)
 
-    def log_task_assigned(self, task_type: str, task_id: str) -> None:
-        """Increment task assigned counter for the task type."""
-        if task_type not in self._counters:
-            self._counters[task_type] = {"created": 0, "done": 0, "failed": 0, "assigned": 0}
-        self._counters[task_type]["assigned"] += 1
-        self._wandb.log({f"task/{task_type}/assigned": self._counters[task_type]["assigned"]})
+        if current_state == new_state:
+            # Nothing to do.
+            return
+
+        # Update current state mapping
+        self._task_state[task_id] = new_state
+
+        if current_state is not None:
+            self._unique_ids[(task_type, current_state)].discard(task_id)
+            self._wandb.log({f"task/{task_type}/current/{current_state}":
+                             len(self._unique_ids[(task_type, current_state)])})
+
+        # Add to new state set and log current counts
+        self._unique_ids[(task_type, new_state)].add(task_id)
+        self._wandb.log({f"task/{task_type}/current/{new_state}":
+                         len(self._unique_ids[(task_type, new_state)])})
 
     def log_new_working_program(self, program_text: str) -> None:
         """Log a new working program: increment count and add line count."""

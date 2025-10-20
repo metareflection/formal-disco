@@ -20,6 +20,7 @@ from enum import StrEnum
 from typing import Any, Optional, Iterable, Protocol
 
 from logger import AgendaLogger
+from logger.noop import NoOpLogger
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +203,7 @@ class LocalAgenda(Agenda):
         self._checkpoint_path = checkpoint_path
         self._checkpoint_interval = checkpoint_interval
         self._signal_ckpt_once = threading.Event()
-        self._logger = logger
+        self._logger = logger or NoOpLogger()
 
         self._load()
         # FIXME: add handlers to handle SIGTERM, SIGINT, etc.
@@ -297,9 +298,8 @@ class LocalAgenda(Agenda):
             self._tasks[task.id] = task
             self._status[task.id] = TaskStatus()
 
-            # Log task creation
-            if self._logger:
-                self._logger.log_task_created(task.type, task.id)
+            # This task is created in the NEW state.
+            self._logger.log_task_state(task.type, task.id, WorkStatus.NEW.value)
 
             return task.id
 
@@ -381,17 +381,10 @@ class LocalAgenda(Agenda):
 
                 # Log status changes
                 task = self._tasks[task_id]
-                if work_status == WorkStatus.DOING:
-                    if self._logger:
-                        self._logger.log_task_assigned(task.type, task_id)
-                elif work_status == WorkStatus.DONE:
-                    if self._logger:
-                        self._logger.log_task_done(task.type, task_id)
-                elif work_status == WorkStatus.FAILED:
-                    if self._logger:
-                        self._logger.log_task_failed(task.type, task_id)
 
+                # Update status and inform logger of the new state so it can track current counts
                 status.work_status = work_status
+                self._logger.log_task_state(task.type, task_id, work_status.value)
 
             if new_notes:
                 status.worker_notes.update(new_notes)
