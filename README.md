@@ -73,11 +73,17 @@ method m443() {
 }
 ```
 
-# (Temporary) Link to README datasets from Google BigQuery
+# To run with LLMImplementer and LLMFixer
 
-[[Link][https://drive.google.com/file/d/1CYAxgFezCMd6E6LdHgnt6rMYYPkKI1fy/view?usp=sharing]] -- the ReadmeInspiredIdeaGenerator uses this
+Download the dataset from this [Link](https://drive.google.com/file/d/1CYAxgFezCMd6E6LdHgnt6rMYYPkKI1fy/view?usp=sharing) and save it to `data/gh-readmes-100k.jsonl`.
 
-TODO: add the script that generates this
+Then, you can run:
+
+```sh
+$ python scheduler.py +scheduler=readme_ideas scheduler.agenda=local
+```
+
+This will by default log to wandb, which you can use to follow the run.
 
 # To-Dos:
 
