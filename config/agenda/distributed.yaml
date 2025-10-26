@@ -1,0 +1,4 @@
+_target_: agenda_distributed.AgendaClient
+host: "127.0.0.1"
+port: 9999
+timeout: 30.0

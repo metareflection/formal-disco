@@ -1,4 +1,5 @@
 import random
+import time
 from typing import Optional
 
 from agenda import Agenda, Object, Task, WorkStatus
@@ -41,28 +42,12 @@ class DummyImplementer(Worker):
         remaining = max(0, fuel)
 
         while remaining > 0:
-            # Get current pending implement tasks.
-            tasks = await agenda.get_tasks(type="implement", ignore_completed=True)
-            if not tasks:
+            # Atomically claim next available task
+            result = await agenda.claim_next_task(type="implement")
+            if result is None:
                 break
 
-            # Pick the first NEW/ATTEMPTED task (i.e. not completed and nobody else doing it).
-            picked = None
-            for t, status in tasks:
-                if status.work_status in (WorkStatus.NEW, WorkStatus.ATTEMPTED):
-                    picked = (t, status)
-                    break
-
-            if picked is None:
-                break
-
-            task, status = picked
-
-            try:
-                await agenda.update_status(task.id, WorkStatus.DOING)
-            except RuntimeError:
-                # Task was claimed in the meantime - try again.
-                continue
+            task, status = result
 
             # Extract idea number.
             idea_path = task.properties.get('idea')
@@ -73,6 +58,9 @@ class DummyImplementer(Worker):
 
             idea_content = idea_obj.content.decode('utf-8')
             idea_num = idea_content.split()[-1][1:]  # Idea is "Write a method named m{num}"
+
+            # Simulate real work taking time (blocks the process)
+            time.sleep(5.0)
 
             # Create the program object
             prog_path = f"programs/{idea_num}.dfy"

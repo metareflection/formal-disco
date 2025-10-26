@@ -181,6 +181,18 @@ class Agenda(Protocol):
     ) -> None:
         await self.update_task(task_id, new_notes=new_notes)
 
+    async def claim_next_task(
+        self,
+        type: Optional[str] = None,
+    ) -> Optional[tuple[Task, TaskStatus]]:
+        """
+        Atomically find and claim the next available task.
+
+        Returns (Task, TaskStatus) if a task was claimed, None if no tasks available.
+        This is more efficient than separate get_tasks() + update_status() calls.
+        """
+        raise NotImplementedError
+
 
 class LocalAgenda(Agenda):
     """
@@ -568,3 +580,41 @@ class LocalAgenda(Agenda):
                     num_special = sum(1 for line in lines if line.strip().startswith(f"{special} "))
                     stats[key] = stats.get(key, 0) + num_special
         return stats
+
+    async def claim_next_task(
+        self,
+        type: Optional[str] = None,
+    ) -> Optional[tuple[Task, TaskStatus]]:
+        """
+        Atomically find and claim the next available task in a single lock acquisition.
+
+        More efficient than get_tasks() + update_status() for high concurrency.
+        """
+        self.tick()
+        async with self._lock:
+            # Find highest priority unclaimed task
+            best = None
+            best_priority = float('-inf')
+
+            for tid, task in self._tasks.items():
+                if type is not None and task.type != type:
+                    continue
+
+                status = self._status[tid]
+                if status.is_completed() or status.work_status == WorkStatus.DOING:
+                    continue
+
+                if status.priority > best_priority:
+                    best = (tid, task, status)
+                    best_priority = status.priority
+
+            if best is None:
+                return None
+
+            # Claim it
+            tid, task, status = best
+            status.attempts += 1
+            status.work_status = WorkStatus.DOING
+            self._logger.log_task_state(task.type, task.id, WorkStatus.DOING.value)
+
+            return (task, status)
