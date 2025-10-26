@@ -29,10 +29,13 @@ class LLMFixer(Worker):
         otherwise mark the repair task FAILED.
     """
 
-    def __init__(self, llm: Any, max_attempts: int = 3, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9) -> None:
+    def __init__(self, llm: Any, max_attempts: int = 3, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9,
+                 interest_success_boost: float = 1.2, interest_recursion_gamma: float = 0.0) -> None:
         self._llm = llm
         self._max_attempts = max_attempts
         self._attempt_priority_factor = float(attempt_priority_factor)
+        self._interest_success_boost = float(interest_success_boost)
+        self._interest_recursion_gamma = float(interest_recursion_gamma)
 
         if prompt_template is None:
             self._prompt = ChatPromptTemplate.from_messages(
@@ -105,6 +108,7 @@ class LLMFixer(Worker):
                 # Persist repaired program
                 repaired_obj_path = await agenda.create_object(Object(path=program_path,
                                                                        type="dafny-program",
+                                                                       parents=[program_path],
                                                                        content=repaired_text.encode("utf-8")))
 
                 # Verify repaired program
@@ -121,8 +125,10 @@ class LLMFixer(Worker):
                 await agenda.update_object(repaired_obj_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
 
                 if ver.outcome == VerificationOutcome.SUCCESS:
+                    # Boost interest on successful fix
+                    await agenda.update_object(repaired_obj_path, interest_factor=self._interest_success_boost, interest_recursion_gamma=self._interest_recursion_gamma)
                     # Enqueue extend task and mark DONE
-                    follow = Task(id="ext", type="extend", properties={"program": repaired_obj_path})
+                    follow = Task(id="ext", type="extend", properties={"program": repaired_obj_path}, interest_dependencies=[repaired_obj_path])
                     await agenda.add_task(follow)
                     await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes={"program_path": repaired_obj_path, "verification": ver.outcome.name})
                 else:

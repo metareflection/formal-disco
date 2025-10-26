@@ -15,12 +15,18 @@ workers:
 
   - _target_: worker.llm_implementer.LLMImplementer
     attempt_priority_factor: 0.9
+    interest_success: 2.0
+    interest_goal_unproven: 1.5
+    interest_fail: 0.5
+    interest_recursion_gamma: 0.0
     llm:
         _target_: langchain_openai.ChatOpenAI
         model: gpt-5-mini
 
   - _target_: worker.llm_fixer.LLMFixer
     attempt_priority_factor: 0.9
+    interest_success_boost: 1.2
+    interest_recursion_gamma: 0.0
     llm:
         _target_: langchain_openai.ChatOpenAI
         model: gpt-5-mini

@@ -33,14 +33,16 @@ class Object:
       - path: string identifier. Corresponds to a path on disk.
       - type: arbitrary object "kind" (e.g., "dafny-program")
       - parents: list of parent object IDs (for lineage)
-      - content: bytes with the actual content.
-      - properties: arbitrary metadata bag
+    - content: bytes with the actual content.
+    - properties: arbitrary metadata bag
+    - interestingness: float multiplier used to modulate priorities of tasks that depend on this object (default 1.0)
     """
     path: str
     type: str
     parents: list[str] = field(default_factory=list)
     content: Optional[bytes] = None
     properties: dict[str, Any] = field(default_factory=dict)
+    interestingness: float = 1.0
 
 
 @dataclass(slots=True, kw_only=True)
@@ -50,13 +52,15 @@ class Task:
 
       - id: string identifier (uuid)
       - type: arbitrary task "kind" (workers can filter tasks by this)
-      - parents: list of parent task IDs (for lineage / propagation)
-      - properties: arbitrary metadata bag
+    - parents: list of parent task IDs (for lineage / propagation)
+    - properties: arbitrary metadata bag
+    - interest_dependencies: list of object paths whose interestingness multiplies this task's effective priority
     """
     id: str
     type: str
     parents: list[str] = field(default_factory=list)
     properties: dict[str, Any] = field(default_factory=dict)
+    interest_dependencies: list[str] = field(default_factory=list)
 
 
 class WorkStatus(StrEnum):
@@ -103,7 +107,9 @@ class Agenda(Protocol):
     async def update_object(self,
                             path: str,
                             new_content: Optional[bytes] = None,
-                            new_properties: Optional[dict[str, Any]] = None) -> None:
+                            new_properties: Optional[dict[str, Any]] = None,
+                            interest_factor: Optional[float] = None,
+                            interest_recursion_gamma: Optional[float] = None) -> None:
         """
         Update an existing object.
 
@@ -139,7 +145,7 @@ class Agenda(Protocol):
         ignore_completed: bool = False,
     ) -> list[tuple[Task, TaskStatus]]:
         """
-        Return (Task, TaskStatus) pairs sorted by descending priority.
+        Return (Task, TaskStatus) pairs sorted by descending effective priority.
         If `type` is provided, filter by exact match.
         If `ignore_completed` is True, exclude DONE/FAILED.
         """
@@ -285,6 +291,27 @@ class LocalAgenda(Agenda):
                 queue.append((parent_id, d + 1))
                 yield (parent_id, d + 1)
 
+    def _all_object_ancestors(self, root_path: str) -> Iterable[tuple[str, int]]:
+        """
+        BFS over object parents to enumerate (object_path, distance) for all ancestors.
+        Distance(root) is 0; we yield only ancestors (distance >= 1).
+
+        If a referenced parent isn't present in the agenda, we stop traversing.
+        """
+        queue: list[tuple[str, int]] = [(root_path, 0)]
+        seen = {root_path}
+        while queue:
+            cur, d = queue.pop(0)
+            obj = self._objects.get(cur)
+            if obj is None:
+                continue
+            for parent_path in obj.parents:
+                if parent_path in seen:
+                    continue
+                seen.add(parent_path)
+                queue.append((parent_path, d + 1))
+                yield (parent_path, d + 1)
+
     async def add_task(self, task: Task) -> str:
         self.tick()
 
@@ -318,7 +345,22 @@ class LocalAgenda(Agenda):
                     continue
                 items.append((t, s))
 
-            items.sort(key=lambda ts: ts[1].priority, reverse=True)
+            # Sort by effective priority: base priority multiplied by the product
+            # of interestingness of all dependency objects.
+            def effective_priority(ts: tuple[Task, TaskStatus]) -> float:
+                t, s = ts
+                eff = s.priority
+                for obj_path in getattr(t, 'interest_dependencies', []) or []:
+                    obj = self._objects.get(obj_path)
+                    if obj is None:
+                        continue
+                    try:
+                        eff *= float(getattr(obj, 'interestingness', 1.0))
+                    except Exception:
+                        pass
+                return eff
+
+            items.sort(key=effective_priority, reverse=True)
             return items
 
     async def update_task(
@@ -429,9 +471,14 @@ class LocalAgenda(Agenda):
         path: str,
         new_content: Optional[bytes] = None,
         new_properties: Optional[dict[str, Any]] = None,
+        interest_factor: Optional[float] = None,
+        interest_recursion_gamma: Optional[float] = None,
     ):
         """
         Update an existing object: replace content if provided, merge properties if provided.
+        If interest_factor is provided, multiply the object's interestingness by this factor.
+        If interest_recursion_gamma > 0, propagate a decayed multiplicative update to ancestors
+        at distance d as interest_factor * (gamma ** d).
         """
         self.tick()
         async with self._lock:
@@ -442,3 +489,19 @@ class LocalAgenda(Agenda):
                 obj.content = new_content
             if new_properties:
                 obj.properties.update(new_properties)
+            if interest_factor is not None:
+                try:
+                    obj.interestingness *= float(interest_factor)
+                except Exception:
+                    pass
+                # Propagate to ancestors if requested
+                if interest_recursion_gamma is not None and interest_recursion_gamma > 0:
+                    for anc_path, dist in self._all_object_ancestors(path):
+                        anc = self._objects.get(anc_path)
+                        if anc is None:
+                            continue
+                        try:
+                            propagated = float(interest_factor) * (float(interest_recursion_gamma) ** dist)
+                            anc.interestingness *= propagated
+                        except Exception:
+                            pass

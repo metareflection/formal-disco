@@ -28,9 +28,15 @@ class LLMImplementer(Worker):
     task DONE with {'program_path': ...} in notes.
     """
 
-    def __init__(self, llm: Any, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9) -> None:
+    def __init__(self, llm: Any, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9,
+                 interest_success: float = 2.0, interest_goal_unproven: float = 1.5, interest_fail: float = 0.5,
+                 interest_recursion_gamma: float = 0.0) -> None:
         self._llm = llm
         self._attempt_priority_factor = float(attempt_priority_factor)
+        self._interest_success = float(interest_success)
+        self._interest_goal_unproven = float(interest_goal_unproven)
+        self._interest_fail = float(interest_fail)
+        self._interest_recursion_gamma = float(interest_recursion_gamma)
 
         if prompt_template is None:
             self._prompt = ChatPromptTemplate.from_messages(
@@ -98,6 +104,7 @@ class LLMImplementer(Worker):
 
                 prog_obj_path = await agenda.create_object(Object(path=prog_path,
                                                                   type="dafny-program",
+                                                                  parents=[idea_path],
                                                                   content=program_text.encode("utf-8")))
 
                 prog = DafnyProgram(program_text, name=prog_path)
@@ -109,20 +116,30 @@ class LLMImplementer(Worker):
 
                 logger.info("Verification outcome for task %s: %s", task.id, ver.outcome.name)
 
+                # Initialize interestingness based on outcome
+                interest_factor = {
+                    VerificationOutcome.SUCCESS: self._interest_success,
+                    VerificationOutcome.GOAL_UNPROVEN: self._interest_goal_unproven,
+                }.get(ver.outcome, self._interest_fail)
+
                 # Save verification output into the program object's properties.
-                await agenda.update_object(prog_obj_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
+                await agenda.update_object(
+                    prog_obj_path,
+                    interest_factor=interest_factor,
+                    interest_recursion_gamma=self._interest_recursion_gamma,
+                    new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
 
                 notes = {"program_path": prog_obj_path, "verification": ver.outcome.name}
 
                 if ver.outcome == VerificationOutcome.SUCCESS:
-                    follow = Task(id="ext", type="extend", properties={"program": prog_obj_path})
+                    follow = Task(id="ext", type="extend", properties={"program": prog_obj_path}, interest_dependencies=[prog_obj_path])
                     await agenda.add_task(follow)
                     # Done implementing this idea.
                     await agenda.update_task(task.id,
                                              work_status=WorkStatus.DONE,
                                              new_notes=notes)
                 else:
-                    follow = Task(id="rep", type="repair", properties={"program": prog_obj_path})
+                    follow = Task(id="rep", type="repair", properties={"program": prog_obj_path}, interest_dependencies=[prog_obj_path])
                     await agenda.add_task(follow)
                     # Leave it as ATTEMPTED so it can be retried later and reduce priority
                     await agenda.update_task(task.id,

@@ -16,5 +16,4 @@ class NoOpLogger(AgendaLogger):
         pass
 
     def log_task_state(self, task_type: str, task_id: str, new_state: str) -> None:
-        # No-op for compatibility with Agenda calls
         pass
