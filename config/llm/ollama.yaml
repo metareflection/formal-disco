@@ -1,0 +1,9 @@
+write:
+  _target_: langchain_ollama.ChatOllama
+  model: gemma3:12b
+  base_url: ${oc.env:OLLAMA_BASE_URL,http://localhost:11434}
+
+code:
+  _target_: langchain_ollama.ChatOllama
+  model: qwen3-coder
+  base_url: ${oc.env:OLLAMA_BASE_URL,http://localhost:11434}

@@ -1,0 +1,7 @@
+write:
+  _target_: langchain_openai.ChatOpenAI
+  model: gpt-4o-mini
+
+code:
+  _target_: langchain_openai.ChatOpenAI
+  model: gpt-5-mini
