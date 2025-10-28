@@ -85,6 +85,12 @@ $ python scheduler.py +scheduler=readme_ideas scheduler.agenda=local
 
 This will by default log to wandb, which you can use to follow the run.
 
+You can pick a different LLM configuration from [config/llm](config/llm); for example:
+
+```sh
+$ python scheduler.py +scheduler=readme_ideas scheduler.agenda=local llm=aws
+```
+
 # To-Dos:
 
 - [ ] Implement distributed agenda

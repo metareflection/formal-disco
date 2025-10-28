@@ -44,7 +44,7 @@ class RoundRobinScheduler:
             idx = (idx + 1) % len(self.workers)
 
 
-@main(config_path="config", config_name=None, version_base=None)
+@main(config_path="config", config_name="config", version_base=None)
 def _main(cfg: DictConfig) -> None:
     agenda: Agenda = instantiate(cfg.agenda)
     scheduler: Scheduler = instantiate(cfg.scheduler)
