@@ -1,0 +1,9 @@
+write:
+  _target_: langchain_openai.ChatOpenAI
+  model: your-model-name
+  base_url: ${oc.env:VLLM_BASE_URL,http://localhost:8000/v1}
+
+code:
+  _target_: langchain_openai.ChatOpenAI
+  model: your-model-name
+  base_url: ${oc.env:VLLM_BASE_URL,http://localhost:8000/v1}
