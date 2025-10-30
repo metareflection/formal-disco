@@ -12,6 +12,7 @@ Environment variables:
 """
 
 import argparse
+import asyncio
 import os
 import sys
 
@@ -72,10 +73,12 @@ def main():
     )
 
     # Start the server
-    run_server(
-        engine_args,
-        host=args.host,
-        port=args.port,
+    asyncio.run(
+        run_server(
+            engine_args,
+            host=args.host,
+            port=args.port,
+        )
     )
 
 
