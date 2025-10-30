@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+
+"""
+Simple binary patch utility based on difflib from the standard library.
+
+We use a simple JSON+zlib "copy/add" patch format that reconstructs a target
+byte-string from a base byte-string by:
+  - copy: (offset, length) slices from the base
+  - add: literal bytes (base64-encoded in JSON)
+
+The main use case of this is in agenda.py: when an object is updated, we
+compute and store a compressed patch that undoes the change (i.e., it transforms
+the new content back to the old content). Then, in materialize.py, when we're
+unpacking agenda checkpoints, we reconstruct all versions of each file.
+"""
+
+import base64
+import json
+import zlib
+from difflib import SequenceMatcher
+
+
+def compute_reverse_patch(new_bytes: bytes, old_bytes: bytes) -> bytes:
+    """
+    Compute a patch that, when applied to `new_bytes`, reconstructs `old_bytes`.
+
+    Returns a zlib-compressed JSON patch (bytes).
+    """
+    sm = SequenceMatcher(None, new_bytes, old_bytes, autojunk=False)
+    ops: list[list] = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            if i2 > i1:
+                ops.append(["copy", i1, i2 - i1])
+        elif tag in ("replace", "insert"):
+            lit = old_bytes[j1:j2]
+            if lit:
+                ops.append(["add", base64.b64encode(lit).decode("ascii")])
+        elif tag == "delete":
+            # We omit regions from new that are not in old by simply not copying them.
+            pass
+
+    patch_obj = {
+        "algo": "copy-add-v1",
+        "ops": ops,
+    }
+    raw = json.dumps(patch_obj, separators=(",", ":")).encode("utf-8")
+    return zlib.compress(raw)
+
+
+def apply_patch(base: bytes, patch_bytes: bytes) -> bytes:
+    """
+    Apply a zlib-compressed JSON patch to `base` and return reconstructed bytes.
+    """
+    patch_obj = json.loads(zlib.decompress(patch_bytes).decode("utf-8"))
+
+    out = bytearray()
+    for op in patch_obj.get("ops", []):
+        kind = op[0]
+        if kind == "copy":
+            _, offset, length = op
+            out += base[offset:offset + length]
+        elif kind == "add":
+            _, b64 = op
+            out += base64.b64decode(b64)
+        else:
+            raise ValueError(f"Unknown op {kind}")
+
+    return bytes(out)
+
+
+def test_bytes_patches() -> None:
+    strs = ["a",
+            "a\nadd line 2\nnew line 3",
+            "a\nchange line 2\nold line 3",
+            "a\nold line 3"]
+
+    strs = [s.encode("utf-8") for s in strs]
+
+    p1 = compute_reverse_patch(strs[1], strs[0])
+    p2 = compute_reverse_patch(strs[2], strs[1])
+    p3 = compute_reverse_patch(strs[3], strs[2])
+
+    patch_history = [p1, p2, p3]
+    cur = strs[3]
+    prevs = []
+    for rev in reversed(patch_history):
+        cur = apply_patch(cur, rev)
+        prevs.append(cur)
+
+    assert prevs == list(reversed(strs[:-1]))
+
+
+def apply_text_diff(text: str, diff: str) -> str:
+    """
+    Apply a simple, line-based diff to `text`.
+
+    Directives (one per line in `diff`):
+      - Lines starting and ending with "@@" are anchors. We search forward from the
+        current cursor for a line equal to the anchor body and set the cursor to just after it.
+        An empty anchor ("@@@@") is a no-op synchronization point.
+      - Lines starting with '=' are "keep" directives: search forward for that line
+        and move cursor just after it.
+      - Lines starting with '-' are "delete" directives: search forward for that line
+        and delete it. Cursor stays at the deletion point.
+      - Lines starting with '+' are "add" directives: insert that line at the current
+        cursor position and advance cursor past the inserted line.
+
+    Matching uses exact text of the line (without trailing newlines). Inserted lines end with a newline.
+    """
+    # Keep original line endings
+    lines = text.splitlines(keepends=True)
+    cursor = 0
+
+    def line_content(i: int) -> str:
+        return lines[i].rstrip("\n")
+
+    def find_forward(target: str, start: int) -> int | None:
+        for idx in range(start, len(lines)):
+            if line_content(idx) == target:
+                return idx
+        return None
+
+    for raw in diff.splitlines():
+        if not raw:
+            continue
+        if raw.startswith("@@") and raw.endswith("@@"):
+            anchor = raw[2:-2]
+            if anchor:
+                j = find_forward(anchor, cursor)
+                if j is not None:
+                    cursor = j + 1
+            continue
+
+        op = raw[0]
+        payload = raw[1:]
+        if payload.startswith(" "):
+            payload = payload[1:]
+
+        if op == '=':
+            j = find_forward(payload, cursor)
+            if j is not None:
+                cursor = j + 1
+        elif op == '-':
+            j = find_forward(payload, cursor)
+            if j is not None:
+                del lines[j]
+                cursor = j
+        elif op == '+':
+            lines.insert(cursor, payload + "\n")
+            cursor += 1
+        else:
+            # Unknown directive: ignore
+            continue
+
+    return "".join(lines)
+
+
+def test_apply_text_diff_basic() -> None:
+    # Initial text
+    text = "hello\nworld\na\nline2\nline3\n"
+    # Diff: keep 'a', insert, delete 'line2', keep 'line3', insert after it
+    diff = """
+@@
+= a
++ inserted-after-a
+@@
+- line2
+= line3
++ after3
+""".strip("\n")
+
+    out = apply_text_diff(text, diff)
+    assert out == "hello\nworld\na\ninserted-after-a\nline3\nafter3\n"

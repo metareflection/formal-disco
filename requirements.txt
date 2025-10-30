@@ -6,3 +6,4 @@ langchain-aws
 langchain-ollama
 boto3
 wandb
+pytest

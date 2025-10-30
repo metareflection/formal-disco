@@ -21,6 +21,7 @@ from typing import Any, Optional, Iterable, Protocol
 
 from logger import AgendaLogger
 from logger.noop import NoOpLogger
+from patch import compute_reverse_patch
 
 logger = logging.getLogger(__name__)
 
@@ -486,6 +487,16 @@ class LocalAgenda(Agenda):
                 raise KeyError(f"Unknown object path: {path}")
             obj = self._objects[path]
             if new_content is not None:
+                # Compute and append a reverse patch so we can reconstruct previous versions later.
+                old_bytes = obj.content if obj.content is not None else b""
+                new_bytes = new_content
+                rev_patch = compute_reverse_patch(new_bytes, old_bytes)
+                history = obj.properties.get("patch_history")
+                if not isinstance(history, list):
+                    history = []
+                    obj.properties["patch_history"] = history
+                history.append(rev_patch)
+
                 obj.content = new_content
             if new_properties:
                 obj.properties.update(new_properties)
