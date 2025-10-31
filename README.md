@@ -80,7 +80,7 @@ Download the dataset from this [Link](https://drive.google.com/file/d/1CYAxgFezC
 Then, you can run:
 
 ```sh
-$ python scheduler.py +scheduler=readme_ideas scheduler.agenda=local
+$ python scheduler.py +agenda=local +scheduler=readme_ideas
 ```
 
 This will by default log to wandb, which you can use to follow the run.
@@ -88,7 +88,14 @@ This will by default log to wandb, which you can use to follow the run.
 You can pick a different LLM configuration from [config/llm](config/llm); for example:
 
 ```sh
-$ python scheduler.py +scheduler=readme_ideas scheduler.agenda=local llm=aws
+$ python scheduler.py +agenda=local +scheduler=readme_ideas llm=aws
+```
+
+Or to use vLLM (see [VLLM.md](VLLM.md) for setup):
+
+```sh
+$ export VLLM_BASE_URL=https://your-vllm-server/v1
+$ python scheduler.py +agenda=local +scheduler=readme_ideas llm=vllm
 ```
 
 # To-Dos:
