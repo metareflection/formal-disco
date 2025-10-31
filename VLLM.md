@@ -63,6 +63,8 @@ You can set the vLLM server URL via environment variable:
 export VLLM_BASE_URL=http://your-server:8000/v1
 ```
 
+**Important:** The URL must include `/v1` at the end for OpenAI API compatibility.
+
 Or hardcode it directly in the YAML file.
 
 ## Example: Running on a Cluster
@@ -91,8 +93,14 @@ python your_script.py llm=vllm
 
 ## Testing the Server
 
-Once the server is running, you can test it with curl:
+Once the server is running, you can test it with curl.
 
+First, check available models:
+```bash
+curl http://localhost:8000/v1/models
+```
+
+Then test a chat completion:
 ```bash
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -102,6 +110,8 @@ curl http://localhost:8000/v1/chat/completions \
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
+
+If your server doesn't require authentication (no `--api-key` was set), omit the Authorization header.
 
 ## Multiple Models
 
