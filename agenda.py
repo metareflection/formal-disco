@@ -16,7 +16,10 @@ import os
 import uuid
 import logging
 from dataclasses import dataclass, field
-from enum import StrEnum
+try:
+    from enum import StrEnum  # works in Python 3.11+
+except ImportError:
+    from strenum import StrEnum  # works if PyPI package installed
 from typing import Any, Optional, Iterable, Protocol
 
 from logger import AgendaLogger
