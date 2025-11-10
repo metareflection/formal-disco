@@ -8,7 +8,7 @@ from agenda import Agenda, Object, Task, WorkStatus
 from . import Worker
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from code_output_parser import CodeOutputParser
 
 from dafny import DafnyProgram, VerificationOutcome
 
@@ -44,9 +44,13 @@ class LLMImplementer(Worker):
                     (
                         "system",
                         (
-                            "You are an expert Dafny programmer. Given a short idea or specification, output a complete,"
-                            " self-contained Dafny program that implements the idea. The output must be valid Dafny code and"
-                            " compile/verify when possible. Keep the program concise and include any necessary helper methods."
+                            "You are an expert Dafny programmer. Given a short idea or specification, output a"
+                            " self-contained Dafny program that implements the idea."
+                            "Your program does not need to implement the entire idea, which might be overly ambitious to write in one go.\n"
+                            "This is just the beginning: you will later be able to extend and improve the program incrementally.\n"
+                            "You can start with just a few functions, a class with the simplest methods, a lemma, etc. You can also add comments on ideas to extend the program later, too.\n"
+                            "The output must be valid Dafny code and"
+                            " compile/verify when possible. Keep this initial program concise (e.g., < 100 lines) and include any necessary helper methods or lemmas."
                         ),
                     ),
                     (
@@ -61,12 +65,10 @@ class LLMImplementer(Worker):
         else:
             self._prompt = prompt_template
 
-        self._chain = self._prompt | self._llm | StrOutputParser()
+        self._chain = self._prompt | self._llm | CodeOutputParser()
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
-        remaining = max(0, fuel)
-
-        while remaining > 0:
+        while fuel > 0:
             # Fetch implement tasks
             tasks = await agenda.get_tasks(type="implement", ignore_completed=True)
             if not tasks:
@@ -131,10 +133,11 @@ class LLMImplementer(Worker):
 
                 notes = {"program_path": prog_obj_path, "verification": ver.outcome.name}
 
-                if ver.outcome == VerificationOutcome.SUCCESS:
-                    follow = Task(id="ext", type="extend", properties={"program": prog_obj_path}, interest_dependencies=[prog_obj_path])
+                if ver.outcome == VerificationOutcome.SUCCESS or ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
+                    followup_type = "extend" if ver.outcome == VerificationOutcome.SUCCESS else "repair"
+                    follow = Task(id="ext", type=followup_type, properties={"program": prog_obj_path}, interest_dependencies=[prog_obj_path])
                     await agenda.add_task(follow)
-                    # Done implementing this idea.
+                    # Done with initial implementation of this idea.
                     await agenda.update_task(task.id,
                                              work_status=WorkStatus.DONE,
                                              new_notes=notes)
@@ -150,7 +153,7 @@ class LLMImplementer(Worker):
             except Exception as e:
                 await agenda.update_task(task.id, work_status=WorkStatus.FAILED, new_notes={"error": str(e)})
 
-            remaining -= 1
+            fuel -= 1
 
     def _slugify(self, s: str) -> str:
         # Simple slugify to produce a filesystem-friendly name

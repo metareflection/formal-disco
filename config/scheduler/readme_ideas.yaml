@@ -5,7 +5,9 @@ turn_fuel: 5
 workers:
   - _target_: worker.readme_idea_generator.ReadmeInspiredIdeaGenerator
     jsonl_path: data/gh-readmes-100k.jsonl
-    llm: ${llm.write}
+    llm:
+        _target_: langchain_openai.ChatOpenAI
+        model: gpt-4o-mini
 
   - _target_: worker.llm_implementer.LLMImplementer
     attempt_priority_factor: 0.9
@@ -13,10 +15,21 @@ workers:
     interest_goal_unproven: 1.5
     interest_fail: 0.5
     interest_recursion_gamma: 0.0
-    llm: ${llm.code}
+    llm:
+      _target_: langchain_openai.ChatOpenAI
+      model: gpt-5-mini
 
-  - _target_: worker.llm_fixer.LLMFixer
-    attempt_priority_factor: 0.9
-    interest_success_boost: 1.2
+    - _target_: worker.llm_fixer.LLMFixer
+      attempt_priority_factor: 0.9
+      interest_success_boost: 1.2
+      interest_recursion_gamma: 0.0
+    llm:
+      _target_: langchain_openai.ChatOpenAI
+      model: gpt-5-mini
+
+    - _target_: worker.editor_worker.EditorWorker
+    interest_success_boost: 1.1
     interest_recursion_gamma: 0.0
-    llm: ${llm.code}
+    llm:
+      _target_: langchain_openai.ChatOpenAI
+      model: gpt-5-mini

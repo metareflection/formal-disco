@@ -3,14 +3,15 @@
 from typing import Any, Optional
 import logging
 
-from agenda import Agenda, Object, Task, WorkStatus
+from agenda import Agenda, Task, WorkStatus
 
 from . import Worker
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from code_output_parser import CodeOutputParser
 
 from dafny import DafnyProgram, VerificationOutcome
+from patch import apply_text_diff, TEXT_DIFF_EXAMPLE, TEXT_BEFORE_EXAMPLE, TEXT_AFTER_EXAMPLE
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +44,28 @@ class LLMFixer(Worker):
                     (
                         "system",
                         (
-                            "You are an expert Dafny developer. You will be given a Dafny program that fails verification."
-                            " Return a corrected, self-contained Dafny program that addresses the verification issues."
+                            "You are an expert Dafny developer. You will be given a Dafny program that has errors "
+                            "pointed out by Dafny. These errors can be syntactic, or failures to verify the program (i.e., prove post-conditions or verify current assertions/invariants).\n"
+                            "Your job is to repair these errors by emitting a DIFF in a simple, line-based format.\n\n"
+                            "Diff format:\n"
+                            "- Lines starting with '@@' are anchors (search-forward markers). These don't modify the program, but just start a new 'block' of changes in your patch.\n"
+                            "- Lines starting with '=' keep that exact line: find it forward and advance the cursor.\n"
+                            "- Lines starting with '-' delete that exact line found forward.\n"
+                            "- Lines starting with '+' add a new line at the current cursor.\n\n"
+                            "- All lines should start with one of the special characters above and a space following them.\n"
+                            "Output ONLY the diff. No explanations.\n\nHere is an example of a diff:\n\n"
+                            "Text before:\n{example_before}\n\n"
+                            "Example of model output (diff in the format you must follow):\n{example_diff}\n\n"
+                            "Text after:\n{example_after}"
                         ),
                     ),
                     (
                         "human",
                         (
                             "Program:\n{program}\n\n"
-                            "Notes:\n{notes}\n\n"
-                            "Produce only the repaired Dafny source code. Do not include commentary."
+                            "Notes (verification output):\n{notes}\n\n"
+                            "Your goal is to fix the errors shown above by Dafny. Note that fixing these errors might require various kinds of changes, such as fixing the syntax, fixing the implementation of a method or function, adding new logical annotations (e.g., assertions, invariants, decreases/increases clauses, etc), introducing new lemmas that help prove existing assertions, or other changes.\n"
+                            "If there are too many errors, you can focus on fixing only a few of them in your diff.\n\n"
                         ),
                     ),
                 ]
@@ -60,12 +73,10 @@ class LLMFixer(Worker):
         else:
             self._prompt = prompt_template
 
-        self._chain = self._prompt | self._llm | StrOutputParser()
+        self._chain = self._prompt | self._llm | CodeOutputParser()
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
-        remaining = max(0, fuel)
-
-        while remaining > 0:
+        while fuel > 0:
             tasks = await agenda.get_tasks(type="repair", ignore_completed=True)
             if not tasks:
                 break
@@ -95,24 +106,36 @@ class LLMFixer(Worker):
 
                 prog_text = prog_obj.content.decode("utf-8")
 
-                # Attempt to read verification logs from object properties (set by implementer)
+                # Attempt to read verification logs from object properties
+                # (set by last worker to write to this program object)
                 props = getattr(prog_obj, 'properties', {}) or {}
                 ver_out = props.get('verification_stdout', '')
                 ver_err = props.get('verification_stderr', '')
 
                 prompt_notes = f"Output of dafny verify on this program:\nstdout:\n{ver_out}\n\nstderr:\n{ver_err}\n"
 
-                # Ask LLM to repair, providing verification logs
-                repaired_text = self._chain.invoke({"program": prog_text, "notes": prompt_notes}).strip()
+                # Ask LLM to produce a diff to repair the program.
+                diff_text = self._chain.invoke({
+                    "program": prog_text,
+                    "notes": prompt_notes,
+                    "example_diff": TEXT_DIFF_EXAMPLE,
+                    "example_before": TEXT_BEFORE_EXAMPLE,
+                    "example_after": TEXT_AFTER_EXAMPLE,
+                }).strip()
 
-                # Persist repaired program
-                repaired_obj_path = await agenda.create_object(Object(path=program_path,
-                                                                       type="dafny-program",
-                                                                       parents=[program_path],
-                                                                       content=repaired_text.encode("utf-8")))
+                # Apply diff; if it fails, mark ATTEMPTED and continue
+                try:
+                    repaired_text = apply_text_diff(prog_text, diff_text)
+                except Exception as e:
+                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"diff_error": str(e)})
+                    fuel -= 1
+                    continue
+
+                # Update the existing program object in place so patch history is maintained
+                await agenda.update_object(program_path, new_content=repaired_text.encode("utf-8"))
 
                 # Verify repaired program
-                repaired_prog = DafnyProgram(repaired_text, name=repaired_obj_path)
+                repaired_prog = DafnyProgram(repaired_text, name=program_path)
 
                 short_repaired = repaired_text if len(repaired_text) < 2000 else repaired_text[:2000] + "..."
                 logger.info("Verifying repaired Dafny program for task %s: %s", task.id, short_repaired)
@@ -121,22 +144,23 @@ class LLMFixer(Worker):
 
                 logger.info("Verification outcome for repair task %s: %s", task.id, ver.outcome.name)
 
-                # Save verification output on the repaired object
-                await agenda.update_object(repaired_obj_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
+                # Save verification output on the program object
+                await agenda.update_object(program_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
 
                 if ver.outcome == VerificationOutcome.SUCCESS:
                     # Boost interest on successful fix
-                    await agenda.update_object(repaired_obj_path, interest_factor=self._interest_success_boost, interest_recursion_gamma=self._interest_recursion_gamma)
+                    await agenda.update_object(program_path, interest_factor=self._interest_success_boost, interest_recursion_gamma=self._interest_recursion_gamma)
                     # Enqueue extend task and mark DONE
-                    follow = Task(id="ext", type="extend", properties={"program": repaired_obj_path}, interest_dependencies=[repaired_obj_path])
+                    follow = Task(id="ext", type="extend", properties={"program": program_path}, interest_dependencies=[program_path])
                     await agenda.add_task(follow)
-                    await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes={"program_path": repaired_obj_path, "verification": ver.outcome.name})
+                    await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes={"program_path": program_path, "verification": ver.outcome.name})
                 else:
                     # Mark the existing repair task as ATTEMPTED so it can be retried later
                     # Also decrease priority slightly.
-                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"program_path": repaired_obj_path, "verification": ver.outcome.name})
+                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"program_path": program_path, "verification": ver.outcome.name})
 
             except Exception as e:
+                logger.exception("Error processing repair task %s: %s", task.id, str(e))
                 await agenda.update_task(task.id, work_status=WorkStatus.FAILED, new_notes={"error": str(e)})
 
-            remaining -= 1
+            fuel -= 1
