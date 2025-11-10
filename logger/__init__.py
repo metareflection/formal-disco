@@ -27,3 +27,11 @@ class AgendaLogger(ABC):
         """Notify the logger that task `task_id` of type `task_type` entered `new_state`."""
         pass
 
+    @abstractmethod
+    def log_code_base_statistics(
+        self,
+        codebase_stats: dict[str, int],
+    ) -> None:
+        """Log aggregate statistics about the collection of programs we have so far."""
+        pass
+

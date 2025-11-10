@@ -231,6 +231,9 @@ class LocalAgenda(Agenda):
                 self._status = data['status']
                 self._objects = data.get('objects', {})
                 self._clock = data.get('clock', 0)
+            stats = self._compute_codebase_statistics()
+            logger.info(f"Loaded agenda checkpoint from {self._checkpoint_path}.")
+            logger.info(f"Codebase statistics: {stats}")
         except FileNotFoundError:
             logger.info('No checkpoint; starting empty agenda.')
         except Exception as e:
@@ -255,6 +258,12 @@ class LocalAgenda(Agenda):
             # Atomic rename: overwrite target with new file
             os.replace(tmp_path, self._checkpoint_path)
             logger.info(f"Checkpointed agenda to {self._checkpoint_path}.")
+
+            # Run global stats (slower) logging every time we checkpoint.
+            s = self._compute_codebase_statistics()
+            self._logger.log_code_base_statistics(s)
+            logger.info(f"Codebase statistics: {s}")
+
         except Exception as e:
             logger.warning(f"Failed to write checkpoint: {e}")
             # Clean up tmp file if something went wrong
@@ -519,3 +528,39 @@ class LocalAgenda(Agenda):
                             anc.interestingness *= propagated
                         except Exception:
                             pass
+
+    def _compute_codebase_statistics(self) -> dict[str, int]:
+        """
+        Compute global statistics about the whole collection of program objects we have.
+        """
+        stats: dict[str, int] = {}
+        for obj in self._objects.values():
+            if obj.type != "dafny-program":
+                continue
+            content = obj.content
+            if content is None:
+                continue
+            try:
+                text = content.decode("utf-8")
+            except Exception:
+                continue
+
+            lines = text.splitlines()
+            num_lines = len(lines)
+
+            stats["total_programs"] = stats.get("total_programs", 0) + 1
+            stats["total_lines"] = stats.get("total_lines", 0) + num_lines
+
+            if obj.properties.get("verification_outcome") == "SUCCESS":
+                stats["total_verified_programs"] = stats.get("total_verified_programs", 0) + 1
+                stats["loc_verified_programs"] = stats.get("loc_verified_programs", 0) + num_lines
+
+                SPECIAL_LINES = ["lemma", "function", "method", "datatype", "class",
+                                 "predicate", "invariant", "assert"]
+
+                for special in SPECIAL_LINES:
+                    key = f"total_{special}s"
+                    num_special = sum(1 for line in lines if line.strip().startswith(f"{special} "))
+                    stats[key] = stats.get(key, 0) + num_special
+
+        return stats

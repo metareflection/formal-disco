@@ -78,3 +78,11 @@ class WandbLogger(AgendaLogger):
             "program/total_lines": self._program_total_lines,
             "program/avg_lines": self._program_total_lines / self._program_count if self._program_count > 0 else 0,
         })
+
+    def log_code_base_statistics(
+        self,
+        codebase_stats: dict[str, int],
+    ) -> None:
+        """Log aggregate statistics about the collection of programs we have so far."""
+        wandb_stats = {f"codebase/{key}": value for key, value in codebase_stats.items()}
+        self._wandb.log(wandb_stats)
