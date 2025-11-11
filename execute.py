@@ -20,7 +20,7 @@ def execute(cmd, ext, v):
         f.write(v)
         f.close()
 
-        status = os.system("timeout 10s -k 5s %s %s >%s 2>%s" % (cmd, fn, outfn, errfn))
+        status = os.system("timeout -k 5s 10s %s %s >%s 2>%s" % (cmd, fn, outfn, errfn))
 
         f = open(outfn, "r", encoding='utf-8')
         outlog = f.read()
