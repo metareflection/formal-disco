@@ -46,18 +46,18 @@ class LLMImplementer(Worker):
                         (
                             "You are an expert Dafny programmer. Given a short idea or specification, output a"
                             " self-contained Dafny program that implements the idea."
-                            "Your program does not need to implement the entire idea, which might be overly ambitious to write in one go.\n"
+                            "Your program should NOT try to implement the entire idea, which is likely to be overly ambitious to write in one go.\n"
                             "This is just the beginning: you will later be able to extend and improve the program incrementally.\n"
-                            "You can start with just a few functions, a class with the simplest methods, a lemma, etc. You can also add comments on ideas to extend the program later, too.\n"
+                            "Start with e.g., a few functions at most, or a very basic class with only a couple of core methods, or prove a basic lemma, etc. You can also add comments on ideas to extend the program later, too.\n"
                             "The output must be valid Dafny code and"
-                            " compile/verify when possible. Keep this initial program concise (e.g., < 100 lines) and include any necessary helper methods or lemmas."
+                            " compile/verify when possible. Keep this initial program concise."
                         ),
                     ),
                     (
                         "human",
                         (
                             "Idea/specification:\n{idea}\n\n"
-                            "Produce only Dafny source code as the response. Do not include any commentary, headings, or markdown."
+                            "Produce only Dafny source code as the response."
                         ),
                     ),
                 ]
@@ -115,6 +115,11 @@ class LLMImplementer(Worker):
                 logger.info("Verifying generated Dafny program for task %s: %s", task.id, short_prog)
 
                 ver = prog.verify()
+
+                logger.info(f"Idea: {idea_text}")
+                logger.info(f"Generated program:\n{program_text}")
+                logger.info(f"Dafny stdout: {ver.stdout}")
+                logger.info(f"Dafny stderr: {ver.stderr}")
 
                 logger.info("Verification outcome for task %s: %s", task.id, ver.outcome.name)
 

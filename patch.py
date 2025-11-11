@@ -155,7 +155,7 @@ def apply_text_diff(text: str, diff: str) -> str:
             lines.insert(cursor, payload + "\n")
             cursor += 1
         else:
-            raise ValueError(f"Invalid diff line start character: {raw}")
+            pass # raise ValueError(f"Invalid diff line start character: {raw}")
 
     return "".join(lines)
 

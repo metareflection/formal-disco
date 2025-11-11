@@ -49,11 +49,11 @@ class LLMFixer(Worker):
                             "Your job is to repair these errors by emitting a DIFF in a simple, line-based format.\n\n"
                             "Diff format:\n"
                             "- Lines starting with '@@' are anchors (search-forward markers). These don't modify the program, but just start a new 'block' of changes in your patch.\n"
-                            "- Lines starting with '=' keep that exact line: find it forward and advance the cursor.\n"
+                            "- Lines starting with '=' keep that exact line: find it forward and advance the cursor. You typically only need a few of these after your @@ line to position the cursor for the actual changes: you don't need to copy much of the original file.\n"
                             "- Lines starting with '-' delete that exact line found forward.\n"
                             "- Lines starting with '+' add a new line at the current cursor.\n\n"
-                            "- All lines should start with one of the special characters above and a space following them.\n"
-                            "Output ONLY the diff. No explanations.\n\nHere is an example of a diff:\n\n"
+                            "- All diff lines should start with one of the special characters above and a space following them. Other lines will be completely ignored\n"
+                            "Here is an example of a diff:\n\n"
                             "Text before:\n{example_before}\n\n"
                             "Example of model output (diff in the format you must follow):\n{example_diff}\n\n"
                             "Text after:\n{example_after}"
@@ -65,7 +65,7 @@ class LLMFixer(Worker):
                             "Program:\n{program}\n\n"
                             "Notes (verification output):\n{notes}\n\n"
                             "Your goal is to fix the errors shown above by Dafny. Note that fixing these errors might require various kinds of changes, such as fixing the syntax, fixing the implementation of a method or function, adding new logical annotations (e.g., assertions, invariants, decreases/increases clauses, etc), introducing new lemmas that help prove existing assertions, or other changes.\n"
-                            "If there are too many errors, you can focus on fixing only a few of them in your diff.\n\n"
+                            # "If there are too many errors, you can focus on fixing only a few of them in your diff.\n\n"
                         ),
                     ),
                 ]
@@ -127,6 +127,10 @@ class LLMFixer(Worker):
                 try:
                     repaired_text = apply_text_diff(prog_text, diff_text)
                 except Exception as e:
+
+                    logger.warning("Failed to apply diff produced by LLM for repair task %s: %s", task.id, str(e))
+                    logger.info("Diff produced by LLM:\n%s", diff_text)
+
                     await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"diff_error": str(e)})
                     fuel -= 1
                     continue
@@ -144,6 +148,13 @@ class LLMFixer(Worker):
 
                 logger.info("Verification outcome for repair task %s: %s", task.id, ver.outcome.name)
 
+                logger.info("Program before fix:\n%s", prog_text)
+                logger.info("Dafny output before fix:\n%s", prompt_notes)
+                logger.info("Diff produced by LLM:\n%s", diff_text)
+                logger.info("Repaired program:\n%s", repaired_text)
+                logger.info("Dafny stdout after fix:\n%s", ver.stdout)
+                logger.info("Dafny stderr after fix:\n%s", ver.stderr)
+                logger.info("Verification outcome after fix: %s", ver.outcome)
                 # Save verification output on the program object
                 await agenda.update_object(program_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
 
