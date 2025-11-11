@@ -551,16 +551,20 @@ class LocalAgenda(Agenda):
             stats["total_programs"] = stats.get("total_programs", 0) + 1
             stats["total_lines"] = stats.get("total_lines", 0) + num_lines
 
-            if obj.properties.get("verification_outcome") == "SUCCESS":
-                stats["total_verified_programs"] = stats.get("total_verified_programs", 0) + 1
-                stats["loc_verified_programs"] = stats.get("loc_verified_programs", 0) + num_lines
-
+            if obj.properties.get("verification_outcome") != "FAIL":
                 SPECIAL_LINES = ["lemma", "function", "method", "datatype", "class",
                                  "predicate", "invariant", "assert"]
 
+                if obj.properties.get("verification_outcome") == "SUCCESS":
+                    stats["total_verified_programs"] = stats.get("total_verified_programs", 0) + 1
+                    stats["loc_verified_programs"] = stats.get("loc_verified_programs", 0) + num_lines
+                elif obj.properties.get("verification_outcome") == "GOAL_UNPROVEN":
+                    stats["total_unproven_programs"] = stats.get("total_unproven_programs", 0) + 1
+                    stats["loc_unproven_programs"] = stats.get("loc_unproven_programs", 0) + num_lines
+
                 for special in SPECIAL_LINES:
-                    key = f"total_{special}s"
+                    suffix = "" if obj.properties.get("verification_outcome") == "SUCCESS" else "_unproven"
+                    key = f"total_{special}s{suffix}"
                     num_special = sum(1 for line in lines if line.strip().startswith(f"{special} "))
                     stats[key] = stats.get(key, 0) + num_special
-
         return stats
