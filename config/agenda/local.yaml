@@ -5,4 +5,4 @@ defaults:
   - logger: wandb # noop
 
 checkpoint_path: "local-agenda.pkl"
-checkpoint_interval: 1000
+checkpoint_interval: 100
