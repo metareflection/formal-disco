@@ -79,39 +79,3 @@ async def run_with_cli(host: str, port: int, unix_socket: str, worker_type: str,
     finally:
         await agenda.close()
         logger.info(f"Worker {worker_type} finished after {turns} turns")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Run AgendaClient workers")
-    parser.add_argument("--host", default="127.0.0.1", help="AgendaServer host")
-    parser.add_argument("--port", type=int, default=9999, help="AgendaServer port")
-    parser.add_argument("--unix-socket", help="Unix socket path (alternative to TCP)")
-    parser.add_argument("--worker-type", choices=["generator", "implementer"], help="Type of worker to run")
-    parser.add_argument("--fuel", type=int, default=10, help="Fuel per worker turn")
-    parser.add_argument("--duration", type=float, help="Duration to run (seconds, default: forever)")
-    parser.add_argument("--hydra-config", help="Use Hydra config name instead of CLI args")
-
-    args = parser.parse_args()
-
-    try:
-        if args.hydra_config:
-            # Use Hydra configuration
-            asyncio.run(run_with_hydra(args.hydra_config))
-        else:
-            # Use CLI arguments
-            if not args.worker_type:
-                parser.error("--worker-type is required when not using --hydra-config")
-            asyncio.run(run_with_cli(
-                args.host,
-                args.port,
-                args.unix_socket,
-                args.worker_type,
-                args.fuel,
-                args.duration
-            ))
-    except KeyboardInterrupt:
-        logger.info("Interrupted by user")
-
-
-if __name__ == "__main__":
-    main()
