@@ -24,6 +24,7 @@ trap "rm -f $ADDRESS_FILE $ADDRESS_FILE.tmp" EXIT
 echo "Starting AgendaServer..."
 $PYTHON agenda_server.py \
     agenda=local \
+    agenda/logger=noop \
     server.server_address_path=$ADDRESS_FILE \
     agenda.checkpoint_path=/tmp/test-agenda.pkl &
 
@@ -70,11 +71,23 @@ echo
 
 # Now run a scheduler that connects using the address file
 echo "Starting scheduler with distributed agenda using server_address_path..."
-timeout 5 $PYTHON scheduler.py \
-    agenda=distributed \
-    agenda.server_address_path=$ADDRESS_FILE \
-    scheduler=example \
-    || true
+# Run with timeout (use gtimeout on macOS if available, otherwise just run briefly)
+if command -v timeout &> /dev/null; then
+    timeout 5 $PYTHON scheduler.py \
+        +agenda=distributed \
+        agenda.server_address_path=$ADDRESS_FILE \
+        +scheduler=example \
+        || true
+elif command -v gtimeout &> /dev/null; then
+    gtimeout 5 $PYTHON scheduler.py \
+        +agenda=distributed \
+        agenda.server_address_path=$ADDRESS_FILE \
+        +scheduler=example \
+        || true
+else
+    # No timeout available, just skip this part
+    echo "Note: timeout command not available, skipping scheduler test"
+fi
 
 echo
 echo "✓ Test completed successfully!"
