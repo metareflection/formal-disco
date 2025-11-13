@@ -43,11 +43,12 @@ class DummyImplementer(Worker):
 
         while remaining > 0:
             # Atomically claim next available task
-            result = await agenda.claim_next_task(type="implement")
+            result = await agenda.claim_next_tasks(type="implement")
             if result is None:
                 break
 
-            task, status = result
+            # claim_next_tasks returns a list
+            task, status = result[0]
 
             # Extract idea number.
             idea_path = task.properties.get('idea')

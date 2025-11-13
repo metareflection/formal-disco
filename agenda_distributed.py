@@ -11,10 +11,12 @@ Both support TCP connections, Unix domain sockets, and os.pipe().
 
 import asyncio
 import atexit
+import json
 import logging
 import os
 import pickle
 import signal
+import socket
 import sys
 from typing import Any, Optional, Union
 
@@ -55,11 +57,13 @@ class AgendaServer:
         host: Optional[str] = "127.0.0.1",
         port: Optional[int] = 9999,
         unix_socket: Optional[str] = None,
+        server_address_path: Optional[str] = None,
     ):
         self.agenda = agenda
         self.host = host
         self.port = port
         self.unix_socket = unix_socket
+        self.server_address_path = server_address_path
         self.server: Optional[asyncio.Server] = None
         self._running = False
         self._setup_signal_handlers()
@@ -129,8 +133,8 @@ class AgendaServer:
                 result = await self.agenda.update_status(**params)
             elif method == "update_notes":
                 result = await self.agenda.update_notes(**params)
-            elif method == "claim_next_task":
-                result = await self.agenda.claim_next_task(**params)
+            elif method == "claim_next_tasks":
+                result = await self.agenda.claim_next_tasks(**params)
             else:
                 raise ValueError(f"Unknown method: {method}")
 
@@ -164,9 +168,33 @@ class AgendaServer:
             addrs = ', '.join(str(sock.getsockname()) for sock in self.server.sockets)
             logger.info(f"AgendaServer listening on {addrs}")
 
+            # Write server address to file if requested
+            if self.server_address_path:
+                hostname = socket.gethostname()
+                self._write_server_address(hostname, self.port)
+
         self._running = True
         async with self.server:
             await self.server.serve_forever()
+
+    def _write_server_address(self, host: str, port: int):
+        """Write server address info to a JSON file for clients to discover."""
+        address_info = {
+            "host": host,
+            "port": port
+        }
+
+        try:
+            # Write atomically by writing to temp file and renaming
+            tmp_path = f"{self.server_address_path}.tmp"
+            with open(tmp_path, 'w') as f:
+                json.dump(address_info, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self.server_address_path)
+            logger.info(f"Wrote server address to {self.server_address_path}: {address_info}")
+        except Exception as e:
+            logger.error(f"Failed to write server address to {self.server_address_path}: {e}")
 
     async def serve_pipe(self, read_fd: int, write_fd: int):
         """Serve a single client over a pipe (e.g., from os.pipe())."""
@@ -211,6 +239,7 @@ class AgendaClient(Agenda):
         reader: Optional[asyncio.StreamReader] = None,
         writer: Optional[asyncio.StreamWriter] = None,
         timeout: float = 30.0,
+        server_address_path: Optional[str] = None,
     ):
         """
         Initialize AgendaClient.
@@ -219,16 +248,19 @@ class AgendaClient(Agenda):
         - host and port for TCP connection
         - unix_socket for Unix domain socket
         - reader and writer for custom stream (e.g., pipe)
+        - server_address_path to read host and port from a JSON file
         """
         self.host = host
         self.port = port
         self.unix_socket = unix_socket
         self.timeout = timeout
+        self.server_address_path = server_address_path
         self._request_counter = 0
         self._reader = reader
         self._writer = writer
         self._lock = asyncio.Lock()
         self._owns_connection = (reader is None and writer is None)
+        self._address_loaded = False
 
     @classmethod
     async def from_pipe(cls, read_fd: int, write_fd: int):
@@ -248,9 +280,27 @@ class AgendaClient(Agenda):
 
         return cls(reader=reader, writer=writer)
 
+    def _load_server_address(self):
+        """Load server address from JSON file if server_address_path is set."""
+        if self.server_address_path and not self._address_loaded:
+            try:
+                with open(self.server_address_path, 'r') as f:
+                    address_info = json.load(f)
+                self.host = address_info.get("host")
+                self.port = address_info.get("port")
+                self._address_loaded = True
+                logger.info(f"Loaded server address from {self.server_address_path}: {self.host}:{self.port}")
+            except FileNotFoundError:
+                raise RuntimeError(f"Server address file not found: {self.server_address_path}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to load server address from {self.server_address_path}: {e}")
+
     async def _connect(self):
         """Ensure connection to server."""
         if self._writer is None or self._writer.is_closing():
+            # Load server address from file if needed
+            self._load_server_address()
+
             if self.unix_socket:
                 self._reader, self._writer = await asyncio.open_unix_connection(self.unix_socket)
                 logger.debug(f"Connected to AgendaServer at {self.unix_socket}")
@@ -336,11 +386,12 @@ class AgendaClient(Agenda):
             new_notes=new_notes,
         )
 
-    async def claim_next_task(
+    async def claim_next_tasks(
         self,
         type: Optional[str] = None,
-    ) -> Optional[tuple[Task, TaskStatus]]:
-        return await self._call("claim_next_task", type=type)
+        batch_size: int = 1,
+    ) -> Optional[list[tuple[Task, TaskStatus]]]:
+        return await self._call("claim_next_tasks", type=type, batch_size=batch_size)
 
     async def close(self):
         """Close the connection to the server."""

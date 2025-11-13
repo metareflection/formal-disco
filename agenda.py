@@ -181,15 +181,22 @@ class Agenda(Protocol):
     ) -> None:
         await self.update_task(task_id, new_notes=new_notes)
 
-    async def claim_next_task(
+    async def claim_next_tasks(
         self,
         type: Optional[str] = None,
-    ) -> Optional[tuple[Task, TaskStatus]]:
+        batch_size: int = 1,
+    ) -> Optional[list[tuple[Task, TaskStatus]]]:
         """
-        Atomically find and claim the next available task.
+        Atomically find and claim the next available task(s).
 
-        Returns (Task, TaskStatus) if a task was claimed, None if no tasks available.
-        This is more efficient than separate get_tasks() + update_status() calls.
+        Args:
+            type: Optional task type filter
+            batch_size: Number of tasks to claim (default 1)
+
+        Returns:
+            List of (Task, TaskStatus) tuples if tasks were claimed, None if no tasks available.
+            For batch_size=1, returns a single-element list or None.
+            This is more efficient than separate get_tasks() + update_status() calls.
         """
         raise NotImplementedError
 
@@ -355,38 +362,54 @@ class LocalAgenda(Agenda):
 
             return task.id
 
+    def _effective_priority(self, task: Task, status: TaskStatus) -> float:
+        """
+        Compute effective priority: base priority multiplied by the product
+        of interestingness of all dependency objects.
+
+        This method is NOT thread-safe and should only be called while holding self._lock.
+        """
+        eff = status.priority
+        for obj_path in getattr(task, 'interest_dependencies', []) or []:
+            obj = self._objects.get(obj_path)
+            if obj is None:
+                continue
+            try:
+                eff *= float(getattr(obj, 'interestingness', 1.0))
+            except Exception:
+                pass
+        return eff
+
+    def _get_sorted_tasks(
+        self,
+        type: Optional[str] = None,
+        ignore_completed: bool = False,
+    ) -> list[tuple[Task, TaskStatus]]:
+        """
+        Get tasks sorted by effective priority (highest first).
+
+        This method is NOT thread-safe and should only be called while holding self._lock.
+        """
+        items: list[tuple[Task, TaskStatus]] = []
+        for tid, t in self._tasks.items():
+            if type is not None and t.type != type:
+                continue
+            s = self._status[tid]
+            if ignore_completed and s.is_completed():
+                continue
+            items.append((t, s))
+
+        # Sort by effective priority
+        items.sort(key=lambda ts: self._effective_priority(ts[0], ts[1]), reverse=True)
+        return items
+
     async def get_tasks(
         self,
         type: Optional[str] = None,
         ignore_completed: bool = False,
     ) -> list[tuple[Task, TaskStatus]]:
         async with self._lock:
-            items: list[tuple[Task, TaskStatus]] = []
-            for tid, t in self._tasks.items():
-                if type is not None and t.type != type:
-                    continue
-                s = self._status[tid]
-                if ignore_completed and s.is_completed():
-                    continue
-                items.append((t, s))
-
-            # Sort by effective priority: base priority multiplied by the product
-            # of interestingness of all dependency objects.
-            def effective_priority(ts: tuple[Task, TaskStatus]) -> float:
-                t, s = ts
-                eff = s.priority
-                for obj_path in getattr(t, 'interest_dependencies', []) or []:
-                    obj = self._objects.get(obj_path)
-                    if obj is None:
-                        continue
-                    try:
-                        eff *= float(getattr(obj, 'interestingness', 1.0))
-                    except Exception:
-                        pass
-                return eff
-
-            items.sort(key=effective_priority, reverse=True)
-            return items
+            return self._get_sorted_tasks(type=type, ignore_completed=ignore_completed)
 
     async def update_task(
         self,
@@ -581,40 +604,33 @@ class LocalAgenda(Agenda):
                     stats[key] = stats.get(key, 0) + num_special
         return stats
 
-    async def claim_next_task(
+    async def claim_next_tasks(
         self,
         type: Optional[str] = None,
-    ) -> Optional[tuple[Task, TaskStatus]]:
+        batch_size: int = 1,
+    ) -> Optional[list[tuple[Task, TaskStatus]]]:
         """
-        Atomically find and claim the next available task in a single lock acquisition.
+        Atomically find and claim the next available task(s) in a single lock acquisition.
 
         More efficient than get_tasks() + update_status() for high concurrency.
+        Supports batch claiming for efficient batch inference with local LLMs.
         """
         self.tick()
         async with self._lock:
-            # Find highest priority unclaimed task
-            best = None
-            best_priority = float('-inf')
+            # Get sorted tasks, excluding completed ones and only non-DOING tasks
+            sorted_tasks = self._get_sorted_tasks(type=type, ignore_completed=True)
 
-            for tid, task in self._tasks.items():
-                if type is not None and task.type != type:
-                    continue
+            # Claim up to batch_size tasks that are not currently being worked on
+            claimed = []
+            for task, status in sorted_tasks:
+                if status.work_status != WorkStatus.DOING:
+                    # Claim it
+                    status.attempts += 1
+                    status.work_status = WorkStatus.DOING
+                    self._logger.log_task_state(task.type, task.id, WorkStatus.DOING.value)
+                    claimed.append((task, status))
 
-                status = self._status[tid]
-                if status.is_completed() or status.work_status == WorkStatus.DOING:
-                    continue
+                    if len(claimed) >= batch_size:
+                        break
 
-                if status.priority > best_priority:
-                    best = (tid, task, status)
-                    best_priority = status.priority
-
-            if best is None:
-                return None
-
-            # Claim it
-            tid, task, status = best
-            status.attempts += 1
-            status.work_status = WorkStatus.DOING
-            self._logger.log_task_state(task.type, task.id, WorkStatus.DOING.value)
-
-            return (task, status)
+            return claimed if claimed else None
