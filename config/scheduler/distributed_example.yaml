@@ -1,0 +1,5 @@
+_target_: scheduler.RoundRobinScheduler
+turn_fuel: 10
+workers:
+  - _target_: worker.dummy_workers.DummyIdeaGenerator
+  - _target_: worker.dummy_workers.DummyImplementer

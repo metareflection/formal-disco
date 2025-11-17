@@ -1,0 +1,5 @@
+_target_: agenda_distributed.AgendaServer
+host: "127.0.0.1"
+port: 9999
+unix_socket: null
+server_address_path: null

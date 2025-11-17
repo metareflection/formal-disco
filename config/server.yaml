@@ -1,0 +1,3 @@
+defaults:
+  - agenda: local
+  - server: tcp

@@ -1,0 +1,4 @@
+_target_: agenda_distributed.AgendaServer
+host: null
+port: null
+unix_socket: "/tmp/agenda.sock"
