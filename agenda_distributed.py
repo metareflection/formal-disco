@@ -114,27 +114,10 @@ class AgendaServer:
         params = msg.get("params", {})
 
         try:
-            # Dispatch to agenda method
-            if method == "get_object":
-                result = await self.agenda.get_object(**params)
-            elif method == "create_object":
-                result = await self.agenda.create_object(**params)
-            elif method == "update_object":
-                result = await self.agenda.update_object(**params)
-            elif method == "add_task":
-                result = await self.agenda.add_task(**params)
-            elif method == "get_tasks":
-                result = await self.agenda.get_tasks(**params)
-            elif method == "update_task":
-                result = await self.agenda.update_task(**params)
-            elif method == "update_priority":
-                result = await self.agenda.update_priority(**params)
-            elif method == "update_status":
-                result = await self.agenda.update_status(**params)
-            elif method == "update_notes":
-                result = await self.agenda.update_notes(**params)
-            elif method == "claim_next_tasks":
-                result = await self.agenda.claim_next_tasks(**params)
+            # Dispatch to agenda method dynamically
+            if hasattr(self.agenda, method):
+                agenda_method = getattr(self.agenda, method)
+                result = await agenda_method(**params)
             else:
                 raise ValueError(f"Unknown method: {method}")
 
