@@ -2,6 +2,7 @@
 
 from typing import Any, Optional
 import logging
+import json
 
 from agenda import Agenda, Object, Task, WorkStatus
 
@@ -30,13 +31,14 @@ class LLMImplementer(Worker):
 
     def __init__(self, llm: Any, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9,
                  interest_success: float = 2.0, interest_goal_unproven: float = 1.5, interest_fail: float = 0.5,
-                 interest_recursion_gamma: float = 0.0) -> None:
+                 interest_recursion_gamma: float = 0.0, distill: bool = False) -> None:
         self._llm = llm
         self._attempt_priority_factor = float(attempt_priority_factor)
         self._interest_success = float(interest_success)
         self._interest_goal_unproven = float(interest_goal_unproven)
         self._interest_fail = float(interest_fail)
         self._interest_recursion_gamma = float(interest_recursion_gamma)
+        self._distill = distill
 
         if prompt_template is None:
             self._prompt = ChatPromptTemplate.from_messages(
@@ -128,6 +130,23 @@ class LLMImplementer(Worker):
                     VerificationOutcome.SUCCESS: self._interest_success,
                     VerificationOutcome.GOAL_UNPROVEN: self._interest_goal_unproven,
                 }.get(ver.outcome, self._interest_fail)
+
+                # Optionally dump a distillation example after the LLM call.
+                if self._distill:
+                    distill_obj = {
+                        "prompt": "implement",
+                        "arguments": {"idea": idea_text},
+                        "response": program_text,
+                        "outcome": ver.outcome.name.lower(),
+                    }
+                    await agenda.create_object(
+                        Object(
+                            path="distil/example.json",
+                            type="distill-example",
+                            parents=[idea_path],
+                            content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
+                        )
+                    )
 
                 # Save verification output into the program object's properties.
                 await agenda.update_object(

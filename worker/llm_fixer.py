@@ -2,8 +2,9 @@
 
 from typing import Any, Optional
 import logging
+import json
 
-from agenda import Agenda, Task, WorkStatus
+from agenda import Agenda, Object, Task, WorkStatus
 
 from . import Worker
 
@@ -31,12 +32,13 @@ class LLMFixer(Worker):
     """
 
     def __init__(self, llm: Any, max_attempts: int = 3, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9,
-                 interest_success_boost: float = 1.2, interest_recursion_gamma: float = 0.0) -> None:
+                 interest_success_boost: float = 1.2, interest_recursion_gamma: float = 0.0, distill: bool = False) -> None:
         self._llm = llm
         self._max_attempts = max_attempts
         self._attempt_priority_factor = float(attempt_priority_factor)
         self._interest_success_boost = float(interest_success_boost)
         self._interest_recursion_gamma = float(interest_recursion_gamma)
+        self._distill = bool(distill)
 
         if prompt_template is None:
             self._prompt = ChatPromptTemplate.from_messages(
@@ -114,14 +116,16 @@ class LLMFixer(Worker):
 
                 prompt_notes = f"Output of dafny verify on this program:\nstdout:\n{ver_out}\n\nstderr:\n{ver_err}\n"
 
-                # Ask LLM to produce a diff to repair the program.
-                diff_text = self._chain.invoke({
+                llm_args = {
                     "program": prog_text,
                     "notes": prompt_notes,
                     "example_diff": TEXT_DIFF_EXAMPLE,
                     "example_before": TEXT_BEFORE_EXAMPLE,
                     "example_after": TEXT_AFTER_EXAMPLE,
-                }).strip()
+                }
+
+                # Ask LLM to produce a diff to repair the program.
+                diff_text = self._chain.invoke(llm_args).strip()
 
                 # Apply diff; if it fails, mark ATTEMPTED and continue
                 try:
@@ -157,6 +161,22 @@ class LLMFixer(Worker):
                 logger.info("Verification outcome after fix: %s", ver.outcome)
                 # Save verification output on the program object
                 await agenda.update_object(program_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
+
+                if self._distill:
+                    distill_obj = {
+                        "prompt": "repair",
+                        "arguments": llm_args,
+                        "response": diff_text,
+                        "outcome": ver.outcome.name.lower(),
+                    }
+                    await agenda.create_object(
+                        Object(
+                            path="distil/example.json",
+                            type="distill-example",
+                            parents=[program_path],
+                            content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
+                        )
+                    )
 
                 if ver.outcome == VerificationOutcome.SUCCESS:
                     # Boost interest on successful fix

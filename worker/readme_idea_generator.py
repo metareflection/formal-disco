@@ -43,6 +43,7 @@ class ReadmeInspiredIdeaGenerator(Worker):
         llm: Any,
         rng: Optional[random.Random] = None,
         max_readme_chars: int = 2000,
+        distill: bool = False,
     ) -> None:
         self._rng = rng or random.Random()
         self._rows = self._load_jsonl(jsonl_path)
@@ -51,6 +52,7 @@ class ReadmeInspiredIdeaGenerator(Worker):
 
         self._llm = llm
         self._max_readme_chars = max_readme_chars
+        self._distill = distill
 
         self._prompt = ChatPromptTemplate.from_messages(
             [
@@ -93,6 +95,22 @@ class ReadmeInspiredIdeaGenerator(Worker):
 
             # Run the LLM synchronously (LangChain invoke is sync).
             idea_text = self._chain.invoke({"repo": repo, "readme": readme}).strip()
+
+            if self._distill:
+                distill_obj = {
+                    "prompt": "idea",
+                    "arguments": {"repo": repo, "readme": readme},
+                    "response": idea_text,
+                    "outcome": None,
+                }
+                await agenda.create_object(
+                    Object(
+                        path="distil/example.json",
+                        type="distill-example",
+                        parents=[],
+                        content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
+                    )
+                )
 
             # Persist as an 'idea' object.
             idea_filename = self._unique_idea_filename(repo)

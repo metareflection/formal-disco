@@ -2,8 +2,9 @@
 
 from typing import Any, Optional
 import logging
+import json
 
-from agenda import Agenda, Task, WorkStatus
+from agenda import Agenda, Object, Task, WorkStatus
 
 from . import Worker
 
@@ -39,10 +40,12 @@ class EditorWorker(Worker):
         prompt_template: Optional[ChatPromptTemplate] = None,
         interest_success_boost: float = 1.1,
         interest_recursion_gamma: float = 0.0,
+        distill: bool = False,
     ) -> None:
         self._llm = llm
         self._interest_success_boost = float(interest_success_boost)
         self._interest_recursion_gamma = float(interest_recursion_gamma)
+        self._distill = bool(distill)
 
         if prompt_template is None:
             self._prompt = ChatPromptTemplate.from_messages(
@@ -112,12 +115,13 @@ class EditorWorker(Worker):
                 prog_text = prog_obj.content.decode("utf-8")
 
                 # Ask the LLM for a diff in our format (include example in context)
-                diff_text = self._chain.invoke({
+                llm_args = {
                     "program": prog_text,
                     "example_diff": TEXT_DIFF_EXAMPLE,
                     "example_before": TEXT_BEFORE_EXAMPLE,
                     "example_after": TEXT_AFTER_EXAMPLE,
-                }).strip()
+                }
+                diff_text = self._chain.invoke(llm_args).strip()
 
                 try:
                     updated_text = apply_text_diff(prog_text, diff_text)
@@ -151,6 +155,22 @@ class EditorWorker(Worker):
                         "verification_stderr": ver.stderr,
                     },
                 )
+
+                if self._distill:
+                    distill_obj = {
+                        "prompt": "extend",
+                        "arguments": llm_args,
+                        "response": diff_text,
+                        "outcome": ver.outcome.name.lower(),
+                    }
+                    await agenda.create_object(
+                        Object(
+                            path="distil/example.json",
+                            type="distill-example",
+                            parents=[program_path],
+                            content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
+                        )
+                    )
 
                 if ver.outcome == VerificationOutcome.SUCCESS:
                     # Boost interest slightly

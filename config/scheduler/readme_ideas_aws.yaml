@@ -5,12 +5,14 @@ turn_fuel: 5
 workers:
   - _target_: worker.readme_idea_generator.ReadmeInspiredIdeaGenerator
     jsonl_path: data/gh-readmes-100k.jsonl
+    distill: true
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: global.anthropic.claude-sonnet-4-20250514-v1:0
+      model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
 
   - _target_: worker.llm_implementer.LLMImplementer
+    distill: true
     attempt_priority_factor: 0.9
     interest_success: 2.0
     interest_goal_unproven: 1.5
@@ -18,22 +20,24 @@ workers:
     interest_recursion_gamma: 0.0
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: global.anthropic.claude-sonnet-4-20250514-v1:0
+      model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
 
   - _target_: worker.llm_fixer.LLMFixer
+    distill: true
     attempt_priority_factor: 0.9
     interest_success_boost: 1.2
     interest_recursion_gamma: 0.0
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: global.anthropic.claude-sonnet-4-20250514-v1:0
+      model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
 
   - _target_: worker.editor_worker.EditorWorker
+    distill: true
     interest_success_boost: 1.1
     interest_recursion_gamma: 0.0
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: global.anthropic.claude-sonnet-4-20250514-v1:0
+      model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
