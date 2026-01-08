@@ -16,10 +16,7 @@ import os
 import uuid
 import logging
 from dataclasses import dataclass, field
-try:
-    from enum import StrEnum  # works in Python 3.11+
-except ImportError:
-    from strenum import StrEnum  # works if PyPI package installed
+from enum import StrEnum
 from typing import Any, Optional, Iterable, Protocol
 
 from logger import AgendaLogger
@@ -598,10 +595,11 @@ class LocalAgenda(Agenda):
                     stats["loc_unproven_programs"] = stats.get("loc_unproven_programs", 0) + num_lines
 
                 for special in SPECIAL_LINES:
-                    suffix = "" if obj.properties.get("verification_outcome") == "SUCCESS" else "_unproven"
-                    key = f"total_{special}s{suffix}"
+                    suffix = "_verified" if obj.properties.get("verification_outcome") == "SUCCESS" else "_all"
+                    key = f"{special}_count{suffix}"
                     num_special = sum(1 for line in lines if line.strip().startswith(f"{special} "))
                     stats[key] = stats.get(key, 0) + num_special
+
         return stats
 
     async def claim_next_tasks(
