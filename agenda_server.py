@@ -26,8 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 @main(config_path="config", config_name="server", version_base=None)
-def _main(cfg: DictConfig) -> None:
-    # Instantiate the agenda and server
+def _main(cfg: DictConfig):
     agenda = instantiate(cfg.agenda)
     server: AgendaServer = instantiate(cfg.server, agenda=agenda)
 

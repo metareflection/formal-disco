@@ -1,11 +1,11 @@
 write:
   _target_: langchain_openai.ChatOpenAI
-  model: Qwen/Qwen3-4B-Instruct-2507
+  model: qwen3-coder-flash
   base_url: ${oc.env:VLLM_BASE_URL,http://localhost:8000/v1}
   api_key: ${oc.env:VLLM_API_KEY,EMPTY}
 
 code:
   _target_: langchain_openai.ChatOpenAI
-  model: Qwen/Qwen3-4B-Instruct-2507
+  model: qwen3-coder-flash
   base_url: ${oc.env:VLLM_BASE_URL,http://localhost:8000/v1}
   api_key: ${oc.env:VLLM_API_KEY,EMPTY}

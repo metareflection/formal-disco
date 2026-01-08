@@ -9,6 +9,7 @@ be distributed so that we can spawn async workers on many machines.
 
 import atexit
 import asyncio
+import datetime
 import signal
 import threading
 import pickle
@@ -24,6 +25,7 @@ from logger.noop import NoOpLogger
 from patch import compute_reverse_patch
 
 logger = logging.getLogger(__name__)
+
 
 
 @dataclass(slots=True, kw_only=True)
@@ -219,6 +221,7 @@ class LocalAgenda(Agenda):
             checkpoint_path: Optional[str] = None,
             checkpoint_interval: Optional[int] = 50,
             logger: Optional[AgendaLogger] = None,
+            benchmark_codebase_time: Optional[int] = 5*60,
     ) -> None:
         self._lock = asyncio.Lock()
         self._tasks: dict[str, Task] = {}
@@ -232,6 +235,12 @@ class LocalAgenda(Agenda):
         self._logger = logger or NoOpLogger()
 
         self._load()
+
+        self._benchmark_codebase_at = \
+            (None if benchmark_codebase_time is None
+             else datetime.datetime.now() +
+                  datetime.timedelta(seconds=benchmark_codebase_time))
+
         # FIXME: add handlers to handle SIGTERM, SIGINT, etc.
         # atexit alone is not really robust.
         atexit.register(self._checkpoint)
@@ -295,6 +304,14 @@ class LocalAgenda(Agenda):
         Increment clock and checkpoint if needed.
         """
         self._clock += 1
+
+        if self._benchmark_codebase_at:
+            if datetime.datetime.now() >= self._benchmark_codebase_at:
+                s = self._compute_codebase_statistics()
+                s = {f'benchmark/{k}': v for k, v in s.items()}
+                self._logger.log_code_base_statistics(s)
+                self._benchmark_codebase_at = None
+
         if self._checkpoint_interval and self._clock % self._checkpoint_interval == 0:
             self._checkpoint()
 

@@ -1,5 +1,2 @@
 _target_: agenda_distributed.AgendaClient
-host: "127.0.0.1"
-port: 9999
-timeout: 30.0
-server_address_path: null
+server_address_path: /n/home03/poesia/agenda_server_address.json
