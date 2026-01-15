@@ -1,0 +1,46 @@
+# Distillation training config (used by: `python distill.py sft`)
+
+# Input agenda checkpoint(s)
+# Can be a single pickle path (string), or a list of pickle paths.
+data: local-agenda.pkl
+# Example:
+# data:
+#   - outputs/2025-10-02/local-agenda.pkl
+#   - outputs/2025-10-09/local-agenda.pkl
+
+# HF model id
+model_id: Qwen/Qwen3-Coder-30B-A3B-Instruct
+
+# Output directory (relative to Hydra run dir unless absolute)
+output_dir: sft-out
+
+# Whether to filter to success only examples
+success_only: true
+
+# Whether to also accept goal_unproven as success
+treat_goal_unproven_as_success: false
+
+# Training
+max_seq_length: 4096
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 4
+learning_rate: 2.0e-4
+num_train_epochs: 1.0
+warmup_ratio: 0.03
+lr_scheduler_type: cosine
+logging_steps: 10
+save_steps: 200
+seed: 0
+
+# LoRA
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+# If null, TRL/PEFT will pick a default. You can also set explicitly, e.g.:
+# lora_target_modules: [q_proj, k_proj, v_proj, o_proj]
+lora_target_modules: null
+
+# W&B
+wandb: true
+wandb_project: formal-disco
+wandb_run_name: null
