@@ -16,13 +16,14 @@ import argparse
 import json
 import pickle
 import os
+import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
 from datasets import Dataset
-from peft import LoraConfig
+from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
 from trl import SFTTrainer
 
@@ -31,8 +32,6 @@ from omegaconf import DictConfig
 
 
 DEFAULT_HF_MODEL_ID = "Qwen/Qwen3-Coder-30B-A3B-Instruct"
-
-
 DISTIL_PREFIX = "distil/"
 
 
@@ -225,7 +224,6 @@ def _train_with_trl(
         if wandb_run_name:
             os.environ.setdefault("WANDB_NAME", wandb_run_name)
         os.environ.setdefault("WANDB_LOG_MODEL", "false")
-        # Trainer will pick this up.
         os.environ.setdefault("WANDB_WATCH", "false")
 
     if not records:
@@ -235,7 +233,6 @@ def _train_with_trl(
 
     tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
     if tokenizer.pad_token is None:
-        # Common for decoder-only models.
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
@@ -250,8 +247,10 @@ def _train_with_trl(
         lora_dropout=float(lora_dropout),
         bias="none",
         task_type="CAUSAL_LM",
-        target_modules=lora_target_modules,
+        target_modules="all-linear",
     )
+
+    model = get_peft_model(model, peft_config)
 
     report_to = ["wandb"] if use_wandb else ["none"]
 
@@ -285,11 +284,7 @@ def _train_with_trl(
 
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
         train_dataset=ds,
-        peft_config=peft_config,
-        dataset_text_field=None,
-        max_seq_length=int(max_seq_length),
         args=training_args,
         formatting_func=_formatting_func,
     )
@@ -338,13 +333,11 @@ def _main_sft() -> None:
         save_steps: int = 200
         seed: int = 0
 
-        # LoRA
         lora_r: int = 16
         lora_alpha: int = 32
         lora_dropout: float = 0.05
         lora_target_modules: list[str] | None = None
 
-        # W&B
         wandb: bool = True
         wandb_project: str | None = None
         wandb_run_name: str | None = None
@@ -361,11 +354,8 @@ def _main_sft() -> None:
         pickle_paths: list[str]
         if isinstance(c.data, str):
             pickle_paths = [c.data]
-        elif isinstance(c.data, list):
-            # Defensive: ensure we only pass strings/paths downstream.
-            pickle_paths = [str(p) for p in c.data]
         else:
-            raise TypeError(f"cfg.data must be a path or list of paths, got: {type(c.data)!r}")
+            pickle_paths = [str(p) for p in c.data]
 
         records = build_sft_records(
             pickle_paths=pickle_paths,
@@ -415,10 +405,13 @@ def main(argv: list[str] | None = None) -> int:
     sft_p.set_defaults(func=lambda _args: _main_sft())
 
     ns = parser.parse_args(argv)
+
+    # Remove command from argv (hack to make Hydra not think sft is an override).
+    sys.argv = [s for s in sys.argv if s not in ("stats", "sft")]
+
     ns.func(ns)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-5

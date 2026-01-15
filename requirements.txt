@@ -4,7 +4,7 @@ langchain_core
 langchain_openai
 langchain-aws
 langchain-ollama
-triton==3.5.1
+triton
 boto3
 wandb
 pytest
