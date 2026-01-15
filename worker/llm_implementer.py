@@ -11,6 +11,8 @@ from . import Worker
 from langchain_core.prompts import ChatPromptTemplate
 from code_output_parser import CodeOutputParser
 
+from prompt import system_implement, format_implement_user
+
 from dafny import DafnyProgram, VerificationOutcome
 
 logger = logging.getLogger(__name__)
@@ -45,22 +47,11 @@ class LLMImplementer(Worker):
                 [
                     (
                         "system",
-                        (
-                            "You are an expert Dafny programmer. Given a short idea or specification, output a"
-                            " self-contained Dafny program that implements the idea."
-                            "Your program should NOT try to implement the entire idea, which is likely to be overly ambitious to write in one go.\n"
-                            "This is just the beginning: you will later be able to extend and improve the program incrementally.\n"
-                            "Start with e.g., a few functions at most, or a very basic class with only a couple of core methods, or prove a basic lemma, etc. You can also add comments on ideas to extend the program later, too.\n"
-                            "The output must be valid Dafny code and"
-                            " compile/verify when possible. Keep this initial program concise."
-                        ),
+                        system_implement(),
                     ),
                     (
                         "human",
-                        (
-                            "Idea/specification:\n{idea}\n\n"
-                            "Produce only Dafny source code as the response."
-                        ),
+                        format_implement_user(idea="{idea}"),
                     ),
                 ]
             )

@@ -11,6 +11,8 @@ from . import Worker
 from langchain_core.prompts import ChatPromptTemplate
 from code_output_parser import CodeOutputParser
 
+from prompt import format_repair_user, system_repair
+
 from dafny import DafnyProgram, VerificationOutcome
 from patch import apply_text_diff, TEXT_DIFF_EXAMPLE, TEXT_BEFORE_EXAMPLE, TEXT_AFTER_EXAMPLE
 
@@ -38,37 +40,22 @@ class LLMFixer(Worker):
         self._attempt_priority_factor = float(attempt_priority_factor)
         self._interest_success_boost = float(interest_success_boost)
         self._interest_recursion_gamma = float(interest_recursion_gamma)
-        self._distill = bool(distill)
+        self._distill = distill
 
         if prompt_template is None:
             self._prompt = ChatPromptTemplate.from_messages(
                 [
                     (
                         "system",
-                        (
-                            "You are an expert Dafny developer. You will be given a Dafny program that has errors "
-                            "pointed out by Dafny. These errors can be syntactic, or failures to verify the program (i.e., prove post-conditions or verify current assertions/invariants).\n"
-                            "Your job is to repair these errors by emitting a DIFF in a simple, line-based format.\n\n"
-                            "Diff format:\n"
-                            "- Lines starting with '@@' are anchors (search-forward markers). These don't modify the program, but just start a new 'block' of changes in your patch.\n"
-                            "- Lines starting with '=' keep that exact line: find it forward and advance the cursor. You typically only need a few of these after your @@ line to position the cursor for the actual changes: you don't need to copy much of the original file.\n"
-                            "- Lines starting with '-' delete that exact line found forward.\n"
-                            "- Lines starting with '+' add a new line at the current cursor.\n\n"
-                            "- All diff lines should start with one of the special characters above and a space following them. Other lines will be completely ignored\n"
-                            "Here is an example of a diff:\n\n"
-                            "Text before:\n{example_before}\n\n"
-                            "Example of model output (diff in the format you must follow):\n{example_diff}\n\n"
-                            "Text after:\n{example_after}"
+                        system_repair(
+                            example_before="{example_before}",
+                            example_diff="{example_diff}",
+                            example_after="{example_after}",
                         ),
                     ),
                     (
                         "human",
-                        (
-                            "Program:\n{program}\n\n"
-                            "Notes (verification output):\n{notes}\n\n"
-                            "Your goal is to fix the errors shown above by Dafny. Note that fixing these errors might require various kinds of changes, such as fixing the syntax, fixing the implementation of a method or function, adding new logical annotations (e.g., assertions, invariants, decreases/increases clauses, etc), introducing new lemmas that help prove existing assertions, or other changes.\n"
-                            # "If there are too many errors, you can focus on fixing only a few of them in your diff.\n\n"
-                        ),
+                        format_repair_user(program="{program}", notes="{notes}"),
                     ),
                 ]
             )

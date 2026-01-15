@@ -11,6 +11,8 @@ from . import Worker
 from langchain_core.prompts import ChatPromptTemplate
 from code_output_parser import CodeOutputParser
 
+from prompt import format_extend_user, system_extend
+
 from dafny import DafnyProgram, VerificationOutcome
 from patch import apply_text_diff, TEXT_DIFF_EXAMPLE, TEXT_BEFORE_EXAMPLE, TEXT_AFTER_EXAMPLE
 
@@ -45,36 +47,22 @@ class EditorWorker(Worker):
         self._llm = llm
         self._interest_success_boost = float(interest_success_boost)
         self._interest_recursion_gamma = float(interest_recursion_gamma)
-        self._distill = bool(distill)
+        self._distill = distill
 
         if prompt_template is None:
             self._prompt = ChatPromptTemplate.from_messages(
                 [
                     (
                         "system",
-                        (
-                            "You are an expert Dafny editor. You will be given a Dafny program.\n"
-                            "Your job is to EXPAND or improve it by generating a diff in the following simple format:\n\n"
-                            "- Lines starting with '@@' are anchors (search-forward markers). These don't modify the program, but just start a new 'block' of changes in your patch.\n"
-                            "- Lines starting with '=' keep that exact line: find it forward and advance the cursor.\n"
-                            "- Lines starting with '-' delete that exact line found forward.\n"
-                            "- Lines starting with '+' add a new line at the current cursor.\n\n"
-                            "- All lines should start with one of the special characters above and a space following them.\n"
-                            "Output ONLY the diff. No explanations.\n\nHere is an example of a diff:\n\n"
-                            "Text before:\n{example_before}\n\n"
-                            "Example of model output (diff in the format you must follow):\n{example_diff}\n\n"
-                            "Text after:\n{example_after}"
+                        system_extend(
+                            example_before="{example_before}",
+                            example_diff="{example_diff}",
+                            example_after="{example_after}",
                         ),
                     ),
                     (
                         "human",
-                        (
-                            "Current program:\n{program}\n\n"
-                            "Goal: Expand or improve the program by proposing a diff.\n"
-                            "Your diff can add a new method or classes, new lemmas, tests, logical annotations (e.g., assertions, invariants, decreases, etc) to the current program, improve or edit pre/post-conditions, etc.\n"
-                            "Your diff should be focused on one goal, which you are free to decide what to pursue.\n"
-                            "The overall goal is to generate interesting Dafny programs for training AI assistants for a variety of tasks (synthesis, verification, edit)."
-                        ),
+                        format_extend_user(program="{program}"),
                     ),
                 ]
             )

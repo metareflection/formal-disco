@@ -14,7 +14,10 @@ from . import Worker
 from agenda import Agenda, Object, Task, WorkStatus  # already used above
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+
+from code_output_parser import CodeOutputParser
+
+from prompt import format_idea_user, system_idea
 
 logger = logging.getLogger(__name__)
 
@@ -58,33 +61,17 @@ class ReadmeInspiredIdeaGenerator(Worker):
             [
                 (
                     "system",
-                    (
-                        "You are a helpful assistant that proposes short, precise ideas for Dafny programs "
-                        "that can be fully specified and verified. You will receive a repository name and a README, "
-                        "and you must output exactly one concise idea and high-level specification for a Dafny program "
-                        "INSPIRED BY the repository. The repository is most likely unrelated to verified programming, so "
-                        "it is OK to adapt or reinterpret the README and repository names as long as you attempt to "
-                        "keep its broad theme."
-                    ),
+                    system_idea(),
                 ),
                 (
                     "human",
-                    (
-                        "Repository: {repo}\n\n"
-                        "README:\n"
-                        "{readme}\n\n"
-                        "Task:\n"
-                        " - Propose one idea for a Dafny program that could be implemented and verified.\n"
-                        " - Keep it simple and self-contained.\n"
-                        " - Include a short specification: e.g., preconditions, postconditions, broadly what to verify.\n"
-                        " - Output only the idea/spec"
-                    ),
+                    format_idea_user(repo="{repo}", readme="{readme}"),
                 ),
             ]
         )
 
         # Chain: prompt -> LLM -> text
-        self._chain = self._prompt | self._llm | StrOutputParser()
+        self._chain = self._prompt | self._llm | CodeOutputParser()
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
         for _ in range(fuel):
@@ -101,7 +88,7 @@ class ReadmeInspiredIdeaGenerator(Worker):
                     "prompt": "idea",
                     "arguments": {"repo": repo, "readme": readme},
                     "response": idea_text,
-                    "outcome": None,
+                    "outcome": "success",
                 }
                 await agenda.create_object(
                     Object(
