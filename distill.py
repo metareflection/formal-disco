@@ -140,7 +140,7 @@ def _iter_distill_examples_from_pickle(pickle_path: str | Path) -> Iterable[dict
 
 
 def build_sft_records(
-    pickle_path: str | Path,
+    pickle_paths: list[str | Path],
     success_only: bool,
     outcome_success_values: tuple[str, ...] = ("success",),
 ) -> list[dict[str, str]]:
@@ -155,36 +155,36 @@ def build_sft_records(
     from patch import TEXT_BEFORE_EXAMPLE, TEXT_DIFF_EXAMPLE, TEXT_AFTER_EXAMPLE
 
     records: list[dict[str, str]] = []
+    for pickle_path in pickle_paths:
+        for ex in _iter_distill_examples_from_pickle(pickle_path):
+            kind = str(ex.get("prompt", "unknown"))
+            args = ex.get("arguments")
+            if not isinstance(args, dict):
+                continue
 
-    for ex in _iter_distill_examples_from_pickle(pickle_path):
-        kind = str(ex.get("prompt", "unknown"))
-        args = ex.get("arguments")
-        if not isinstance(args, dict):
-            continue
+            outcome = ex.get("outcome")
+            outcome_s = "" if outcome is None else str(outcome).lower()
 
-        outcome = ex.get("outcome")
-        outcome_s = "" if outcome is None else str(outcome).lower()
+            if success_only and outcome_s not in outcome_success_values:
+                continue
 
-        if success_only and outcome_s not in outcome_success_values:
-            continue
+            response = ex.get("response")
+            if response is None:
+                continue
+            response_s = str(response)
 
-        response = ex.get("response")
-        if response is None:
-            continue
-        response_s = str(response)
+            try:
+                messages = reconstruct_chat_messages(
+                    kind,
+                    args,
+                    example_before=TEXT_BEFORE_EXAMPLE,
+                    example_diff=TEXT_DIFF_EXAMPLE,
+                    example_after=TEXT_AFTER_EXAMPLE,
+                )
+            except Exception:
+                continue
 
-        try:
-            messages = reconstruct_chat_messages(
-                kind,
-                args,
-                example_before=TEXT_BEFORE_EXAMPLE,
-                example_diff=TEXT_DIFF_EXAMPLE,
-                example_after=TEXT_AFTER_EXAMPLE,
-            )
-        except Exception:
-            continue
-
-        records.append({"messages": json.dumps(messages, ensure_ascii=False), "completion": response_s})
+            records.append({"messages": json.dumps(messages, ensure_ascii=False), "completion": response_s})
 
     return records
 
@@ -316,7 +316,10 @@ def _main_sft() -> None:
 
     @dataclass
     class SftCfg:
-        data: str = "local-agenda.pkl"
+        # One or more agenda checkpoint pickle paths.
+        # Hydra config (`config/distill.yaml`) may provide this as a single string
+        # or a YAML list of strings.
+        data: str | list[str] = "local-agenda.pkl"
         model_id: str = DEFAULT_HF_MODEL_ID
         output_dir: str = "sft-out"
         success_only: bool = True
@@ -348,15 +351,24 @@ def _main_sft() -> None:
 
     @hydra_main(config_path="config", config_name="distill", version_base=None)
     def run(cfg: DictConfig) -> None:
-        # Merge user cfg into our typed defaults (simple, no schema enforcement)
+        # Merge user cfg into typed defaults
         c = SftCfg(**{k: v for k, v in cfg.items()})
 
         success_values = ("success",)
         if c.treat_goal_unproven_as_success:
             success_values = ("success", "goal_unproven")
 
+        pickle_paths: list[str]
+        if isinstance(c.data, str):
+            pickle_paths = [c.data]
+        elif isinstance(c.data, list):
+            # Defensive: ensure we only pass strings/paths downstream.
+            pickle_paths = [str(p) for p in c.data]
+        else:
+            raise TypeError(f"cfg.data must be a path or list of paths, got: {type(c.data)!r}")
+
         records = build_sft_records(
-            pickle_path=c.data,
+            pickle_paths=pickle_paths,
             success_only=bool(c.success_only),
             outcome_success_values=success_values,
         )
