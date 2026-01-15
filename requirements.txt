@@ -4,7 +4,15 @@ langchain_core
 langchain_openai
 langchain-aws
 langchain-ollama
-triton==3.1.0
+triton==3.5.1
 boto3
 wandb
 pytest
+
+# SFT / fine-tuning (distill.py sft)
+torch
+transformers
+datasets
+accelerate
+peft
+trl
