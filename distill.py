@@ -296,6 +296,7 @@ def _train_with_trl(
     tokenizer.save_pretrained(output_dir)
 
     # Merge LoRA into base model weights and save a merged checkpoint for inference.
+    # vLLM can only load this merged model, not the model with LoRA adapters.
     merged_dir = str(Path(output_dir) / "merged")
     os.makedirs(merged_dir, exist_ok=True)
     merged_model = trainer.model.merge_and_unload()
