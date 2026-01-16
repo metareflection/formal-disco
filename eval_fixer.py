@@ -444,8 +444,10 @@ def main():
 
     parser.add_argument('--benchmark-path', type=str, default='DafnyBench',
                         help='Path to DafnyBench directory')
-    parser.add_argument('--num-programs', type=int, default=50,
-                        help='Number of programs to evaluate')
+    parser.add_argument('--num-programs', type=int, default=None,
+                        help='Number of programs to evaluate (default: all)')
+    parser.add_argument('--fraction', type=float, default=None,
+                        help='Fraction of dataset to use, e.g. 0.1 for 10%% (applied after filtering)')
     parser.add_argument('--max-attempts', type=int, default=3,
                         help='Maximum repair attempts per program')
     parser.add_argument('--output', type=str, default=None,
@@ -476,9 +478,16 @@ def main():
         programs = filter_nontrivial_programs(programs, args.cache_path)
         logger.info(f"Found {len(programs)} nontrivial programs")
 
-    # Limit to num_programs
-    programs = programs[:args.num_programs]
-    logger.info(f"Evaluating on {len(programs)} programs")
+    # Limit by fraction or num_programs
+    if args.fraction is not None:
+        num_to_use = max(1, int(len(programs) * args.fraction))
+        programs = programs[:num_to_use]
+        logger.info(f"Using {args.fraction*100:.0f}% of dataset: {len(programs)} programs")
+    elif args.num_programs is not None:
+        programs = programs[:args.num_programs]
+        logger.info(f"Evaluating on {len(programs)} programs")
+    else:
+        logger.info(f"Evaluating on all {len(programs)} programs")
 
     if not programs:
         logger.error("No programs to evaluate!")
