@@ -37,6 +37,41 @@ The script tries several directory structures automatically:
 - `<benchmark-path>/dataset/hints_removed/`
 - `<benchmark-path>/hints_removed/`
 
+## Caching
+
+The script caches verification outcomes to avoid re-verifying all programs on each run.
+
+**How it works:**
+1. First run: verifies each program to check if it's trivial (already verifies), saves results to cache
+2. Subsequent runs: reads from cache, skips verification
+
+**Cache location:** `.fixer_outcome_cache.json` (configurable via `--cache-path`)
+
+```bash
+# First run - slow (verifies 782 programs to filter trivial ones)
+python eval_fixer.py --model gpt-4o --fraction 0.1
+
+# Second run - fast (uses cached verification outcomes)
+python eval_fixer.py --model gpt-4o --fraction 0.1
+
+# Use a different cache file
+python eval_fixer.py --model gpt-4o --cache-path my_cache.json
+
+# Skip filtering entirely (run on all programs, even trivial ones)
+python eval_fixer.py --model gpt-4o --no-filter
+```
+
+**Cache format:**
+```json
+{
+  "Clover_binary_search_no_hints": "GOAL_UNPROVEN",
+  "Clover_bubble_sort_no_hints": "FAIL",
+  "Clover_abs_no_hints": "SUCCESS"
+}
+```
+
+Programs with `"SUCCESS"` are filtered out (they're trivial - already verify without fixes).
+
 ## Dependencies
 
 The script imports from existing `formal-disco` modules:
