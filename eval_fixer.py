@@ -8,8 +8,19 @@ abstraction) and evaluates it on adding annotations to DafnyBench programs.
 The logic is copied directly from worker/llm_fixer.py.
 
 Usage:
+    # Using a simple model name (convenience)
     python eval_fixer.py --model gpt-4o --num-programs 50 --max-attempts 3
-    python eval_fixer.py --model claude-3-5-sonnet-20241022 --num-programs 100
+
+    # Using a Hydra LLM config (from config/llm/)
+    python eval_fixer.py --llm-config openai --num-programs 50
+    python eval_fixer.py --llm-config aws --num-programs 50
+    python eval_fixer.py --llm-config vllm --num-programs 50
+
+    # Using a custom config file path
+    python eval_fixer.py --llm-config config/llm/openai.yaml --num-programs 50
+
+    # Hydra overrides
+    python eval_fixer.py --llm-config openai --llm-override "model=gpt-4-turbo"
 """
 
 import os
@@ -352,12 +363,85 @@ def create_llm(model_name: str, temperature: float = 0.0):
         raise ValueError(f"Unknown model type: {model_name}. Supported prefixes: gpt-*, o1*, o3*, claude-*")
 
 
+def load_llm_from_config(
+    config_name: str,
+    overrides: Optional[list[str]] = None,
+    llm_key: str = "code",
+):
+    """
+    Load a LangChain LLM from a Hydra config file.
+
+    Args:
+        config_name: Either a config name (e.g., "openai", "aws", "vllm")
+                     or a path to a YAML file (e.g., "config/llm/openai.yaml")
+        overrides: Optional list of Hydra overrides (e.g., ["model=gpt-4-turbo"])
+        llm_key: Which LLM to use from the config ("code" or "write")
+
+    Returns:
+        A LangChain LLM instance
+    """
+    from omegaconf import OmegaConf
+    from hydra.utils import instantiate
+
+    overrides = overrides or []
+
+    # Check if it's a file path or a config name
+    if config_name.endswith(".yaml") or config_name.endswith(".yml"):
+        # Load directly from file path
+        config_path = Path(config_name)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_name}")
+        cfg = OmegaConf.load(config_path)
+    else:
+        # Load from config/llm/ directory
+        config_dir = Path(__file__).parent / "config" / "llm"
+        config_path = config_dir / f"{config_name}.yaml"
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"LLM config '{config_name}' not found. "
+                f"Available configs: {[p.stem for p in config_dir.glob('*.yaml')]}"
+            )
+        cfg = OmegaConf.load(config_path)
+
+    # Apply overrides
+    if overrides:
+        override_cfg = OmegaConf.from_dotlist(overrides)
+        # Apply overrides to the specific llm_key
+        if llm_key in cfg:
+            cfg[llm_key] = OmegaConf.merge(cfg[llm_key], override_cfg)
+
+    # Get the specific LLM config
+    if llm_key not in cfg:
+        available_keys = list(cfg.keys())
+        raise KeyError(
+            f"LLM key '{llm_key}' not found in config. Available: {available_keys}"
+        )
+
+    llm_cfg = cfg[llm_key]
+    logger.info(f"Loading LLM from config: {config_name} (key={llm_key})")
+    logger.info(f"LLM config: {OmegaConf.to_yaml(llm_cfg)}")
+
+    # Instantiate the LLM
+    return instantiate(llm_cfg)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Evaluate LLM Fixer on DafnyBench (faithful extraction of llm_fixer logic)'
     )
-    parser.add_argument('--model', type=str, required=True,
-                        help='LLM model name (e.g., gpt-4o, claude-3-5-sonnet-20241022)')
+
+    # LLM configuration (mutually exclusive: --model or --llm-config)
+    llm_group = parser.add_mutually_exclusive_group(required=True)
+    llm_group.add_argument('--model', type=str,
+                           help='LLM model name (e.g., gpt-4o, claude-3-5-sonnet-20241022)')
+    llm_group.add_argument('--llm-config', type=str,
+                           help='Hydra LLM config name (e.g., openai, aws, vllm) or path to YAML file')
+
+    parser.add_argument('--llm-override', type=str, action='append', default=[],
+                        help='Hydra-style overrides for LLM config (e.g., "model=gpt-4-turbo")')
+    parser.add_argument('--llm-key', type=str, default='code',
+                        help='Which LLM to use from config: "code" or "write" (default: code)')
+
     parser.add_argument('--benchmark-path', type=str, default='DafnyBench',
                         help='Path to DafnyBench directory')
     parser.add_argument('--num-programs', type=int, default=50,
@@ -369,7 +453,7 @@ def main():
     parser.add_argument('--cache-path', type=str, default='.fixer_outcome_cache.json',
                         help='Path to verification outcome cache')
     parser.add_argument('--temperature', type=float, default=0.0,
-                        help='LLM temperature')
+                        help='LLM temperature (only used with --model)')
     parser.add_argument('--verbose', action='store_true',
                         help='Enable verbose logging')
     parser.add_argument('--skip', type=int, default=0,
@@ -400,8 +484,18 @@ def main():
         logger.error("No programs to evaluate!")
         return
 
-    # Create LLM and fixer
-    llm = create_llm(args.model, args.temperature)
+    # Create LLM - either from model name or from config
+    if args.model:
+        llm = create_llm(args.model, args.temperature)
+        model_desc = args.model
+    else:
+        llm = load_llm_from_config(
+            args.llm_config,
+            overrides=args.llm_override if args.llm_override else None,
+            llm_key=args.llm_key,
+        )
+        model_desc = f"{args.llm_config}:{args.llm_key}"
+
     fixer = DafnyFixer(llm, max_attempts=args.max_attempts, verbose=args.verbose)
 
     # Run evaluation
@@ -444,7 +538,9 @@ def main():
     # Save results
     if args.output:
         output_data = {
-            "model": args.model,
+            "model": model_desc,
+            "llm_config": args.llm_config,
+            "llm_overrides": args.llm_override,
             "max_attempts": args.max_attempts,
             "num_programs": len(programs),
             "success_count": success_count,
