@@ -33,6 +33,12 @@ from typing import Any, Optional
 from pathlib import Path
 from tqdm import tqdm
 
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+
 # Import from existing formal-disco modules (same as llm_fixer.py)
 from langchain_core.prompts import ChatPromptTemplate
 from code_output_parser import CodeOutputParser
@@ -464,6 +470,8 @@ def main():
                         help='Skip filtering of trivial programs')
     parser.add_argument('--programs-file', type=str, default=None,
                         help='File with program names to evaluate (one per line)')
+    parser.add_argument('--no-wandb', action='store_true',
+                        help='Disable Weights & Biases logging (enabled by default)')
     args = parser.parse_args()
 
     # Load programs
@@ -516,6 +524,25 @@ def main():
 
     fixer = DafnyFixer(llm, max_attempts=args.max_attempts, verbose=args.verbose)
 
+    # Initialize wandb
+    use_wandb = not args.no_wandb and WANDB_AVAILABLE
+    if not args.no_wandb and not WANDB_AVAILABLE:
+        logger.warning("wandb not installed, skipping logging. Install with: pip install wandb")
+    if use_wandb:
+        wandb.init(
+            project="dafny-fixer-eval",
+            config={
+                "model": model_desc,
+                "llm_config": args.llm_config,
+                "llm_overrides": args.llm_override,
+                "max_attempts": args.max_attempts,
+                "num_programs": len(programs),
+                "temperature": args.temperature,
+                "skip": args.skip,
+                "fraction": args.fraction,
+            },
+        )
+
     # Run evaluation
     results = []
     success_count = 0
@@ -537,6 +564,17 @@ def main():
                 logger.info(f"✓ {name} verified after {result.num_attempts} attempts")
             else:
                 logger.info(f"✗ {name} failed ({result.verification_outcome})")
+
+            # Log to wandb
+            if use_wandb:
+                programs_evaluated = len(results)
+                wandb.log({
+                    "programs_evaluated": programs_evaluated,
+                    "success_count": success_count,
+                    "success_rate": success_count / programs_evaluated,
+                    "last_program_success": result.success,
+                    "last_program_attempts": result.num_attempts,
+                })
         except Exception as e:
             logger.error(f"Error processing {name}: {e}")
             import traceback
@@ -568,6 +606,13 @@ def main():
         with open(args.output, 'w') as f:
             json.dump(output_data, f, indent=2)
         logger.info(f"Results saved to {args.output}")
+
+    # Log final summary to wandb
+    if use_wandb:
+        wandb.summary["final_success_count"] = success_count
+        wandb.summary["final_success_rate"] = success_count / len(programs) if programs else 0
+        wandb.summary["total_programs"] = len(programs)
+        wandb.finish()
 
 
 if __name__ == '__main__':
