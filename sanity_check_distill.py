@@ -24,22 +24,12 @@ import difflib
 import json
 import pickle
 import subprocess
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from tqdm import tqdm
 
-
-@dataclass(slots=True, kw_only=True)
-class Object:
-    """Mirror of agenda.Object for creating compatible pickles."""
-    path: str
-    type: str
-    parents: list[str] = field(default_factory=list)
-    content: Optional[bytes] = None
-    properties: dict[str, Any] = field(default_factory=dict)
-    interestingness: float = 1.0
+from agenda import Object  # Use the real Object class for pickle compatibility
 
 
 def compute_text_diff(before: str, after: str) -> str:
