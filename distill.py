@@ -359,21 +359,12 @@ def _train_with_trl(
         bf16=True,
     )
 
-    def _formatting_func(ex: dict[str, Any]) -> str:
-        messages = json.loads(ex["messages"])
-        # Apply model's default chat template.
-        prompt_text = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        return prompt_text + ex["completion"]
+    breakpoint()
 
     trainer = SFTTrainer(
         model=model,
         train_dataset=ds,
         args=training_args,
-        formatting_func=_formatting_func,
     )
 
     trainer.train()
