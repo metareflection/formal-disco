@@ -462,11 +462,20 @@ def main():
                         help='Skip first N programs (for train/test split)')
     parser.add_argument('--no-filter', action='store_true',
                         help='Skip filtering of trivial programs')
+    parser.add_argument('--programs-file', type=str, default=None,
+                        help='File with program names to evaluate (one per line)')
     args = parser.parse_args()
 
     # Load programs
     logger.info(f"Loading programs from {args.benchmark_path}")
     programs = load_dafnybench_programs(args.benchmark_path, use_hints_removed=True)
+
+    # Filter to specific programs if --programs-file is specified
+    if args.programs_file:
+        with open(args.programs_file) as f:
+            program_names = set(line.strip() for line in f if line.strip())
+        programs = [(name, text) for name, text in programs if name in program_names]
+        logger.info(f"Filtered to {len(programs)} programs from {args.programs_file}")
 
     # Skip first N (for train/test split)
     if args.skip > 0:

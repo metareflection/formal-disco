@@ -172,6 +172,69 @@ Options:
   --verbose               Enable verbose logging
   --skip N                Skip first N programs (for train/test split)
   --no-filter             Don't filter out trivially-verified programs
+  --programs-file FILE    File with program names to evaluate (one per line)
+```
+
+## Focused Evaluation on a Subset
+
+When iterating on a new model or approach, running on the full benchmark is slow. A useful workflow is to:
+
+1. Run a baseline evaluation
+2. Extract a subset of programs (e.g., successes + same number of failures)
+3. Run the new approach on that consistent subset
+
+This lets you quickly compare approaches on the same set of problems.
+
+### Step 1: Run Baseline
+
+```bash
+python eval_fixer.py --model gpt-4o --output baseline.json
+```
+
+### Step 2: Extract Subset
+
+Use `eval_fixer_extract_subset.py` to extract program names from the baseline results:
+
+```bash
+# Successes + same number of failures (default)
+python eval_fixer_extract_subset.py baseline.json > subset.txt
+
+# Only successful programs
+python eval_fixer_extract_subset.py baseline.json --successes-only > subset.txt
+
+# Only failed programs
+python eval_fixer_extract_subset.py baseline.json --failures-only > subset.txt
+
+# Successes + half as many failures
+python eval_fixer_extract_subset.py baseline.json --failure-ratio 0.5 > subset.txt
+```
+
+### Step 3: Run New Approach on Subset
+
+```bash
+python eval_fixer.py --model claude-3-5-sonnet-20241022 --programs-file subset.txt --output new_approach.json
+```
+
+### Comparing Results
+
+Both JSON files will have results for the same programs, making comparison straightforward:
+
+```python
+import json
+
+with open('baseline.json') as f:
+    baseline = {r['program_name']: r['success'] for r in json.load(f)['results']}
+
+with open('new_approach.json') as f:
+    new = {r['program_name']: r['success'] for r in json.load(f)['results']}
+
+# Programs where new approach succeeded but baseline failed
+improved = [p for p in new if new[p] and not baseline.get(p)]
+
+# Programs where baseline succeeded but new approach failed
+regressed = [p for p in baseline if baseline[p] and not new.get(p)]
+
+print(f"Improved: {len(improved)}, Regressed: {len(regressed)}")
 ```
 
 ## Programmatic Usage
