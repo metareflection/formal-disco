@@ -2,6 +2,9 @@
 """
 Extract a subset of program names from eval_fixer.py results.
 
+Programs that failed due to LLM/infrastructure errors (e.g., max token length)
+are automatically excluded from the failures list.
+
 Usage:
     # Get all successful programs + same number of failures
     python eval_fixer_extract_subset.py baseline.json > subset.txt
@@ -39,7 +42,9 @@ def main():
 
     results = data.get("results", [])
     successes = [r["program_name"] for r in results if r.get("success")]
-    failures = [r["program_name"] for r in results if not r.get("success")]
+    # Separate real failures (verification failed) from errors (LLM/infrastructure errors)
+    failures = [r["program_name"] for r in results if not r.get("success") and not r.get("error")]
+    errors = [r["program_name"] for r in results if not r.get("success") and r.get("error")]
 
     if args.successes_only:
         subset = successes
@@ -58,6 +63,8 @@ def main():
     if not args.successes_only and not args.failures_only:
         num_failures_included = min(len(failures), int(len(successes) * args.failure_ratio))
         print(f"# + {num_failures_included} failures (ratio={args.failure_ratio})", file=sys.stderr)
+    if errors:
+        print(f"# Excluded {len(errors)} programs with LLM/infrastructure errors", file=sys.stderr)
 
 
 if __name__ == '__main__':
