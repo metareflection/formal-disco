@@ -35,18 +35,22 @@ Expected output: ~580 examples.
 
 ## Step 2: Train the Model
 
-Submit a training job (requires GPU):
+Submit a training job (requires GPU).
+
+First, edit `config/distill.yaml` to point to your sanity check data:
+
+```yaml
+# In config/distill.yaml, change:
+data: /path/to/your/sanity_check.pkl   # absolute path to generated pickle
+output_dir: sanity-sft-out
+num_train_epochs: 1.0
+wandb: false  # or true if you want logging
+```
+
+Then run:
 
 ```bash
-# Option A: Modify config/distill.yaml
-# Set: data: /path/to/sanity_check.pkl
-
-# Option B: Use command-line override
-python distill.py sft \
-    data=$PWD/sanity_check.pkl \
-    output_dir=sanity-sft-out \
-    num_train_epochs=1.0 \
-    wandb=false
+python distill.py sft
 ```
 
 Example SLURM script (`train_sanity.sbatch`):
@@ -68,11 +72,8 @@ cd $SLURM_SUBMIT_DIR
 # Activate your environment
 source /path/to/your/venv/bin/activate
 
-python distill.py sft \
-    data=$PWD/sanity_check.pkl \
-    output_dir=sanity-sft-out \
-    num_train_epochs=1.0 \
-    wandb=false
+# Make sure config/distill.yaml is configured first!
+python distill.py sft
 ```
 
 Submit with: `sbatch train_sanity.sbatch`
