@@ -157,7 +157,7 @@ python eval_fixer.py \
 | Step | Command | GPU? |
 |------|---------|------|
 | Generate data | `python sanity_check_distill.py generate --skip-dafny -o sanity_check.pkl` | No |
-| Train | `python distill.py sft data=sanity_check.pkl output_dir=sanity-sft-out` | Yes |
+| Train | Edit `config/distill.yaml`, then `python distill.py sft` | Yes |
 | Serve | `vllm serve sanity-sft-out/merged --port 8000` | Yes |
 | Eval | `python eval_fixer.py --llm-config vllm --num-programs 100` | No (needs vLLM running) |
 
