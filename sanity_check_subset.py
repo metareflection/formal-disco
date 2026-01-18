@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Extract the subset of DafnyBench programs that were successfully processed
-by sanity_check_distill.py generate.
+by sanity_check_distill.py generate, excluding trivial programs that already verify.
 
 This outputs a programs-file suitable for use with eval_fixer.py --programs-file.
 
@@ -9,7 +9,7 @@ Usage:
     # Generate the sanity check pickle first (if not already done):
     python sanity_check_distill.py generate --skip-dafny --output sanity_check.pkl
 
-    # Extract the program names:
+    # Extract the program names (uses .fixer_outcome_cache.json to filter trivial programs):
     python sanity_check_subset.py sanity_check.pkl -o sanity_programs.txt
 
     # Use with eval_fixer.py:
@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import json
+import os
 import pickle
 from pathlib import Path
 
@@ -37,7 +38,24 @@ def main():
         default="sanity_programs.txt",
         help="Output file with program names (one per line)",
     )
+    parser.add_argument(
+        "--cache-path",
+        type=str,
+        default=".fixer_outcome_cache.json",
+        help="Path to verification outcome cache (to filter trivial programs)",
+    )
+    parser.add_argument(
+        "--include-trivial",
+        action="store_true",
+        help="Include programs that already verify (trivial)",
+    )
     args = parser.parse_args()
+
+    # Load verification cache if available
+    cache = {}
+    if os.path.exists(args.cache_path):
+        with open(args.cache_path) as f:
+            cache = json.load(f)
 
     # Load the pickle
     with open(args.pickle_file, "rb") as f:
@@ -45,6 +63,7 @@ def main():
 
     # Extract program names from the distil examples
     program_names = []
+    trivial_count = 0
     for path, obj in data["objects"].items():
         if not path.startswith("distil/"):
             continue
@@ -57,6 +76,12 @@ def main():
         if hr_file:
             # Extract just the file stem (program name)
             program_name = Path(hr_file).stem
+
+            # Skip trivial programs (already verify) unless --include-trivial
+            if not args.include_trivial and cache.get(program_name) == "SUCCESS":
+                trivial_count += 1
+                continue
+
             program_names.append(program_name)
 
     # Sort for reproducibility
@@ -68,6 +93,8 @@ def main():
             f.write(name + "\n")
 
     print(f"Extracted {len(program_names)} program names to {args.output}")
+    if trivial_count > 0:
+        print(f"(Excluded {trivial_count} trivial programs that already verify)")
 
 
 if __name__ == "__main__":

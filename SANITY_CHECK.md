@@ -108,7 +108,7 @@ In another terminal (same node, or set VLLM_BASE_URL appropriately):
 # Set the vLLM endpoint
 export VLLM_BASE_URL=http://localhost:8000/v1
 
-# Extract the exact programs used in training
+# Extract the nontrivial programs used in training (~479 programs)
 python sanity_check_subset.py sanity_check.pkl -o sanity_programs.txt
 
 # Run evaluation on only those programs
