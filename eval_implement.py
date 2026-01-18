@@ -288,9 +288,9 @@ def main():
     parser.add_argument('--verbose', action='store_true',
                         help='Enable verbose logging')
 
-    # Wandb
-    parser.add_argument('--wandb', action='store_true',
-                        help='Log to Weights & Biases')
+    # Wandb (enabled by default)
+    parser.add_argument('--no-wandb', action='store_true',
+                        help='Disable Weights & Biases logging (enabled by default)')
     parser.add_argument('--wandb-project', type=str, default='formal-disco-implement',
                         help='W&B project name')
     parser.add_argument('--wandb-run-name', type=str, default=None,
@@ -298,16 +298,16 @@ def main():
 
     args = parser.parse_args()
 
-    # Initialize wandb if requested
-    if args.wandb:
-        if not WANDB_AVAILABLE:
-            logger.warning("wandb not installed, skipping logging")
-        else:
-            wandb.init(
-                project=args.wandb_project,
-                name=args.wandb_run_name,
-                config=vars(args),
-            )
+    # Initialize wandb (enabled by default)
+    use_wandb = not args.no_wandb and WANDB_AVAILABLE
+    if not args.no_wandb and not WANDB_AVAILABLE:
+        logger.warning("wandb not installed, skipping logging")
+    if use_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            name=args.wandb_run_name,
+            config=vars(args),
+        )
 
     # Load LLM
     if args.model:
@@ -360,7 +360,7 @@ def main():
                 gt_comparison['worse'] += 1
 
         # Log to wandb
-        if args.wandb and WANDB_AVAILABLE:
+        if use_wandb:
             wandb.log({
                 'success_rate': outcome_counts['SUCCESS'] / len(results),
                 'goal_unproven_rate': outcome_counts['GOAL_UNPROVEN'] / len(results),
@@ -414,7 +414,7 @@ def main():
         json.dump(output_data, f, indent=2)
     logger.info(f"Results saved to {args.output}")
 
-    if args.wandb and WANDB_AVAILABLE:
+    if use_wandb:
         wandb.log({
             'final_success_rate': outcome_counts['SUCCESS'] / total if total > 0 else 0,
             'final_goal_unproven_rate': outcome_counts['GOAL_UNPROVEN'] / total if total > 0 else 0,

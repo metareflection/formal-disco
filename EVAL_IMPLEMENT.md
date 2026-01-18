@@ -109,7 +109,7 @@ Options:
   --output FILE           Path to save results JSON (default: implement_eval_results.json)
   --verbose               Enable verbose logging
 
-  --wandb                 Log to Weights & Biases
+  --no-wandb              Disable W&B logging (enabled by default)
   --wandb-project         W&B project name (default: formal-disco-implement)
   --wandb-run-name        W&B run name
 ```
