@@ -403,6 +403,8 @@ def main():
                 'idea': r.idea[:500],  # Truncate for readability
                 'generated_code': r.generated_code,
                 'verification_outcome': r.verification_outcome,
+                'verification_stdout': r.verification_stdout,
+                'verification_stderr': r.verification_stderr,
                 'ground_truth_outcome': r.ground_truth_outcome,
                 'error': r.error,
             }
