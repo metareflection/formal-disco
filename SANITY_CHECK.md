@@ -108,13 +108,18 @@ In another terminal (same node, or set VLLM_BASE_URL appropriately):
 # Set the vLLM endpoint
 export VLLM_BASE_URL=http://localhost:8000/v1
 
-# Run evaluation on DafnyBench
+# Extract the exact programs used in training
+python sanity_check_subset.py sanity_check.pkl -o sanity_programs.txt
+
+# Run evaluation on only those programs
 python eval_fixer.py \
     --llm-config vllm \
-    --num-programs 100 \
+    --programs-file sanity_programs.txt \
     --max-attempts 3 \
     --output sanity_eval_results.json
 ```
+
+This ensures you evaluate on exactly the same programs the model was trained on.
 
 ## Step 5: Interpret Results
 
@@ -157,9 +162,10 @@ python eval_fixer.py \
 | Step | Command | GPU? |
 |------|---------|------|
 | Generate data | `python sanity_check_distill.py generate --skip-dafny -o sanity_check.pkl` | No |
+| Extract programs | `python sanity_check_subset.py sanity_check.pkl -o sanity_programs.txt` | No |
 | Train | Edit `config/distill.yaml`, then `python distill.py sft` | Yes |
 | Serve | `vllm serve sanity-sft-out/merged --port 8000` | Yes |
-| Eval | `python eval_fixer.py --llm-config vllm --num-programs 100` | No (needs vLLM running) |
+| Eval | `python eval_fixer.py --llm-config vllm --programs-file sanity_programs.txt` | No (needs vLLM running) |
 
 ## Debugging Tips
 
