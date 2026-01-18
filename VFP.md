@@ -4,7 +4,7 @@ Generate distillation data from the VFP (Verified Function Programming) benchmar
 
 ## Prerequisites
 
-- VFP autogen repository at `../dafny-vfp-autogen/`
+- VFP autogen repository at `../dafny-vfp-autogen/`: https://github.com/metareflection/dafny-vfp-autogen
 - dafny-tasker at `../dafny-tasker/`
 
 ## Step 1: Generate Emptied JSON

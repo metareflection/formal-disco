@@ -14,7 +14,7 @@ This produces more targeted training data with specific, informative error messa
 
 ## Prerequisites
 
-- Verified Dafny files in `../dafny-free-autogen/`
+- Verified Dafny files in `../dafny-free-autogen/`: https://github.com/metareflection/dafny-free-autogen
 
 ## Usage
 
