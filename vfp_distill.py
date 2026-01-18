@@ -77,21 +77,33 @@ def compute_insertion_diff(program: str, method_name: str, body: str) -> Optiona
     return "\n".join(diff_parts)
 
 
-def get_dafny_errors(program: str, timeout: int = 30) -> str:
+def get_dafny_errors(program: str, timeout: int = 2) -> str:
     """Run Dafny and capture verification errors."""
+    import tempfile
+    import os
+
+    # Use temp file since /dev/stdin doesn't work on all systems
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.dfy', delete=False) as f:
+        f.write(program)
+        tmp_path = f.name
+
     try:
         result = subprocess.run(
-            ["dafny", "verify", "/dev/stdin"],
-            input=program,
+            ["dafny", "verify", f"--verification-time-limit={timeout}", tmp_path],
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=10,  # Subprocess timeout as backup
         )
-        return f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
+        # Replace temp path with generic name in output for cleaner errors
+        stdout = result.stdout.replace(tmp_path, "program.dfy") if result.stdout else ""
+        stderr = result.stderr.replace(tmp_path, "program.dfy") if result.stderr else ""
+        return f"stdout:\n{stdout}\n\nstderr:\n{stderr}"
     except subprocess.TimeoutExpired:
-        return "Dafny verification timed out"
+        return "stdout:\nDafny verification timed out\n\nstderr:\n"
     except Exception as e:
         return f"Error running Dafny: {e}"
+    finally:
+        os.unlink(tmp_path)
 
 
 def extract_method_name_from_id(entry_id: str, program: str) -> Optional[str]:
@@ -188,6 +200,7 @@ def generate_vfp_examples(
         if skip_dafny:
             errors = "(Dafny errors would appear here)"
         else:
+            tqdm.write(f"  Running Dafny on {entry_id}...")
             errors = get_dafny_errors(emptied_code)
 
         examples.append({
