@@ -70,6 +70,7 @@ python distill.py sft data=vfp_distill.pkl output_dir=vfp-sft-out
 
 ## Notes
 
+- **Dataset size**: ~150 non-trivial examples from 1553 total entries (most have empty proofs that verify trivially)
 - Trivial lemmas (empty `output` field) are skipped by default since they verify without any proof body
 - The diff format uses the lemma declaration as a unique anchor, then navigates to `{` and inserts the body
 - Example diff:

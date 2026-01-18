@@ -40,7 +40,8 @@ def compute_insertion_diff(program: str, method_name: str, body: str) -> Optiona
     lines = program.splitlines(keepends=False)
 
     # Find the method declaration line (contains the method name after lemma/method/function/predicate)
-    decl_pattern = rf'^(lemma|method|function|predicate)\s+(?:\{{[^}}]*\}}\s*)?{re.escape(method_name)}\b'
+    # Allow leading whitespace for class/module members
+    decl_pattern = rf'^\s*(lemma|method|function|predicate)\s+(?:\{{[^}}]*\}}\s*)?{re.escape(method_name)}\b'
     decl_idx = None
     for i, line in enumerate(lines):
         if re.search(decl_pattern, line):
@@ -93,12 +94,13 @@ def get_dafny_errors(program: str, timeout: int = 30) -> str:
         return f"Error running Dafny: {e}"
 
 
-def extract_method_name_from_id(entry_id: str) -> Optional[str]:
+def extract_method_name_from_id(entry_id: str, program: str) -> Optional[str]:
     """
-    Extract method/lemma name from VFP entry ID.
+    Extract method/lemma name from VFP entry ID by validating against the program.
 
     ID format: {file_base}_{method_name}_{type}
     Example: tree_operations_solution_InorderLength_empty -> InorderLength
+             tarjan_scc_scc_nonempty_empty -> scc_nonempty
     """
     # Remove type suffix
     for suffix in ["_empty", "_sketch", "_sep"]:
@@ -106,13 +108,19 @@ def extract_method_name_from_id(entry_id: str) -> Optional[str]:
             entry_id = entry_id[:-len(suffix)]
             break
 
-    # The method name is typically the last part after _solution_
-    # or the last CamelCase segment
-    if "_solution_" in entry_id:
-        return entry_id.split("_solution_")[-1]
-
-    # Fallback: return last underscore-separated part
+    # Try different split points and validate against the program
     parts = entry_id.split("_")
+
+    # Try from shortest to longest method name
+    for i in range(len(parts) - 1, 0, -1):
+        candidate = "_".join(parts[i:])
+        # Check if this method exists in the program (allow leading whitespace for class members)
+        decl_pattern = rf'^\s*(lemma|method|function|predicate)\s+(?:\{{[^}}]*\}}\s*)?{re.escape(candidate)}\b'
+        for line in program.split("\n"):
+            if re.search(decl_pattern, line):
+                return candidate
+
+    # Fallback: return last part
     return parts[-1] if parts else None
 
 
@@ -153,8 +161,8 @@ def generate_vfp_examples(
             # For trivial cases, body is empty - nothing to insert
             body = ""
 
-        # Extract method name from ID
-        method_name = extract_method_name_from_id(entry_id)
+        # Extract method name from ID (validate against program)
+        method_name = extract_method_name_from_id(entry_id, emptied_code)
         if not method_name:
             skipped_no_method += 1
             continue
@@ -288,7 +296,7 @@ def cmd_verify_diff(args):
             skip += 1
             continue
 
-        method_name = extract_method_name_from_id(entry_id)
+        method_name = extract_method_name_from_id(entry_id, emptied_code)
         if not method_name:
             skip += 1
             continue
