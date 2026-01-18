@@ -100,6 +100,8 @@ def generate_repair_examples(
     benchmark_path: Path,
     max_programs: Optional[int] = None,
     skip_dafny: bool = False,
+    skip_trivial: bool = False,
+    cache_path: Optional[Path] = None,
 ) -> list[dict]:
     """Generate repair examples from DafnyBench."""
     from patch import apply_text_diff
@@ -112,8 +114,15 @@ def generate_repair_examples(
     if not hr_dir.exists():
         raise FileNotFoundError(f"Hints removed directory not found: {hr_dir}")
 
+    # Load verification cache if filtering trivial programs
+    cache = {}
+    if skip_trivial and cache_path and cache_path.exists():
+        with cache_path.open() as f:
+            cache = json.load(f)
+
     examples = []
     skipped_bad_diff = 0
+    skipped_trivial = 0
     gt_files = sorted(gt_dir.glob("*.dfy"))
 
     if max_programs:
@@ -126,6 +135,12 @@ def generate_repair_examples(
         hr_file = hr_dir / f"{base}_no_hints.dfy"
         if not hr_file.exists():
             # Try without _no_hints suffix pattern
+            continue
+
+        # Skip trivial programs (already verify) if requested
+        hr_name = hr_file.stem
+        if skip_trivial and cache.get(hr_name) == "SUCCESS":
+            skipped_trivial += 1
             continue
 
         gt_code = gt_file.read_text()
@@ -174,6 +189,8 @@ def generate_repair_examples(
 
     if skipped_bad_diff:
         print(f"Skipped {skipped_bad_diff} examples with bad diffs")
+    if skipped_trivial:
+        print(f"Skipped {skipped_trivial} trivial programs (already verify)")
 
     return examples
 
@@ -208,12 +225,15 @@ def cmd_generate(args):
     """Generate synthetic distillation data."""
     benchmark_path = Path(args.benchmark_path)
     output_path = Path(args.output)
+    cache_path = Path(args.cache_path) if args.skip_trivial else None
 
     print(f"Generating examples from {benchmark_path}")
     examples = generate_repair_examples(
         benchmark_path,
         max_programs=args.max_programs,
         skip_dafny=args.skip_dafny,
+        skip_trivial=args.skip_trivial,
+        cache_path=cache_path,
     )
 
     print(f"Generated {len(examples)} repair examples")
@@ -291,6 +311,10 @@ def main():
                        help="Maximum number of programs to process")
     gen_p.add_argument("--skip-dafny", action="store_true",
                        help="Skip running Dafny (faster, but no real error messages)")
+    gen_p.add_argument("--skip-trivial", action="store_true",
+                       help="Skip programs that already verify (uses cache file)")
+    gen_p.add_argument("--cache-path", type=str, default=".fixer_outcome_cache.json",
+                       help="Path to verification outcome cache (for --skip-trivial)")
     gen_p.set_defaults(func=cmd_generate)
 
     # Verify command

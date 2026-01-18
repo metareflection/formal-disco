@@ -18,7 +18,8 @@ On a login node (no GPU needed):
 ```bash
 # Generate synthetic distillation data from DafnyBench
 # --skip-dafny skips running Dafny verification (faster, fine for sanity check)
-python sanity_check_distill.py generate --skip-dafny --output sanity_check.pkl
+# --skip-trivial excludes programs that already verify (requires .fixer_outcome_cache.json)
+python sanity_check_distill.py generate --skip-dafny --skip-trivial --output sanity_check.pkl
 
 # Verify the output
 python3 -c "
@@ -31,7 +32,7 @@ print(f'Generated {len([p for p in data[\"objects\"] if p.startswith(\"distil/\"
 "
 ```
 
-Expected output: ~580 examples.
+Expected output: ~479 examples (with `--skip-trivial`), or ~580 without.
 
 ## Step 2: Train the Model
 
@@ -108,7 +109,7 @@ In another terminal (same node, or set VLLM_BASE_URL appropriately):
 # Set the vLLM endpoint
 export VLLM_BASE_URL=http://localhost:8000/v1
 
-# Extract the nontrivial programs used in training (~479 programs)
+# Extract program names from the pickle (~479 programs)
 python sanity_check_subset.py sanity_check.pkl -o sanity_programs.txt
 
 # Run evaluation on only those programs
@@ -161,7 +162,7 @@ This ensures you evaluate on exactly the same programs the model was trained on.
 
 | Step | Command | GPU? |
 |------|---------|------|
-| Generate data | `python sanity_check_distill.py generate --skip-dafny -o sanity_check.pkl` | No |
+| Generate data | `python sanity_check_distill.py generate --skip-dafny --skip-trivial -o sanity_check.pkl` | No |
 | Extract programs | `python sanity_check_subset.py sanity_check.pkl -o sanity_programs.txt` | No |
 | Train | Edit `config/distill.yaml`, then `python distill.py sft` | Yes |
 | Serve | `vllm serve sanity-sft-out/merged --port 8000` | Yes |
