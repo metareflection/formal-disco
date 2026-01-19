@@ -352,6 +352,7 @@ def _train_with_trl(
         logging_steps=int(logging_steps),
         save_steps=int(save_steps),
         save_total_limit=2,
+        resume_from_checkpoint=True,
         seed=int(seed),
         report_to=report_to,
         remove_unused_columns=False,
