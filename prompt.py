@@ -192,7 +192,6 @@ def build_chat_messages(
 def reconstruct_chat_messages(
     kind: str,
     arguments: Mapping[str, Any],
-    *,
     example_before: str | None = None,
     example_diff: str | None = None,
     example_after: str | None = None,

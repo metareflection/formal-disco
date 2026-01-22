@@ -330,12 +330,16 @@ class AgendaClient(Agenda):
         path: str,
         new_content: Optional[bytes] = None,
         new_properties: Optional[dict[str, Any]] = None,
+        interest_factor: Optional[float] = None,
+        interest_recursion_gamma: Optional[float] = None,
     ) -> None:
         return await self._call(
             "update_object",
             path=path,
             new_content=new_content,
             new_properties=new_properties,
+            interest_factor=interest_factor,
+            interest_recursion_gamma=interest_recursion_gamma,
         )
 
     async def add_task(self, task: Task) -> str:
