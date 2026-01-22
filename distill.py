@@ -142,18 +142,46 @@ def build_sft_records(
     pickle_paths: list[str | Path],
     success_only: bool,
     outcome_success_values: tuple[str, ...] = ("success",),
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], Counter[str]]:
     """Build TRL/HF records for chat-style SFT.
 
     Output schema:
       {"messages": <list[dict(role, content)]>, "completion": <str>}
 
+    Returns:
+      A tuple of (records, counts_by_prompt_type).
+
     We reconstruct system+user messages from stored arguments using `prompt.py`.
+
+    For "idea" examples, success is determined by whether the idea led to a
+    successful implementation (i.e., there exists an "implement" example with
+    a successful outcome that used this idea text).
     """
     from prompt import reconstruct_chat_messages
     from patch import TEXT_BEFORE_EXAMPLE, TEXT_DIFF_EXAMPLE, TEXT_AFTER_EXAMPLE
 
+    # First pass: collect idea texts that led to successful implementations.
+    # An idea is successful if there's an implement example with successful outcome
+    # where arguments["idea"] matches the idea's response text.
+    successful_idea_texts: set[str] = set()
+    for pickle_path in pickle_paths:
+        for ex in _iter_distill_examples_from_pickle(pickle_path):
+            if ex.get("prompt") != "implement":
+                continue
+            outcome = ex.get("outcome")
+            outcome_s = "" if outcome is None else str(outcome).lower()
+            if outcome_s not in outcome_success_values:
+                continue
+            # This implementation was successful - record its idea text
+            args = ex.get("arguments")
+            if isinstance(args, dict):
+                idea_text = args.get("idea")
+                if idea_text:
+                    successful_idea_texts.add(str(idea_text))
+
+    # Second pass: build SFT records
     records: list[dict[str, str]] = []
+    counts: Counter[str] = Counter()
     for pickle_path in pickle_paths:
         for ex in _iter_distill_examples_from_pickle(pickle_path):
             kind = str(ex.get("prompt", "unknown"))
@@ -161,31 +189,36 @@ def build_sft_records(
             if not isinstance(args, dict):
                 continue
 
-            outcome = ex.get("outcome")
-            outcome_s = "" if outcome is None else str(outcome).lower()
-
-            if success_only and outcome_s not in outcome_success_values:
-                continue
-
             response = ex.get("response")
             if response is None:
                 continue
             response_s = str(response)
 
-            try:
-                messages = reconstruct_chat_messages(
-                    kind,
-                    args,
-                    example_before=TEXT_BEFORE_EXAMPLE,
-                    example_diff=TEXT_DIFF_EXAMPLE,
-                    example_after=TEXT_AFTER_EXAMPLE,
-                )
-            except Exception:
-                continue
+            # Apply success filtering
+            if success_only:
+                if kind == "idea":
+                    # For ideas, check if the idea led to a successful implementation
+                    if response_s not in successful_idea_texts:
+                        continue
+                else:
+                    # For other prompts, use the outcome field
+                    outcome = ex.get("outcome")
+                    outcome_s = "" if outcome is None else str(outcome).lower()
+                    if outcome_s not in outcome_success_values:
+                        continue
+
+            messages = reconstruct_chat_messages(
+                kind,
+                args,
+                example_before=TEXT_BEFORE_EXAMPLE,
+                example_diff=TEXT_DIFF_EXAMPLE,
+                example_after=TEXT_AFTER_EXAMPLE,
+            )
 
             records.append({"messages": json.dumps(messages, ensure_ascii=False), "completion": response_s})
+            counts[kind] += 1
 
-    return records
+    return records, counts
 
 
 def _train_with_trl(
@@ -358,11 +391,19 @@ def _main_sft() -> None:
         else:
             pickle_paths = [str(p) for p in c.data]
 
-        records = build_sft_records(
+        records, counts = build_sft_records(
             pickle_paths=pickle_paths,
             success_only=bool(c.success_only),
             outcome_success_values=success_values,
         )
+
+        # Print training data statistics
+        print("\n=== SFT Training Data ===")
+        print(f"Total examples: {len(records)}")
+        print("By prompt type:")
+        for prompt_type, count in sorted(counts.items()):
+            print(f"  {prompt_type}: {count}")
+        print()
 
         # If running under Hydra, output_dir is relative to the hydra run dir.
         out_dir = os.path.abspath(c.output_dir)
