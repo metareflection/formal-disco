@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 import logging
 import json
+import os
 
 from agenda import Agenda, Object, Task, WorkStatus
 
@@ -33,7 +34,7 @@ class LLMImplementer(Worker):
 
     def __init__(self, llm: Any, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9,
                  interest_success: float = 2.0, interest_goal_unproven: float = 1.5, interest_fail: float = 0.5,
-                 interest_recursion_gamma: float = 0.0, distill: bool = False) -> None:
+                 interest_recursion_gamma: float = 0.0, distill: Optional[Literal['success-only', 'all']] = 'success-only') -> None:
         self._llm = llm
         self._attempt_priority_factor = float(attempt_priority_factor)
         self._interest_success = float(interest_success)
@@ -123,7 +124,11 @@ class LLMImplementer(Worker):
                 }.get(ver.outcome, self._interest_fail)
 
                 # Optionally dump a distillation example after the LLM call.
-                if self._distill:
+                should_distill = (
+                    self._distill == 'all' or
+                    (self._distill == 'success-only' and ver.outcome == VerificationOutcome.SUCCESS)
+                )
+                if should_distill:
                     distill_obj = {
                         "prompt": "implement",
                         "arguments": {"idea": idea_text},
@@ -149,6 +154,21 @@ class LLMImplementer(Worker):
                 notes = {"program_path": prog_obj_path, "verification": ver.outcome.name}
 
                 if ver.outcome == VerificationOutcome.SUCCESS or ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
+                    # Save to dataset folder
+                    dataset_path = f"dataset/{os.path.basename(prog_path)}"
+                    await agenda.create_object(
+                        Object(
+                            path=dataset_path,
+                            type="dafny-program",
+                            parents=[prog_obj_path],
+                            content=program_text.encode("utf-8"),
+                            properties={
+                                "verification_status": ver.outcome.name.lower(),
+                                "parent_idea": idea_path,
+                            },
+                        )
+                    )
+
                     followup_type = "extend" if ver.outcome == VerificationOutcome.SUCCESS else "repair"
                     follow = Task(id="ext", type=followup_type, properties={"program": prog_obj_path}, interest_dependencies=[prog_obj_path])
                     await agenda.add_task(follow)

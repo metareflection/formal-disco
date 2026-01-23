@@ -580,11 +580,16 @@ class LocalAgenda(Agenda):
 
     def _compute_codebase_statistics(self) -> dict[str, int]:
         """
-        Compute global statistics about the whole collection of program objects we have.
+        Compute global statistics about the collection of programs in the dataset/ folder.
+        For each parent_idea, only the longest program (by lines of code) is counted.
         """
         stats: dict[str, int] = {}
+
+        # Collect all dataset programs grouped by parent_idea, keeping only the longest
+        programs_by_idea: dict[str, tuple[Object, str, int]] = {}  # idea -> (obj, text, num_lines)
+
         for obj in self._objects.values():
-            if obj.type != "dafny-program":
+            if obj.type != "dafny-program" or not obj.path.startswith("dataset/"):
                 continue
             content = obj.content
             if content is None:
@@ -596,26 +601,38 @@ class LocalAgenda(Agenda):
 
             lines = text.splitlines()
             num_lines = len(lines)
+            parent_idea = obj.properties.get("parent_idea")
+
+            # Keep only the longest program for each idea
+            if parent_idea not in programs_by_idea or num_lines > programs_by_idea[parent_idea][2]:
+                programs_by_idea[parent_idea] = (obj, text, num_lines)
+
+        # Compute statistics on the filtered programs (one per idea)
+        for parent_idea, (obj, text, num_lines) in programs_by_idea.items():
+            lines = text.splitlines()
 
             stats["total_programs"] = stats.get("total_programs", 0) + 1
             stats["total_lines"] = stats.get("total_lines", 0) + num_lines
 
-            if obj.properties.get("verification_outcome") != "FAIL":
-                SPECIAL_LINES = ["lemma", "function", "method", "datatype", "class",
-                                 "predicate", "invariant", "assert"]
+            verification_status = obj.properties.get("verification_status", "")
 
-                if obj.properties.get("verification_outcome") == "SUCCESS":
-                    stats["total_verified_programs"] = stats.get("total_verified_programs", 0) + 1
-                    stats["loc_verified_programs"] = stats.get("loc_verified_programs", 0) + num_lines
-                elif obj.properties.get("verification_outcome") == "GOAL_UNPROVEN":
-                    stats["total_unproven_programs"] = stats.get("total_unproven_programs", 0) + 1
-                    stats["loc_unproven_programs"] = stats.get("loc_unproven_programs", 0) + num_lines
+            SPECIAL_LINES = ["lemma", "function", "method", "datatype", "class",
+                             "predicate", "invariant", "assert"]
 
-                for special in SPECIAL_LINES:
-                    suffix = "_verified" if obj.properties.get("verification_outcome") == "SUCCESS" else "_all"
-                    key = f"{special}_count{suffix}"
-                    num_special = sum(1 for line in lines if line.strip().startswith(f"{special} "))
-                    stats[key] = stats.get(key, 0) + num_special
+            if verification_status == "success":
+                stats["total_verified_programs"] = stats.get("total_verified_programs", 0) + 1
+                stats["loc_verified_programs"] = stats.get("loc_verified_programs", 0) + num_lines
+            elif verification_status == "goal_unproven":
+                stats["total_unproven_programs"] = stats.get("total_unproven_programs", 0) + 1
+                stats["loc_unproven_programs"] = stats.get("loc_unproven_programs", 0) + num_lines
+
+            for special in SPECIAL_LINES:
+                num_special = sum(1 for line in lines if line.strip().startswith(f"{special} "))
+                # Always count towards _all (verified + unproven)
+                stats[f"{special}_count_all"] = stats.get(f"{special}_count_all", 0) + num_special
+                # Additionally count towards _verified for successful programs
+                if verification_status == "success":
+                    stats[f"{special}_count_verified"] = stats.get(f"{special}_count_verified", 0) + num_special
 
         return stats
 

@@ -6,7 +6,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import random
 
@@ -46,7 +46,7 @@ class ReadmeInspiredIdeaGenerator(Worker):
         llm: Any,
         rng: Optional[random.Random] = None,
         max_readme_chars: int = 2000,
-        distill: bool = False,
+        distill: Optional[Literal['success-only', 'all']] = 'success-only',
     ) -> None:
         self._rng = rng or random.Random()
         self._rows = self._load_jsonl(jsonl_path)
@@ -106,6 +106,7 @@ class ReadmeInspiredIdeaGenerator(Worker):
                     path=idea_filename,
                     type="idea",
                     content=idea_text.encode("utf-8"),
+                    properties={"repo": repo},
                 )
             )
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 import logging
 import json
+import os
 
 from agenda import Agenda, Object, Task, WorkStatus
 
@@ -34,7 +35,7 @@ class LLMFixer(Worker):
     """
 
     def __init__(self, llm: Any, max_attempts: int = 3, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9,
-                 interest_success_boost: float = 1.2, interest_recursion_gamma: float = 0.0, distill: bool = False) -> None:
+                 interest_success_boost: float = 1.2, interest_recursion_gamma: float = 0.0, distill: Optional[Literal['success-only', 'all']] = 'success-only') -> None:
         self._llm = llm
         self._max_attempts = max_attempts
         self._attempt_priority_factor = float(attempt_priority_factor)
@@ -114,15 +115,20 @@ class LLMFixer(Worker):
                 # Ask LLM to produce a diff to repair the program.
                 diff_text = self._chain.invoke(llm_args).strip()
 
-                # Apply diff; if it fails, mark ATTEMPTED and continue
+                # Apply diff; if it fails or results in empty program, mark ATTEMPTED and continue
                 try:
                     repaired_text = apply_text_diff(prog_text, diff_text)
                 except Exception as e:
-
                     logger.warning("Failed to apply diff produced by LLM for repair task %s: %s", task.id, str(e))
                     logger.info("Diff produced by LLM:\n%s", diff_text)
-
                     await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"diff_error": str(e)})
+                    fuel -= 1
+                    continue
+
+                if not repaired_text.strip():
+                    logger.warning("Diff produced empty program for repair task %s", task.id)
+                    logger.info("Diff produced by LLM:\n%s", diff_text)
+                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"diff_error": "resulting program is empty"})
                     fuel -= 1
                     continue
 
@@ -149,7 +155,11 @@ class LLMFixer(Worker):
                 # Save verification output on the program object
                 await agenda.update_object(program_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
 
-                if self._distill:
+                should_distill = (
+                    self._distill == 'all' or
+                    (self._distill == 'success-only' and ver.outcome == VerificationOutcome.SUCCESS)
+                )
+                if should_distill:
                     distill_obj = {
                         "prompt": "repair",
                         "arguments": llm_args,
@@ -162,6 +172,23 @@ class LLMFixer(Worker):
                             type="distill-example",
                             parents=[program_path],
                             content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
+                        )
+                    )
+
+                # Save to dataset folder if verification succeeded or goal unproven
+                if ver.outcome == VerificationOutcome.SUCCESS or ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
+                    dataset_path = f"dataset/{os.path.basename(program_path)}"
+                    parent_idea = prog_obj.parents[0] if prog_obj.parents else None
+                    await agenda.create_object(
+                        Object(
+                            path=dataset_path,
+                            type="dafny-program",
+                            parents=[program_path],
+                            content=repaired_text.encode("utf-8"),
+                            properties={
+                                "verification_status": ver.outcome.name.lower(),
+                                "parent_idea": parent_idea,
+                            },
                         )
                     )
 

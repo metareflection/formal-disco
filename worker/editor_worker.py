@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 import logging
 import json
+import os
 
 from agenda import Agenda, Object, Task, WorkStatus
 
@@ -42,7 +43,7 @@ class EditorWorker(Worker):
         prompt_template: Optional[ChatPromptTemplate] = None,
         interest_success_boost: float = 1.1,
         interest_recursion_gamma: float = 0.0,
-        distill: bool = False,
+        distill: Optional[Literal['success-only', 'all']] = 'success-only',
     ) -> None:
         self._llm = llm
         self._interest_success_boost = float(interest_success_boost)
@@ -118,6 +119,12 @@ class EditorWorker(Worker):
                     await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, new_notes={"diff_error": str(e)})
                     continue
 
+                if not updated_text.strip():
+                    # Diff resulted in empty program; count as a failed attempt.
+                    logger.warning("Diff produced empty program for extend task %s", task.id)
+                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, new_notes={"diff_error": "resulting program is empty"})
+                    continue
+
                 # Persist updated program in-place.
                 await agenda.update_object(
                     program_path,
@@ -144,7 +151,11 @@ class EditorWorker(Worker):
                     },
                 )
 
-                if self._distill:
+                should_distill = (
+                    self._distill == 'all' or
+                    (self._distill == 'success-only' and ver.outcome == VerificationOutcome.SUCCESS)
+                )
+                if should_distill:
                     distill_obj = {
                         "prompt": "extend",
                         "arguments": llm_args,
@@ -157,6 +168,23 @@ class EditorWorker(Worker):
                             type="distill-example",
                             parents=[program_path],
                             content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
+                        )
+                    )
+
+                # Save to dataset folder if verification succeeded or goal unproven
+                if ver.outcome == VerificationOutcome.SUCCESS or ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
+                    dataset_path = f"dataset/{os.path.basename(program_path)}"
+                    parent_idea = prog_obj.parents[0] if prog_obj.parents else None
+                    await agenda.create_object(
+                        Object(
+                            path=dataset_path,
+                            type="dafny-program",
+                            parents=[program_path],
+                            content=updated_text.encode("utf-8"),
+                            properties={
+                                "verification_status": ver.outcome.name.lower(),
+                                "parent_idea": parent_idea,
+                            },
                         )
                     )
 

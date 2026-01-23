@@ -8,8 +8,9 @@ workers:
     distill: all
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_id: global.anthropic.claude-opus-4-5-20251101-v1:0
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+      max_tokens: 10000
 
   - _target_: worker.llm_implementer.LLMImplementer
     distill: all
@@ -20,8 +21,9 @@ workers:
     interest_recursion_gamma: 0.0
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_id: global.anthropic.claude-opus-4-5-20251101-v1:0
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+      max_tokens: 10000
 
   - _target_: worker.llm_fixer.LLMFixer
     distill: all
@@ -30,8 +32,9 @@ workers:
     interest_recursion_gamma: 0.0
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_id: global.anthropic.claude-opus-4-5-20251101-v1:0
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+      max_tokens: 10000
 
   - _target_: worker.editor_worker.EditorWorker
     distill: all
@@ -39,5 +42,6 @@ workers:
     interest_recursion_gamma: 0.0
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_id: global.anthropic.claude-opus-4-5-20251101-v1:0
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+      max_tokens: 10000
