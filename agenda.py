@@ -226,6 +226,7 @@ class LocalAgenda(Agenda):
             benchmark_codebase_time: Optional[int] = 5*60,
             performance_tracker: Optional[PerformanceTracker] = None,
             sort_every: int = 100,
+            performance_tracker: Optional[PerformanceTracker] = None,
     ) -> None:
         self._lock = asyncio.Lock()
         self._tasks: dict[str, Task] = {}
