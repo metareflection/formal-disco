@@ -23,6 +23,7 @@ from typing import Any, Optional, Iterable, Protocol
 from logger import AgendaLogger
 from logger.noop import NoOpLogger
 from patch import compute_reverse_patch
+from performance_tracker import PerformanceTracker
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,7 @@ class LocalAgenda(Agenda):
             checkpoint_interval: Optional[int] = 50,
             logger: Optional[AgendaLogger] = None,
             benchmark_codebase_time: Optional[int] = 5*60,
+            performance_tracker: Optional[PerformanceTracker] = None,
     ) -> None:
         self._lock = asyncio.Lock()
         self._tasks: dict[str, Task] = {}
@@ -233,6 +235,7 @@ class LocalAgenda(Agenda):
         self._checkpoint_interval = checkpoint_interval
         self._signal_ckpt_once = threading.Event()
         self._logger = logger or NoOpLogger()
+        self._performance_tracker = performance_tracker
 
         self._load()
 
@@ -288,6 +291,13 @@ class LocalAgenda(Agenda):
             s = self._compute_codebase_statistics()
             self._logger.log_code_base_statistics(s)
             logger.info(f"Codebase statistics: {s}")
+
+            # Log performance statistics if tracker is available
+            if self._performance_tracker is not None:
+                per_proc_stats = self._performance_tracker.get_statistics()
+                agg_stats = self._performance_tracker.get_aggregate_statistics()
+                self._logger.log_performance_statistics(per_proc_stats, agg_stats)
+                logger.info(f"RPC performance (aggregate): {agg_stats}")
 
         except Exception as e:
             logger.warning(f"Failed to write checkpoint: {e}")

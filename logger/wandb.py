@@ -86,3 +86,18 @@ class WandbLogger(AgendaLogger):
         """Log aggregate statistics about the collection of programs we have so far."""
         wandb_stats = {f"codebase/{key}": value for key, value in codebase_stats.items()}
         self._wandb.log(wandb_stats)
+
+    def log_performance_statistics(
+        self,
+        per_procedure_stats: dict[str, dict[str, float]],
+        aggregate_stats: dict[str, float],
+    ) -> None:
+        """Log RPC performance statistics to wandb."""
+        # Log per-procedure stats
+        for procedure, stats in per_procedure_stats.items():
+            for stat_name, value in stats.items():
+                self._wandb.log({f"rpc/{procedure}/{stat_name}": value})
+
+        # Log aggregate stats (includes active_clients count)
+        for stat_name, value in aggregate_stats.items():
+            self._wandb.log({f"rpc/aggregate/{stat_name}": value})

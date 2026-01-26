@@ -18,9 +18,11 @@ import pickle
 import signal
 import socket
 import sys
+import time
 from typing import Any, Optional, Union
 
 from agenda import Agenda, LocalAgenda, Object, Task, TaskStatus, WorkStatus
+from performance_tracker import PerformanceTracker
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,7 @@ class AgendaServer:
         port: Optional[int] = 9999,
         unix_socket: Optional[str] = None,
         server_address_path: Optional[str] = None,
+        performance_tracker: Optional[PerformanceTracker] = None,
     ):
         self.agenda = agenda
         self.host = host
@@ -66,6 +69,7 @@ class AgendaServer:
         self.server_address_path = server_address_path
         self.server: Optional[asyncio.Server] = None
         self._running = False
+        self._performance_tracker = performance_tracker
         self._setup_signal_handlers()
 
     def _setup_signal_handlers(self):
@@ -91,27 +95,31 @@ class AgendaServer:
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Handle a single client connection over any stream transport."""
         addr = writer.get_extra_info('peername', 'unknown')
-        logger.debug(f"Client connected from {addr}")
+        # Convert address to string for tracking (tuple for TCP, string for Unix)
+        client_id = str(addr) if addr else "unknown"
+        logger.debug(f"Client connected from {client_id}")
 
         try:
             while True:
                 msg = await _read_message(reader)
-                response = await self.process_request(msg)
+                response = await self.process_request(msg, client_id)
                 await _write_message(writer, response)
 
         except asyncio.IncompleteReadError:
-            logger.debug(f"Client {addr} disconnected")
+            logger.debug(f"Client {client_id} disconnected")
         except Exception as e:
-            logger.error(f"Error handling client {addr}: {e}", exc_info=True)
+            logger.error(f"Error handling client {client_id}: {e}", exc_info=True)
         finally:
             writer.close()
             await writer.wait_closed()
 
-    async def process_request(self, msg: dict) -> dict:
+    async def process_request(self, msg: dict, client_id: str = "unknown") -> dict:
         """Process a single request and return a response."""
         req_id = msg.get("id")
         method = msg.get("method")
         params = msg.get("params", {})
+
+        start_time = time.perf_counter()
 
         try:
             # Dispatch to agenda method dynamically
@@ -130,6 +138,12 @@ class AgendaServer:
             else:
                 logger.error(f"Error processing request {method}: {e}", exc_info=True)
             return {"id": req_id, "error": str(e)}
+
+        finally:
+            # Record call latency with client identifier
+            if self._performance_tracker is not None and method:
+                latency = time.perf_counter() - start_time
+                self._performance_tracker.record_call(method, latency, client_id)
 
     async def start(self):
         """Start the server on TCP or Unix socket."""

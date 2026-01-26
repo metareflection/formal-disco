@@ -23,3 +23,11 @@ class NoOpLogger(AgendaLogger):
     def log_code_base_statistics(self, codebase_stats: dict[str, int]) -> None:
         """Log aggregate statistics about programs (no-op)."""
         pass
+
+    def log_performance_statistics(
+        self,
+        per_procedure_stats: dict[str, dict[str, float]],
+        aggregate_stats: dict[str, float],
+    ) -> None:
+        """Log RPC performance statistics (no-op)."""
+        pass

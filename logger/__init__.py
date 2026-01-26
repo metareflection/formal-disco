@@ -35,3 +35,15 @@ class AgendaLogger(ABC):
         """Log aggregate statistics about the collection of programs we have so far."""
         pass
 
+    @abstractmethod
+    def log_performance_statistics(
+        self,
+        per_procedure_stats: dict[str, dict[str, float]],
+        aggregate_stats: dict[str, float],
+    ) -> None:
+        """Log RPC performance statistics (latency, call rates).
+
+        aggregate_stats includes 'active_clients' count.
+        """
+        pass
+

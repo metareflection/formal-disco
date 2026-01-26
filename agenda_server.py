@@ -21,14 +21,19 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 from agenda_distributed import AgendaServer
+from performance_tracker import PerformanceTracker
 
 logger = logging.getLogger(__name__)
 
 
 @main(config_path="config", config_name="server", version_base=None)
 def _main(cfg: DictConfig):
-    agenda = instantiate(cfg.agenda)
-    server: AgendaServer = instantiate(cfg.server, agenda=agenda)
+    # Create shared performance tracker for RPC latency monitoring
+    perf_tracker = PerformanceTracker(window_seconds=600.0)
+
+    # Pass tracker to agenda (for logging during checkpoint) and server (for recording calls)
+    agenda = instantiate(cfg.agenda, performance_tracker=perf_tracker)
+    server: AgendaServer = instantiate(cfg.server, agenda=agenda, performance_tracker=perf_tracker)
 
     logger.info("Starting AgendaServer...")
     try:
