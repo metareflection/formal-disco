@@ -89,8 +89,7 @@ class AgendaServer:
 
     def _sync_checkpoint(self):
         """Synchronous checkpoint for signal handlers and atexit."""
-        if hasattr(self.agenda, '_checkpoint'):
-            self.agenda._checkpoint()
+        self.agenda._checkpoint()
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Handle a single client connection over any stream transport."""
