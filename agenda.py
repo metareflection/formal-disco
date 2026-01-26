@@ -257,6 +257,15 @@ class LocalAgenda(Agenda):
                 data = pickle.load(f)
                 self._tasks = data['tasks']
                 self._status = data['status']
+                # Reset all task statuses to 'ATTEMPTED' if they were 'DOING':
+                reset = 0
+                for k, v in self._status.items():
+                    if v.work_status == WorkStatus.DOING:
+                        v.work_status = WorkStatus.ATTEMPTED
+                        reset += 1
+
+                logger.info(f'{reset} tasks had DOING status; reset to ATTEMPTED')
+
                 self._objects = data.get('objects', {})
                 self._clock = data.get('clock', 0)
             stats = self._compute_codebase_statistics()
