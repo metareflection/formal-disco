@@ -15,11 +15,12 @@ Usage:
 """
 
 import argparse
+import os
 import pickle
 import re
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional
 
 from tqdm import tqdm
 
@@ -162,6 +163,9 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
                         help="Output pickle file (default: input_saved.pkl)")
     parser.add_argument('-n', '--max', type=int,
                         help="Maximum programs to process")
+    parser.add_argument('-w', '--workers', type=int,
+                        default=os.cpu_count(),
+                        help="Number of parallel workers (default: cpu count)")
     parser.add_argument('-v', '--verbose', action='store_true',
                         help="Print details for each program")
 
@@ -195,22 +199,39 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
     stats = Counter()
     repairs = {}
 
-    pbar = tqdm(candidates, desc="Saving programs")
-    for path, obj, content in pbar:
-        saved, outcome, num_removed = save_program(content, verbose=args.verbose)
+    workers = args.workers or 1
+    print(f"Using {workers} workers")
 
-        if outcome == VerificationOutcome.SUCCESS:
-            stats['saved'] += 1
-            stats['total_ensures_removed'] += num_removed
-            repairs[path] = saved
-            if args.verbose:
-                print(f"  ✓ {path}: removed {num_removed} ensures clause(s)")
-        else:
-            stats['still_unproven'] += 1
-            if args.verbose:
-                print(f"  ✗ {path}: could not save (outcome: {outcome.name})")
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(save_program, content): (path, obj)
+            for path, obj, content in candidates
+        }
 
-        pbar.set_postfix(saved=stats['saved'], failed=stats['still_unproven'])
+        pbar = tqdm(as_completed(futures), total=len(futures), desc="Saving programs")
+        for future in pbar:
+            path, obj = futures[future]
+            try:
+                saved, outcome, num_removed = future.result()
+            except Exception as e:
+                stats['error'] += 1
+                if args.verbose:
+                    print(f"  ! {path}: error: {e}")
+                pbar.set_postfix(saved=stats['saved'], failed=stats['still_unproven'])
+                continue
+
+            if outcome == VerificationOutcome.SUCCESS:
+                stats['saved'] += 1
+                stats['total_ensures_removed'] += num_removed
+                repairs[path] = saved
+                if args.verbose:
+                    print(f"  ✓ {path}: removed {num_removed} ensures clause(s)")
+            else:
+                stats['still_unproven'] += 1
+                if args.verbose:
+                    print(f"  ✗ {path}: could not save (outcome: {outcome.name})")
+
+            pbar.set_postfix(saved=stats['saved'], failed=stats['still_unproven'])
 
     # Summary
     total = len(candidates)
