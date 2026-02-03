@@ -67,25 +67,11 @@ class LLMFixer(Worker):
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
         while fuel > 0:
-            tasks = await agenda.get_tasks(type="repair", ignore_completed=True)
-            if not tasks:
+            result = await agenda.claim_next_tasks(type="repair")
+            if result is None:
                 break
 
-            picked = None
-            for t, status in tasks:
-                if status.work_status in (WorkStatus.NEW, WorkStatus.ATTEMPTED):
-                    picked = (t, status)
-                    break
-
-            if picked is None:
-                break
-
-            task, status = picked
-
-            try:
-                await agenda.update_status(task.id, WorkStatus.DOING)
-            except RuntimeError:
-                continue
+            task, status = result[0]
 
             try:
                 program_path = task.properties.get("program")

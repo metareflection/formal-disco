@@ -63,28 +63,11 @@ class LLMImplementer(Worker):
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
         while fuel > 0:
-            # Fetch implement tasks
-            tasks = await agenda.get_tasks(type="implement", ignore_completed=True)
-            if not tasks:
+            result = await agenda.claim_next_tasks(type="implement")
+            if result is None:
                 break
 
-            # pick a NEW/ATTEMPTED task
-            picked = None
-            for t, status in tasks:
-                if status.work_status in (WorkStatus.NEW, WorkStatus.ATTEMPTED):
-                    picked = (t, status)
-                    break
-
-            if picked is None:
-                break
-
-            task, status = picked
-
-            try:
-                await agenda.update_status(task.id, WorkStatus.DOING)
-            except RuntimeError:
-                # already claimed.
-                continue
+            task, status = result[0]
 
             try:
                 idea_path = task.properties.get("idea")
