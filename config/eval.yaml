@@ -4,6 +4,10 @@ defaults:
   - data: dafnybench
   - _self_
 
+hydra:
+  run:
+    dir: .
+
 glob: null
 pickle: null
 num_examples: null

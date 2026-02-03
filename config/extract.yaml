@@ -3,6 +3,10 @@ defaults:
   - data: agenda
   - _self_
 
+hydra:
+  run:
+    dir: .
+
 glob: null
 pickle: null
 output_prefix: null
