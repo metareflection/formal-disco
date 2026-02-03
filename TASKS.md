@@ -98,41 +98,66 @@ sources:
     prompt_types: [lemma_synth]
 ```
 
-## Running Evaluations
+## How to Run
 
-Use `eval.py` with Hydra overrides:
+There are three entry points: `eval.py` (evaluate a model), `extract.py` (generate training data), and `distill.py sft` (train a model). All use Hydra for configuration.
+
+### eval.py — Evaluate a model on a task
+
+`eval.py` composes two Hydra config groups: `task` (from `config/task/`) and `llm` (from `config/llm/`).
 
 ```bash
 # Evaluate fixer on DafnyBench with OpenAI
 python eval.py task=fixer llm=openai
 
-# Evaluate fixer on custom .dfy files with vLLM
-python eval.py task=fixer llm=vllm \
-  'task.sources=[{type: dfy, glob: "../dafny-vfp/autogen/bench*minimized/**/*.dfy"}]'
+# Evaluate with vLLM-served model
+python eval.py task=fixer llm=vllm
 
-# Evaluate lemma synthesis with limited examples
+# Evaluate lemma synthesis, limit to 50 examples
 python eval.py task=lemma_synth llm=openai num_examples=50
 
 # Evaluate implement task
 python eval.py task=implement llm=vllm
 
-# Save results, disable wandb
+# Evaluate fixer on in-distribution pickle data
+python eval.py task=fixer_indist llm=openai
+
+# Override the data source on the command line
+python eval.py task=fixer llm=vllm \
+  'task.sources=[{type: dfy, glob: "../dafny-vfp/autogen/bench*minimized/**/*.dfy"}]'
+
+# Save results to JSON, disable wandb
 python eval.py task=fixer llm=openai output=results.json wandb=false
+
+# Override LLM model
+python eval.py task=fixer llm=openai llm.code.model=gpt-4o
 ```
 
-Config files live in `config/task/*.yaml`. The `config/eval.yaml` root config composes `llm` and `task` groups.
+Available tasks: `fixer`, `fixer_indist`, `implement`, `lemma_synth` (defined in `config/task/`).
+Available LLMs: `openai`, `aws`, `awsbest`, `vllm`, `ollama` (defined in `config/llm/`).
 
-## Extracting Training Data
+Common options:
 
-Use `extract.py` to generate train/val pickle files:
+| Override | Default | Description |
+|----------|---------|-------------|
+| `num_examples=N` | all | Limit to first N examples |
+| `seed=N` | 42 | Random seed for shuffling examples |
+| `output=path.json` | none | Save results to JSON file |
+| `verbose=true` | false | Verbose logging |
+| `wandb=false` | true | Disable wandb logging |
+| `task.max_attempts=N` | 3 | Max repair attempts (fixer, lemma_synth) |
+
+### extract.py — Generate training data
+
+`extract.py` uses the task config group only (no LLM needed).
 
 ```bash
-# Extract fixer training data from verified programs
+# Extract fixer training data from an agenda checkpoint
 python extract.py task=fixer \
   'task.sources=[{type: pickle, path: agenda.pkl, extract_from_verified: true}]' \
   output_prefix=fixer
 
-# Extract lemma examples
+# Extract lemma examples from an agenda checkpoint
 python extract.py task=lemma_synth \
   'task.sources=[{type: pickle, path: agenda.pkl, extract_from_verified: true}]' \
   output_prefix=lemma
@@ -143,15 +168,31 @@ python extract.py task=implement \
   output_prefix=implement
 ```
 
-This produces `{prefix}_train.pkl` and `{prefix}_val.pkl` files split by program path.
+Produces `{output_prefix}_train.pkl` and `{output_prefix}_val.pkl`, split by program path.
 
-## SFT Training
+| Override | Default | Description |
+|----------|---------|-------------|
+| `output_prefix=name` | task name | Prefix for output pickle files |
+| `val_fraction=0.2` | 0.2 | Fraction of programs held out for validation |
+| `seed=N` | 42 | Random seed for the split |
 
-`distill.py sft` supports two modes for building training records:
+### distill.py sft — Train a model
 
-1. **Legacy mode** (`build_sft_records`) — uses `prompt.py` to reconstruct chat messages from distill examples. This is the existing behavior.
+Uses `config/distill.yaml` for training hyperparameters.
 
-2. **Task-based mode** (`build_sft_records_from_tasks`) — dispatches each example to the appropriate task's `to_training_record()` method. This lets each task control its own prompt formatting (e.g., lemma_synth uses a custom system prompt).
+```bash
+# Train on agenda checkpoint pickles (as configured in config/distill.yaml)
+python distill.py sft
+
+# Train on specific pickle files
+python distill.py sft data=fixer_train.pkl
+
+# Train on multiple pickle files
+python distill.py sft 'data=[fixer_train.pkl, lemma_train.pkl]'
+
+# Override training parameters
+python distill.py sft data=fixer_train.pkl learning_rate=1e-4 num_train_epochs=3
+```
 
 ## Data Sources
 

@@ -1,0 +1,7 @@
+defaults:
+  - task: fixer
+  - _self_
+
+output_prefix: null
+val_fraction: 0.2
+seed: 42

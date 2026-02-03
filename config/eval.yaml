@@ -1,6 +1,7 @@
 defaults:
   - llm: openai
   - task: fixer
+  - _self_
 
 num_examples: null
 seed: 42

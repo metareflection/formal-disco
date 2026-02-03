@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-@hydra_main(config_path="config", config_name="eval", version_base=None)
+@hydra_main(config_path="config", config_name="extract", version_base=None)
 def main(cfg: DictConfig) -> None:
     task = instantiate(cfg.task)
     logger.info(f"Task: {task.name}")
