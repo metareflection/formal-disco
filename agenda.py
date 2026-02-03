@@ -9,6 +9,7 @@ be distributed so that we can spawn async workers on many machines.
 
 import atexit
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 import datetime
 import signal
 import threading
@@ -224,6 +225,7 @@ class LocalAgenda(Agenda):
             logger: Optional[AgendaLogger] = None,
             benchmark_codebase_time: Optional[int] = 5*60,
             performance_tracker: Optional[PerformanceTracker] = None,
+            sort_every: int = 100,
     ) -> None:
         self._lock = asyncio.Lock()
         self._tasks: dict[str, Task] = {}
@@ -236,6 +238,12 @@ class LocalAgenda(Agenda):
         self._signal_ckpt_once = threading.Event()
         self._logger = logger or NoOpLogger()
         self._performance_tracker = performance_tracker
+
+        self._sort_every = sort_every
+        self._sorted_task_ids: list[str] = []
+        self._sort_calls: int = 0
+
+        self._patch_executor = ProcessPoolExecutor(max_workers=1)
 
         self._load()
 
@@ -268,6 +276,8 @@ class LocalAgenda(Agenda):
 
                 self._objects = data.get('objects', {})
                 self._clock = data.get('clock', 0)
+            # Build initial sorted task ID cache.
+            self._rebuild_sorted_task_ids()
             stats = self._compute_codebase_statistics()
             logger.info(f"Loaded agenda checkpoint from {self._checkpoint_path}.")
             logger.info(f"Codebase statistics: {stats}")
@@ -390,6 +400,9 @@ class LocalAgenda(Agenda):
             self._tasks[task.id] = task
             self._status[task.id] = TaskStatus()
 
+            # Append to cached ordering (O(1)); full re-sort happens periodically.
+            self._sorted_task_ids.append(task.id)
+
             # This task is created in the NEW state.
             self._logger.log_task_state(task.type, task.id, WorkStatus.NEW.value)
 
@@ -413,28 +426,46 @@ class LocalAgenda(Agenda):
                 pass
         return eff
 
+    def _rebuild_sorted_task_ids(self) -> None:
+        """
+        Full sort of all task IDs by effective priority (descending).
+        NOT thread-safe — call only while holding self._lock or during init.
+        """
+        pairs = []
+        for tid, t in self._tasks.items():
+            s = self._status[tid]
+            pairs.append((tid, self._effective_priority(t, s)))
+        pairs.sort(key=lambda p: p[1], reverse=True)
+        self._sorted_task_ids = [tid for tid, _ in pairs]
+        self._sort_calls = 0
+
     def _get_sorted_tasks(
         self,
         type: Optional[str] = None,
         ignore_completed: bool = False,
-    ) -> list[tuple[Task, TaskStatus]]:
+    ) -> Iterable[tuple[Task, TaskStatus]]:
         """
-        Get tasks sorted by effective priority (highest first).
+        Yield tasks in cached priority order (highest first).
+
+        The cached ordering is rebuilt every ``sort_every`` calls.
+        Callers that only need the first match can stop early.
 
         This method is NOT thread-safe and should only be called while holding self._lock.
         """
-        items: list[tuple[Task, TaskStatus]] = []
-        for tid, t in self._tasks.items():
+        self._sort_calls += 1
+        if self._sort_calls >= self._sort_every:
+            self._rebuild_sorted_task_ids()
+
+        for tid in self._sorted_task_ids:
+            t = self._tasks.get(tid)
+            if t is None:
+                continue
             if type is not None and t.type != type:
                 continue
             s = self._status[tid]
             if ignore_completed and s.is_completed():
                 continue
-            items.append((t, s))
-
-        # Sort by effective priority
-        items.sort(key=lambda ts: self._effective_priority(ts[0], ts[1]), reverse=True)
-        return items
+            yield (t, s)
 
     async def get_tasks(
         self,
@@ -442,7 +473,7 @@ class LocalAgenda(Agenda):
         ignore_completed: bool = False,
     ) -> list[tuple[Task, TaskStatus]]:
         async with self._lock:
-            return self._get_sorted_tasks(type=type, ignore_completed=ignore_completed)
+            return list(self._get_sorted_tasks(type=type, ignore_completed=ignore_completed))
 
     async def update_task(
         self,
@@ -562,21 +593,16 @@ class LocalAgenda(Agenda):
         at distance d as interest_factor * (gamma ** d).
         """
         self.tick()
+
+        old_bytes: Optional[bytes] = None
+
+        # Phase 1 (under lock): swap content, update properties/interestingness.
         async with self._lock:
             if path not in self._objects:
                 raise KeyError(f"Unknown object path: {path}")
             obj = self._objects[path]
             if new_content is not None:
-                # Compute and append a reverse patch so we can reconstruct previous versions later.
                 old_bytes = obj.content if obj.content is not None else b""
-                new_bytes = new_content
-                rev_patch = compute_reverse_patch(new_bytes, old_bytes)
-                history = obj.properties.get("patch_history")
-                if not isinstance(history, list):
-                    history = []
-                    obj.properties["patch_history"] = history
-                history.append(rev_patch)
-
                 obj.content = new_content
             if new_properties:
                 obj.properties.update(new_properties)
@@ -596,6 +622,22 @@ class LocalAgenda(Agenda):
                             anc.interestingness *= propagated
                         except Exception:
                             pass
+
+        # Phase 2 (outside lock): compute expensive reverse patch in a
+        # separate process so the event loop can service other coroutines.
+        if old_bytes is not None:
+            loop = asyncio.get_running_loop()
+            rev_patch = await loop.run_in_executor(
+                self._patch_executor, compute_reverse_patch, new_content, old_bytes)
+
+            # Phase 3 (under lock): append patch to history.
+            async with self._lock:
+                obj = self._objects[path]
+                history = obj.properties.get("patch_history")
+                if not isinstance(history, list):
+                    history = []
+                    obj.properties["patch_history"] = history
+                history.append(rev_patch)
 
     def _compute_codebase_statistics(self) -> dict[str, int]:
         """
