@@ -251,6 +251,7 @@ class FixerTask(EvaluationTask):
         current_text = prog_text
         diffs_applied = []
         ver_notes = initial_notes
+        ver = None
 
         # Get initial verification if no notes provided
         if not ver_notes:
