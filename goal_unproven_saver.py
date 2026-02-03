@@ -217,7 +217,7 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
                 stats['error'] += 1
                 if args.verbose:
                     print(f"  ! {path}: error: {e}")
-                pbar.set_postfix(saved=stats['saved'], failed=stats['still_unproven'])
+                pbar.set_postfix_str(f"{stats['saved']}✓ {stats['still_unproven']}✗")
                 continue
 
             if outcome == VerificationOutcome.SUCCESS:
@@ -235,7 +235,7 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
                 if args.verbose:
                     print(f"  ✗ {path}: could not save (outcome: {outcome.name})")
 
-            pbar.set_postfix(saved=stats['saved'], failed=stats['still_unproven'])
+            pbar.set_postfix_str(f"{stats['saved']}✓ {stats['still_unproven']}✗")
 
             # Save periodically
             if stats['saved'] > 0 and (stats['saved'] + stats['still_unproven']) % 50 == 0:
