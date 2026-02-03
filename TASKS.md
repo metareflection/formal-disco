@@ -13,7 +13,7 @@ python eval.py task=fixer llm=vllm data=pickle pickle=$VAL_PATH
 python eval.py task=lemma_synth llm=vllm data=pickle pickle=$VAL_PATH
 
 # Implement on a pickle
-python eval.py task=implement llm=vllm data=pickle pickle=$VAL_PATH
+python eval.py task=implement llm=vllm data=pickle pickle=$VAL_PATH num_examples=100
 
 # Fixer on an arbitrary dfy glob
 python eval.py task=fixer llm=vllm data=glob glob="path/to/**/*.dfy"
