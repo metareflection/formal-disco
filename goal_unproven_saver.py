@@ -224,6 +224,10 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
                 stats['saved'] += 1
                 stats['total_ensures_removed'] += num_removed
                 repairs[path] = saved
+                # Apply repair immediately
+                obj = objects[path]
+                obj.content = saved.encode('utf-8') if isinstance(obj.content, bytes) else saved
+                obj.properties['verification_status'] = 'success'
                 if args.verbose:
                     print(f"  ✓ {path}: removed {num_removed} ensures clause(s)")
             else:
@@ -232,6 +236,11 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
                     print(f"  ✗ {path}: could not save (outcome: {outcome.name})")
 
             pbar.set_postfix(saved=stats['saved'], failed=stats['still_unproven'])
+
+            # Save periodically
+            if stats['saved'] > 0 and (stats['saved'] + stats['still_unproven']) % 50 == 0:
+                with open(args.output, 'wb') as f:
+                    pickle.dump(data, f)
 
     # Summary
     total = len(candidates)
@@ -245,15 +254,9 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
     if stats['saved']:
         print(f"Avg ensures removed:   {stats['total_ensures_removed']/stats['saved']:.1f}")
 
-    # Apply repairs
+    # Final save
     if repairs:
-        print(f"\nApplying {len(repairs)} repairs...")
-        for path, new_content in repairs.items():
-            obj = objects[path]
-            obj.content = new_content.encode('utf-8') if isinstance(obj.content, bytes) else new_content
-            obj.properties['verification_status'] = 'success'
-
-        print(f"Saving to {args.output}...")
+        print(f"\nSaving {len(repairs)} repairs to {args.output}...")
         with open(args.output, 'wb') as f:
             pickle.dump(data, f)
         print("Done!")
