@@ -282,12 +282,15 @@ Data sources are configured via the `data` Hydra config group (`config/data/*.ya
 | `implement_val` | Implement val split pickle |
 | `agenda` | Agenda checkpoint for extraction (default for extract) |
 | `glob` | Arbitrary `.dfy` glob — set `glob=` on the command line (see below) |
+| `pickle` | Arbitrary pickle file — set `pickle=` on the command line (see below) |
 
-The `glob` preset uses Hydra interpolation (`${glob}`) to read from a top-level config key, so you can point at any `.dfy` files without quoting nested YAML:
+The `glob` and `pickle` presets use Hydra interpolation to read from a top-level config key, so you can point at arbitrary data without quoting nested YAML:
 
 ```bash
 python eval.py task=fixer llm=vllm data=glob glob="../dafny-vfp/autogen/**/*.dfy"
+python eval.py task=fixer llm=vllm data=pickle pickle=my_results.pkl
 python extract.py task=implement data=glob glob="autogen/**/*.dfy" output_prefix=implement
+python extract.py task=fixer data=pickle pickle=agenda-run3.pkl output_prefix=fixer
 ```
 
 To add a new preset, create `config/data/my_data.yaml`:

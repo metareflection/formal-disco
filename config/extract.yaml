@@ -4,6 +4,7 @@ defaults:
   - _self_
 
 glob: null
+pickle: null
 output_prefix: null
 val_fraction: 0.2
 seed: 42

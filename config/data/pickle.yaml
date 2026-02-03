@@ -1,0 +1,3 @@
+sources:
+  - type: pickle
+    path: ${pickle}

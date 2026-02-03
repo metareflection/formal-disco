@@ -1,0 +1,3 @@
+sources:
+  - type: dfy
+    glob: "DafnyBench/hints_removed/**/*.dfy"

@@ -5,6 +5,7 @@ defaults:
   - _self_
 
 glob: null
+pickle: null
 num_examples: null
 seed: 42
 output: null
