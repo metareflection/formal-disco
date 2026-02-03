@@ -1,6 +1,76 @@
 # Task System
 
-The `tasks/` package provides a unified framework for evaluating models on Dafny-related tasks, extracting training data, and generating SFT records. Each task is a self-contained module that handles its own data loading, evaluation logic, and training record formatting.
+## Overview
+
+The discovery system (`scheduler.py`) produces agenda checkpoints (e.g. `agenda-run3.pkl`) containing verified Dafny programs. The task system turns these into training data, trains models, and evaluates them. The full flow:
+
+```
+                        agenda checkpoint (agenda-run3.pkl)
+                                    |
+                        +-----------+-----------+
+                        |                       |
+                  extract.py               extract.py
+                  task=fixer            task=lemma_synth
+                        |                       |
+                fixer_train.pkl          lemma_train.pkl
+                fixer_val.pkl            lemma_val.pkl
+                        |                       |
+                        +-----------+-----------+
+                                    |
+                            distill.py sft
+                      data=[fixer_train.pkl, ...]
+                                    |
+                          model checkpoint
+                           (served via vLLM)
+                                    |
+                        +-----------+-----------+
+                        |           |           |
+                    eval.py     eval.py     eval.py
+                  task=fixer  task=implement task=lemma_synth
+                   llm=vllm    llm=vllm      llm=vllm
+                        |           |           |
+                     success     success     success
+                      rates       rates       rates
+```
+
+### Step by step
+
+**1. Extract training/eval data from an agenda checkpoint.**
+
+Each task knows how to generate its own examples from verified programs:
+- **fixer**: strips hints (invariants, assertions) from verified programs to create broken/fixed pairs
+- **lemma_synth**: hollows out lemma bodies to create synthesis challenges
+- **implement**: pairs ideas with their verified implementations
+
+```bash
+python extract.py task=fixer 'task.sources=[{type: pickle, path: agenda-run3.pkl, extract_from_verified: true}]' output_prefix=fixer
+python extract.py task=lemma_synth 'task.sources=[{type: pickle, path: agenda-run3.pkl, extract_from_verified: true}]' output_prefix=lemma
+```
+
+This produces `*_train.pkl` and `*_val.pkl` files, split by program (so no data leakage between train and eval).
+
+**2. Train a model on the extracted data.**
+
+```bash
+python distill.py sft 'data=[fixer_train.pkl, lemma_train.pkl]'
+```
+
+This trains an SFT model (LoRA on Qwen by default) using each task's `to_training_record()` to build the chat-format training examples.
+
+**3. Serve the trained model and evaluate it.**
+
+```bash
+# Serve the model (outside this repo, e.g. with vLLM)
+# Then evaluate on held-out val splits:
+python eval.py task=fixer_indist llm=vllm    # fixer on val split
+python eval.py task=lemma_synth llm=vllm     # lemma on val split
+python eval.py task=implement llm=vllm       # implement on val split
+
+# Or evaluate on external benchmarks:
+python eval.py task=fixer llm=vllm           # fixer on DafnyBench
+```
+
+Each eval reports a success rate. Compare across model checkpoints to pick the best one.
 
 ## Architecture
 
