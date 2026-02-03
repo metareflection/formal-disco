@@ -1,0 +1,6 @@
+_target_: tasks.implement.ImplementTask
+sources:
+  - type: pickle
+    path: distil-verified.pkl
+    prompt_types:
+      - implement

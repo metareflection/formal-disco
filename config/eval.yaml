@@ -1,0 +1,10 @@
+defaults:
+  - llm: openai
+  - task: fixer
+
+num_examples: null
+seed: 42
+output: null
+verbose: false
+wandb: true
+wandb_project: formal-disco-eval

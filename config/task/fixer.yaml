@@ -1,0 +1,6 @@
+_target_: tasks.fixer.FixerTask
+max_attempts: 3
+filter_trivial: true
+sources:
+  - type: dfy
+    glob: "DafnyBench/hints_removed/**/*.dfy"

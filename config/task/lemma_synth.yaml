@@ -1,0 +1,7 @@
+_target_: tasks.lemma_synth.LemmaSynthTask
+max_attempts: 3
+sources:
+  - type: pickle
+    path: lemma_val.pkl
+    prompt_types:
+      - lemma_synth
