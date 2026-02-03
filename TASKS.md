@@ -21,10 +21,10 @@ python eval.py task=fixer llm=vllm data=glob glob="path/to/**/*.dfy"
 
 ## Overview
 
-The discovery system (`scheduler.py`) produces agenda checkpoints (e.g. `agenda-run3.pkl`) containing verified Dafny programs. The task system turns these into training data, trains models, and evaluates them. The full flow:
+The discovery system (`scheduler.py`) produces agenda checkpoints (e.g. `agenda-run.pkl`) containing verified Dafny programs. The task system turns these into training data, trains models, and evaluates them. The full flow:
 
 ```
-                        agenda checkpoint (agenda-run3.pkl)
+                        agenda checkpoint (agenda-run.pkl)
                                     |
                         +-----------+-----------+
                         |                       |
@@ -62,14 +62,8 @@ Each task knows how to generate its own examples from verified programs:
 - **implement**: pairs ideas with their verified implementations
 
 ```bash
-python extract.py task=fixer output_prefix=fixer
-python extract.py task=lemma_synth output_prefix=lemma
-```
-
-The default data source for extraction is `data=agenda` (see `config/data/agenda.yaml`). To use a different agenda checkpoint:
-
-```bash
-python extract.py task=fixer 'data.sources=[{type: pickle, path: agenda-run3.pkl, extract_from_verified: true}]' output_prefix=fixer
+python extract.py task=fixer pickle=agenda-run.pkl output_prefix=fixer
+python extract.py task=lemma_synth pickle=agenda-run.pkl output_prefix=lemma
 ```
 
 This produces `*_train.pkl` and `*_val.pkl` files, split by program (so no data leakage between train and eval).
@@ -87,12 +81,12 @@ This trains an SFT model (LoRA on Qwen by default) using each task's `to_trainin
 ```bash
 # Serve the model (outside this repo, e.g. with vLLM)
 # Then evaluate on held-out val splits:
-python eval.py task=fixer llm=vllm data=fixer_val       # fixer on val split
-python eval.py task=lemma_synth llm=vllm data=lemma_val  # lemma on val split
-python eval.py task=implement llm=vllm data=implement_val # implement on val split
+python eval.py task=fixer llm=vllm data=pickle pickle=fixer_val.pkl
+python eval.py task=lemma_synth llm=vllm data=pickle pickle=lemma_val.pkl
+python eval.py task=implement llm=vllm data=pickle pickle=implement_val.pkl
 
 # Or evaluate on external benchmarks:
-python eval.py task=fixer llm=vllm                       # fixer on DafnyBench (default)
+python eval.py task=fixer llm=vllm   # fixer on DafnyBench (default)
 ```
 
 Each eval reports a success rate. Compare across model checkpoints to pick the best one.
@@ -247,16 +241,11 @@ Common options:
 `extract.py` uses the `task` and `data` config groups (no LLM needed). The default data source is `data=agenda`.
 
 ```bash
-# Extract fixer training data from the default agenda checkpoint
-python extract.py task=fixer output_prefix=fixer
+# Extract fixer training data from an agenda checkpoint
+python extract.py task=fixer pickle=agenda-run.pkl output_prefix=fixer
 
 # Extract lemma examples
-python extract.py task=lemma_synth output_prefix=lemma
-
-# Extract from a specific agenda pickle
-python extract.py task=fixer \
-  'data.sources=[{type: pickle, path: agenda-run3.pkl, extract_from_verified: true}]' \
-  output_prefix=fixer
+python extract.py task=lemma_synth pickle=agenda-run.pkl output_prefix=lemma
 
 # Extract implement examples from .dfy files
 python extract.py task=implement data=glob glob="autogen/**/*.dfy" output_prefix=implement
@@ -309,7 +298,7 @@ The `glob` and `pickle` presets use Hydra interpolation to read from a top-level
 python eval.py task=fixer llm=vllm data=glob glob="../dafny-vfp/autogen/**/*.dfy"
 python eval.py task=fixer llm=vllm data=pickle pickle=my_results.pkl
 python extract.py task=implement data=glob glob="autogen/**/*.dfy" output_prefix=implement
-python extract.py task=fixer data=pickle pickle=agenda-run3.pkl output_prefix=fixer
+python extract.py task=fixer data=pickle pickle=agenda-run.pkl output_prefix=fixer
 ```
 
 To add a new preset, create `config/data/my_data.yaml`:

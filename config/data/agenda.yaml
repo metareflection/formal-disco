@@ -1,4 +1,4 @@
 sources:
   - type: pickle
-    path: agenda.pkl
+    path: ${pickle}
     extract_from_verified: true
