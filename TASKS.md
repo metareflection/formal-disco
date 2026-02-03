@@ -207,7 +207,7 @@ python eval.py task=fixer llm=openai output=results.json wandb=false
 python eval.py task=fixer llm=openai llm.code.model=gpt-4o
 ```
 
-Available tasks: `fixer`, `fixer_indist`, `implement`, `lemma_synth` (defined in `config/task/`).
+Available tasks: `fixer`, `implement`, `lemma_synth` (defined in `config/task/`).
 Available LLMs: `openai`, `aws`, `awsbest`, `vllm`, `ollama` (defined in `config/llm/`).
 Available data presets: `dafnybench`, `fixer_val`, `lemma_val`, `implement_val`, `agenda` (defined in `config/data/`).
 

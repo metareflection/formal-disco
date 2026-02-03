@@ -1,2 +1,0 @@
-_target_: tasks.fixer.FixerTask
-max_attempts: 3
