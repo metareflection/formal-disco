@@ -42,13 +42,11 @@ class FixerTask(EvaluationTask):
     def __init__(
         self,
         max_attempts: int = 3,
-        sources: list[dict] | None = None,
         filter_trivial: bool = True,
         cache_path: str = ".fixer_outcome_cache.json",
         verbose: bool = False,
     ):
         self.max_attempts = max_attempts
-        self.sources = sources or []
         self.filter_trivial = filter_trivial
         self.cache_path = cache_path
         self.verbose = verbose
@@ -77,8 +75,8 @@ class FixerTask(EvaluationTask):
     # (a) Data extraction
     # ------------------------------------------------------------------
 
-    def extract_examples(self, sources: list[dict] | None = None) -> list[dict]:
-        """Extract fixer examples from configured sources.
+    def extract_examples(self, sources: list[dict]) -> list[dict]:
+        """Extract fixer examples from the given sources.
 
         For pickle sources with raw verified programs: strips hints to create
         (broken_program, errors) -> diff examples.
@@ -87,7 +85,6 @@ class FixerTask(EvaluationTask):
 
         For dfy sources: loads .dfy files as programs needing repair.
         """
-        sources = sources or self.sources
         examples = []
 
         for source in sources:

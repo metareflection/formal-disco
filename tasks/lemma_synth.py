@@ -170,24 +170,21 @@ class LemmaSynthTask(EvaluationTask):
     def __init__(
         self,
         max_attempts: int = 3,
-        sources: list[dict] | None = None,
         verbose: bool = False,
     ):
         self.max_attempts = max_attempts
-        self.sources = sources or []
         self.verbose = verbose
 
     # ------------------------------------------------------------------
     # (a) Data extraction
     # ------------------------------------------------------------------
 
-    def extract_examples(self, sources: list[dict] | None = None) -> list[dict]:
+    def extract_examples(self, sources: list[dict]) -> list[dict]:
         """Extract lemma synthesis examples.
 
         Pickle sources with prompt_types: loads pre-made examples.
         Pickle sources with extract_from_verified: generates by hollowing lemma bodies.
         """
-        sources = sources or self.sources
         examples = []
 
         for source in sources:

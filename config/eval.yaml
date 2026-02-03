@@ -1,8 +1,10 @@
 defaults:
   - llm: openai
   - task: fixer
+  - data: dafnybench
   - _self_
 
+glob: null
 num_examples: null
 seed: 42
 output: null

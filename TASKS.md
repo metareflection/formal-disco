@@ -43,8 +43,14 @@ Each task knows how to generate its own examples from verified programs:
 - **implement**: pairs ideas with their verified implementations
 
 ```bash
-python extract.py task=fixer 'task.sources=[{type: pickle, path: agenda-run3.pkl, extract_from_verified: true}]' output_prefix=fixer
-python extract.py task=lemma_synth 'task.sources=[{type: pickle, path: agenda-run3.pkl, extract_from_verified: true}]' output_prefix=lemma
+python extract.py task=fixer output_prefix=fixer
+python extract.py task=lemma_synth output_prefix=lemma
+```
+
+The default data source for extraction is `data=agenda` (see `config/data/agenda.yaml`). To use a different agenda checkpoint:
+
+```bash
+python extract.py task=fixer 'data.sources=[{type: pickle, path: agenda-run3.pkl, extract_from_verified: true}]' output_prefix=fixer
 ```
 
 This produces `*_train.pkl` and `*_val.pkl` files, split by program (so no data leakage between train and eval).
@@ -62,12 +68,12 @@ This trains an SFT model (LoRA on Qwen by default) using each task's `to_trainin
 ```bash
 # Serve the model (outside this repo, e.g. with vLLM)
 # Then evaluate on held-out val splits:
-python eval.py task=fixer_indist llm=vllm    # fixer on val split
-python eval.py task=lemma_synth llm=vllm     # lemma on val split
-python eval.py task=implement llm=vllm       # implement on val split
+python eval.py task=fixer llm=vllm data=fixer_val       # fixer on val split
+python eval.py task=lemma_synth llm=vllm data=lemma_val  # lemma on val split
+python eval.py task=implement llm=vllm data=implement_val # implement on val split
 
 # Or evaluate on external benchmarks:
-python eval.py task=fixer llm=vllm           # fixer on DafnyBench
+python eval.py task=fixer llm=vllm                       # fixer on DafnyBench (default)
 ```
 
 Each eval reports a success rate. Compare across model checkpoints to pick the best one.
@@ -81,14 +87,16 @@ class EvaluationTask(ABC):
     name: str           # e.g. "fixer"
     prompt_type: str    # e.g. "repair"
 
-    def extract_examples(self, sources) -> list[dict]
+    def extract_examples(self, sources: list[dict]) -> list[dict]
     def evaluate_one(self, llm, example) -> dict
     def to_training_record(self, example) -> dict | None
 ```
 
+Sources are passed into `extract_examples` from the `data` config group (`config/data/*.yaml`), not stored on the task object.
+
 | Method | Purpose |
 |--------|---------|
-| `extract_examples` | Load/generate examples from pickle files or `.dfy` file globs |
+| `extract_examples` | Load/generate examples from the given data sources |
 | `evaluate_one` | Run the model on one example, return `{"success": bool, ...}` |
 | `to_training_record` | Convert a distill example into `{"messages": [...], "completion": str}` for SFT |
 
@@ -111,22 +119,18 @@ Repairs broken Dafny programs by iteratively generating and applying diffs.
 
 **Evaluation:** Iterative (up to `max_attempts`). Each attempt: prompt LLM for a diff, apply it with `apply_text_diff`, verify with Dafny.
 
-**Config examples:**
+**Config:**
 ```yaml
-# DafnyBench evaluation
+# config/task/fixer.yaml
 _target_: tasks.fixer.FixerTask
 max_attempts: 3
-sources:
-  - type: dfy
-    glob: "DafnyBench/hints_removed/**/*.dfy"
+filter_trivial: true
+```
 
-# In-distribution evaluation
-_target_: tasks.fixer.FixerTask
-max_attempts: 3
-sources:
-  - type: pickle
-    path: fixer_val.pkl
-    prompt_types: [repair]
+**Usage:**
+```bash
+python eval.py task=fixer llm=openai                  # DafnyBench (default data=dafnybench)
+python eval.py task=fixer llm=vllm data=fixer_val     # In-distribution val split
 ```
 
 ### Implement (`tasks/implement.py`)
@@ -141,11 +145,13 @@ Generates Dafny programs from idea/specification descriptions.
 
 **Config:**
 ```yaml
+# config/task/implement.yaml
 _target_: tasks.implement.ImplementTask
-sources:
-  - type: pickle
-    path: distil-verified.pkl
-    prompt_types: [implement]
+```
+
+**Usage:**
+```bash
+python eval.py task=implement llm=vllm data=implement_val
 ```
 
 ### Lemma Synthesis (`tasks/lemma_synth.py`)
@@ -160,12 +166,14 @@ Fills in empty lemma bodies so the program verifies.
 
 **Config:**
 ```yaml
+# config/task/lemma_synth.yaml
 _target_: tasks.lemma_synth.LemmaSynthTask
 max_attempts: 3
-sources:
-  - type: pickle
-    path: lemma_val.pkl
-    prompt_types: [lemma_synth]
+```
+
+**Usage:**
+```bash
+python eval.py task=lemma_synth llm=openai data=lemma_val num_examples=50
 ```
 
 ## How to Run
@@ -174,27 +182,23 @@ There are three entry points: `eval.py` (evaluate a model), `extract.py` (genera
 
 ### eval.py — Evaluate a model on a task
 
-`eval.py` composes two Hydra config groups: `task` (from `config/task/`) and `llm` (from `config/llm/`).
+`eval.py` composes three Hydra config groups: `task` (from `config/task/`), `llm` (from `config/llm/`), and `data` (from `config/data/`).
 
 ```bash
-# Evaluate fixer on DafnyBench with OpenAI
+# Evaluate fixer on DafnyBench (default data=dafnybench)
 python eval.py task=fixer llm=openai
 
-# Evaluate with vLLM-served model
-python eval.py task=fixer llm=vllm
+# Evaluate fixer on val split
+python eval.py task=fixer llm=vllm data=fixer_val
 
-# Evaluate lemma synthesis, limit to 50 examples
-python eval.py task=lemma_synth llm=openai num_examples=50
+# Evaluate lemma synthesis on val split, limit to 50 examples
+python eval.py task=lemma_synth llm=openai data=lemma_val num_examples=50
 
 # Evaluate implement task
-python eval.py task=implement llm=vllm
+python eval.py task=implement llm=vllm data=implement_val
 
-# Evaluate fixer on in-distribution pickle data
-python eval.py task=fixer_indist llm=openai
-
-# Override the data source on the command line
-python eval.py task=fixer llm=vllm \
-  'task.sources=[{type: dfy, glob: "../dafny-vfp/autogen/bench*minimized/**/*.dfy"}]'
+# Evaluate on an arbitrary dfy glob
+python eval.py task=fixer llm=vllm data=glob glob="../dafny-vfp/autogen/bench*minimized/**/*.dfy"
 
 # Save results to JSON, disable wandb
 python eval.py task=fixer llm=openai output=results.json wandb=false
@@ -205,11 +209,13 @@ python eval.py task=fixer llm=openai llm.code.model=gpt-4o
 
 Available tasks: `fixer`, `fixer_indist`, `implement`, `lemma_synth` (defined in `config/task/`).
 Available LLMs: `openai`, `aws`, `awsbest`, `vllm`, `ollama` (defined in `config/llm/`).
+Available data presets: `dafnybench`, `fixer_val`, `lemma_val`, `implement_val`, `agenda` (defined in `config/data/`).
 
 Common options:
 
 | Override | Default | Description |
 |----------|---------|-------------|
+| `data=name` | dafnybench | Data source preset |
 | `num_examples=N` | all | Limit to first N examples |
 | `seed=N` | 42 | Random seed for shuffling examples |
 | `output=path.json` | none | Save results to JSON file |
@@ -219,29 +225,29 @@ Common options:
 
 ### extract.py — Generate training data
 
-`extract.py` uses the task config group only (no LLM needed).
+`extract.py` uses the `task` and `data` config groups (no LLM needed). The default data source is `data=agenda`.
 
 ```bash
-# Extract fixer training data from an agenda checkpoint
+# Extract fixer training data from the default agenda checkpoint
+python extract.py task=fixer output_prefix=fixer
+
+# Extract lemma examples
+python extract.py task=lemma_synth output_prefix=lemma
+
+# Extract from a specific agenda pickle
 python extract.py task=fixer \
-  'task.sources=[{type: pickle, path: agenda.pkl, extract_from_verified: true}]' \
+  'data.sources=[{type: pickle, path: agenda-run3.pkl, extract_from_verified: true}]' \
   output_prefix=fixer
 
-# Extract lemma examples from an agenda checkpoint
-python extract.py task=lemma_synth \
-  'task.sources=[{type: pickle, path: agenda.pkl, extract_from_verified: true}]' \
-  output_prefix=lemma
-
 # Extract implement examples from .dfy files
-python extract.py task=implement \
-  'task.sources=[{type: dfy, glob: "autogen/**/*.dfy"}]' \
-  output_prefix=implement
+python extract.py task=implement data=glob glob="autogen/**/*.dfy" output_prefix=implement
 ```
 
 Produces `{output_prefix}_train.pkl` and `{output_prefix}_val.pkl`, split by program path.
 
 | Override | Default | Description |
 |----------|---------|-------------|
+| `data=name` | agenda | Data source preset |
 | `output_prefix=name` | task name | Prefix for output pickle files |
 | `val_fraction=0.2` | 0.2 | Fraction of programs held out for validation |
 | `seed=N` | 42 | Random seed for the split |
@@ -266,7 +272,34 @@ python distill.py sft data=fixer_train.pkl learning_rate=1e-4 num_train_epochs=3
 
 ## Data Sources
 
-Tasks accept a list of sources, each with a `type` field:
+Data sources are configured via the `data` Hydra config group (`config/data/*.yaml`). Each preset contains a `sources` list. Available presets:
+
+| Preset | Description |
+|--------|-------------|
+| `dafnybench` | DafnyBench `.dfy` files (default for eval) |
+| `fixer_val` | Fixer val split pickle |
+| `lemma_val` | Lemma synth val split pickle |
+| `implement_val` | Implement val split pickle |
+| `agenda` | Agenda checkpoint for extraction (default for extract) |
+| `glob` | Arbitrary `.dfy` glob — set `glob=` on the command line (see below) |
+
+The `glob` preset uses Hydra interpolation (`${glob}`) to read from a top-level config key, so you can point at any `.dfy` files without quoting nested YAML:
+
+```bash
+python eval.py task=fixer llm=vllm data=glob glob="../dafny-vfp/autogen/**/*.dfy"
+python extract.py task=implement data=glob glob="autogen/**/*.dfy" output_prefix=implement
+```
+
+To add a new preset, create `config/data/my_data.yaml`:
+
+```yaml
+sources:
+  - type: pickle
+    path: my_data.pkl
+    prompt_types: [repair]
+```
+
+Each source has a `type` field:
 
 ### Pickle sources (`type: pickle`)
 
@@ -298,11 +331,9 @@ class MyTask(EvaluationTask):
     name = "my_task"
     prompt_type = "my_prompt_type"
 
-    def __init__(self, sources=None, **kwargs):
-        self.sources = sources or []
-
-    def extract_examples(self, sources=None):
+    def extract_examples(self, sources: list[dict]):
         # Load and return examples as list[dict]
+        # Sources are passed in from the data config group
         ...
 
     def evaluate_one(self, llm, example):
@@ -319,16 +350,21 @@ class MyTask(EvaluationTask):
 
 ```yaml
 _target_: tasks.my_task.MyTask
+```
+
+3. Create a data preset `config/data/my_data.yaml`:
+
+```yaml
 sources:
   - type: pickle
     path: my_data.pkl
     prompt_types: [my_prompt_type]
 ```
 
-3. Run it:
+4. Run it:
 
 ```bash
-python eval.py task=my_task llm=openai
+python eval.py task=my_task data=my_data llm=openai
 ```
 
 The task is automatically discovered by `discover_tasks()` and usable from `eval.py`, `extract.py`, and `distill.py`.

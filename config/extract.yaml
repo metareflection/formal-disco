@@ -1,7 +1,9 @@
 defaults:
   - task: fixer
+  - data: agenda
   - _self_
 
+glob: null
 output_prefix: null
 val_fraction: 0.2
 seed: 42

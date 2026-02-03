@@ -6,14 +6,17 @@ Extracts training/validation examples from data sources using task-specific logi
 then writes them as pickle files compatible with distill.py sft.
 
 Usage:
-    # Extract fixer examples from verified programs
-    python extract.py task=fixer 'task.sources=[{type: pickle, path: agenda.pkl, extract_from_verified: true}]' output_prefix=fixer
+    # Extract fixer examples from verified programs (default data=agenda)
+    python extract.py task=fixer output_prefix=fixer
 
     # Extract lemma examples
-    python extract.py task=lemma_synth 'task.sources=[{type: pickle, path: agenda.pkl, extract_from_verified: true}]' output_prefix=lemma
+    python extract.py task=lemma_synth output_prefix=lemma
+
+    # Extract from a specific pickle
+    python extract.py task=fixer 'data.sources=[{type: pickle, path: run3.pkl, extract_from_verified: true}]' output_prefix=fixer
 
     # Extract implement examples from .dfy files
-    python extract.py task=implement 'task.sources=[{type: dfy, glob: "autogen/**/*.dfy"}]' output_prefix=implement
+    python extract.py task=implement 'data.sources=[{type: dfy, glob: "autogen/**/*.dfy"}]' output_prefix=implement
 """
 
 import json
@@ -24,7 +27,7 @@ from pathlib import Path
 
 from hydra import main as hydra_main
 from hydra.utils import instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from distill_common import create_agenda_pickle
 
@@ -41,8 +44,9 @@ def main(cfg: DictConfig) -> None:
     val_fraction = cfg.get("val_fraction", 0.2)
     seed = cfg.get("seed", 42)
 
-    # Extract examples
-    examples = task.extract_examples()
+    # Extract examples from the data sources
+    sources = OmegaConf.to_container(cfg.data.sources, resolve=True)
+    examples = task.extract_examples(sources)
     logger.info(f"Extracted {len(examples)} examples")
 
     if not examples:

@@ -29,10 +29,8 @@ class ImplementTask(EvaluationTask):
 
     def __init__(
         self,
-        sources: list[dict] | None = None,
         verbose: bool = False,
     ):
-        self.sources = sources or []
         self.verbose = verbose
         self._chain = None
 
@@ -49,13 +47,12 @@ class ImplementTask(EvaluationTask):
     # (a) Data extraction
     # ------------------------------------------------------------------
 
-    def extract_examples(self, sources: list[dict] | None = None) -> list[dict]:
+    def extract_examples(self, sources: list[dict]) -> list[dict]:
         """Extract implement examples.
 
         Pickle sources: load distill examples with prompt_type='implement'.
         Dfy sources: extract idea comments from .dfy files.
         """
-        sources = sources or self.sources
         examples = []
 
         for source in sources:

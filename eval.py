@@ -4,10 +4,10 @@ Unified evaluation entry point.
 
 Usage:
     python eval.py task=fixer llm=openai
-    python eval.py task=fixer_indist llm=vllm num_examples=50
-    python eval.py task=lemma_synth llm=openai num_examples=50
-    python eval.py task=implement llm=vllm
-    python eval.py task=fixer llm=vllm 'task.sources=[{type: dfy, glob: "../dafny-vfp/autogen/bench*minimized/**/*.dfy"}]'
+    python eval.py task=fixer llm=vllm data=fixer_val
+    python eval.py task=lemma_synth llm=openai data=lemma_val num_examples=50
+    python eval.py task=implement llm=vllm data=implement_val
+    python eval.py task=fixer llm=vllm data=glob glob="../dafny-vfp/autogen/bench*minimized/**/*.dfy"
 """
 
 import json
@@ -41,8 +41,9 @@ def main(cfg: DictConfig) -> None:
     llm = instantiate(cfg.llm.code)
     logger.info(f"LLM: {OmegaConf.to_yaml(cfg.llm.code)}")
 
-    # Extract examples from the task's configured sources
-    examples = task.extract_examples()
+    # Extract examples from the data sources
+    sources = OmegaConf.to_container(cfg.data.sources, resolve=True)
+    examples = task.extract_examples(sources)
 
     # Apply seed and limit
     if cfg.seed is not None:

@@ -46,11 +46,14 @@ class EvaluationTask(ABC):
 
     @abstractmethod
     def extract_examples(self, sources: list[dict]) -> list[dict]:
-        """Extract examples from configured sources.
+        """Extract examples from the given data sources.
 
         Each source is a dict like:
           {"type": "pickle", "path": "...", "prompt_types": [...]}
           {"type": "dfy", "glob": "DafnyBench/**/*.dfy"}
+
+        Sources are passed in from the `data` config group (config/data/*.yaml),
+        not stored on the task itself.
 
         Returns list of DistillExample dicts.
         """
