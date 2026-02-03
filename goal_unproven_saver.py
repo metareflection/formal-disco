@@ -195,7 +195,8 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
     stats = Counter()
     repairs = {}
 
-    for path, obj, content in tqdm(candidates, desc="Saving programs"):
+    pbar = tqdm(candidates, desc="Saving programs")
+    for path, obj, content in pbar:
         saved, outcome, num_removed = save_program(content, verbose=args.verbose)
 
         if outcome == VerificationOutcome.SUCCESS:
@@ -208,6 +209,8 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
             stats['still_unproven'] += 1
             if args.verbose:
                 print(f"  ✗ {path}: could not save (outcome: {outcome.name})")
+
+        pbar.set_postfix(saved=stats['saved'], failed=stats['still_unproven'])
 
     # Summary
     total = len(candidates)
