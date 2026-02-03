@@ -5,6 +5,7 @@ Weights & Biases logger implementation for tracking agenda metrics.
 """
 
 import collections
+import time
 
 from . import AgendaLogger
 
@@ -38,6 +39,11 @@ class WandbLogger(AgendaLogger):
         # Program statistics
         self._program_count = 0
         self._program_total_lines = 0
+
+        # For computing hourly rates in log_code_base_statistics
+        self._last_codebase_stats_time: float | None = None
+        self._last_verified_programs: int = 0
+        self._last_verified_loc: int = 0
 
 
     def log_task_state(self, task_type: str, task_id: str, new_state: str) -> None:
@@ -85,6 +91,25 @@ class WandbLogger(AgendaLogger):
     ) -> None:
         """Log aggregate statistics about the collection of programs we have so far."""
         wandb_stats = {f"codebase/{key}": value for key, value in codebase_stats.items()}
+
+        # Compute hourly rates based on delta since last call
+        now = time.time()
+        current_verified_programs = codebase_stats.get("total_verified_programs", 0)
+        current_verified_loc = codebase_stats.get("loc_verified_programs", 0)
+
+        if self._last_codebase_stats_time is not None:
+            elapsed_hours = (now - self._last_codebase_stats_time) / 3600.0
+            if elapsed_hours > 0:
+                delta_programs = current_verified_programs - self._last_verified_programs
+                delta_loc = current_verified_loc - self._last_verified_loc
+                wandb_stats["perf/verified_programs_per_hour"] = delta_programs / elapsed_hours
+                wandb_stats["perf/verified_loc_per_hour"] = delta_loc / elapsed_hours
+
+        # Update tracking state
+        self._last_codebase_stats_time = now
+        self._last_verified_programs = current_verified_programs
+        self._last_verified_loc = current_verified_loc
+
         self._wandb.log(wandb_stats)
 
     def log_performance_statistics(
