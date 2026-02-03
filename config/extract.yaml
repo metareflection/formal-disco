@@ -1,0 +1,14 @@
+defaults:
+  - task: fixer
+  - data: agenda
+  - _self_
+
+hydra:
+  run:
+    dir: .
+
+glob: null
+pickle: null
+output_prefix: null
+val_fraction: 0.2
+seed: 42

@@ -1,0 +1,5 @@
+sources:
+  - type: pickle
+    path: lemma_val.pkl
+    prompt_types:
+      - lemma_synth

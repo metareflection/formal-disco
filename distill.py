@@ -221,6 +221,60 @@ def build_sft_records(
     return records, counts
 
 
+def build_sft_records_from_tasks(
+    pickle_paths: list[str | Path],
+    success_only: bool,
+    outcome_success_values: tuple[str, ...] = ("success",),
+) -> tuple[list[dict[str, str]], Counter[str]]:
+    """Build SFT records using task-specific to_training_record() methods.
+
+    This dispatches each example to the appropriate EvaluationTask subclass
+    for training record generation, allowing task-specific prompt formatting.
+
+    Falls back to build_sft_records() for unknown prompt types.
+    """
+    from tasks import discover_tasks
+
+    task_classes = discover_tasks()
+    # Map prompt_type -> task instance
+    task_instances: dict[str, Any] = {}
+    for _name, cls in task_classes.items():
+        pt = getattr(cls, 'prompt_type', None)
+        if pt and pt not in task_instances:
+            task_instances[pt] = cls()
+
+    records: list[dict[str, str]] = []
+    counts: Counter[str] = Counter()
+
+    for pickle_path in pickle_paths:
+        for ex in _iter_distill_examples_from_pickle(pickle_path):
+            kind = str(ex.get("prompt", "unknown"))
+            if not ex.get("arguments"):
+                continue
+            response = ex.get("response")
+            if response is None:
+                continue
+
+            if success_only:
+                outcome = ex.get("outcome")
+                outcome_s = "" if outcome is None else str(outcome).lower()
+                if outcome_s not in outcome_success_values:
+                    continue
+
+            task = task_instances.get(kind)
+            if task:
+                record = task.to_training_record(ex)
+                if record:
+                    messages = record["messages"]
+                    if isinstance(messages, list):
+                        messages = json.dumps(messages, ensure_ascii=False)
+                    records.append({"messages": messages, "completion": record["completion"]})
+                    counts[kind] += 1
+            # else: skip unknown prompt types (or could fall back to build_sft_records)
+
+    return records, counts
+
+
 def _train_with_trl(
     records: list[dict[str, str]],
     model_id: str,

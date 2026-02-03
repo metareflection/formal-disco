@@ -1,0 +1,18 @@
+defaults:
+  - llm: openai
+  - task: fixer
+  - data: dafnybench
+  - _self_
+
+hydra:
+  run:
+    dir: .
+
+glob: null
+pickle: null
+num_examples: null
+seed: 42
+output: null
+verbose: false
+wandb: true
+wandb_project: formal-disco-eval
