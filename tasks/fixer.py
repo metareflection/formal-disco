@@ -105,17 +105,7 @@ class FixerTask(EvaluationTask):
 
             elif src_type == "dfy":
                 programs = load_dfy_source(source)
-                if self.filter_trivial:
-                    programs = self._filter_nontrivial(programs)
-                for name, text in tqdm(programs, desc="Getting verification errors"):
-                    prog = DafnyProgram(text, name=name)
-                    ver = prog.verify()
-                    notes = f"stdout:\n{ver.stdout}\n\nstderr:\n{ver.stderr}"
-                    examples.append({
-                        "prompt": "repair",
-                        "arguments": {"program": text, "notes": notes},
-                        "metadata": {"source": "dfy", "program_name": name},
-                    })
+                examples.extend(self._build_dfy_examples(programs))
 
         return examples
 
@@ -191,34 +181,56 @@ class FixerTask(EvaluationTask):
         logger.info(f"Fixer extraction stats: {dict(stats)}")
         return examples
 
-    def _filter_nontrivial(
+    def _build_dfy_examples(
         self,
         programs: list[tuple[str, str]],
-    ) -> list[tuple[str, str]]:
-        """Filter to programs that don't already verify."""
+    ) -> list[dict]:
+        """Verify programs, filter trivial ones, and build examples in one pass.
+
+        Caches both outcome and verification output (stdout/stderr) so
+        subsequent runs don't re-invoke Dafny.
+        """
         cache = {}
         if self.cache_path and os.path.exists(self.cache_path):
             with open(self.cache_path) as f:
                 cache = json.load(f)
 
-        nontrivial = []
-        for name, text in tqdm(programs, desc="Filtering trivial programs"):
+        examples = []
+        for name, text in tqdm(programs, desc="Verifying programs"):
             if name in cache:
-                needs_fixing = cache[name] != "SUCCESS"
+                entry = cache[name]
+                # Support old cache format (just a string)
+                if isinstance(entry, str):
+                    outcome = entry
+                    stdout = ""
+                    stderr = ""
+                else:
+                    outcome = entry["outcome"]
+                    stdout = entry.get("stdout", "")
+                    stderr = entry.get("stderr", "")
             else:
                 prog = DafnyProgram(text, name=name)
                 ver = prog.verify()
-                cache[name] = ver.outcome.name
-                needs_fixing = (ver.outcome != VerificationOutcome.SUCCESS)
+                outcome = ver.outcome.name
+                stdout = ver.stdout
+                stderr = ver.stderr
+                cache[name] = {"outcome": outcome, "stdout": stdout, "stderr": stderr}
 
                 if self.cache_path:
                     with open(self.cache_path, 'w') as f:
                         json.dump(cache, f, indent=2)
 
-            if needs_fixing:
-                nontrivial.append((name, text))
+            if self.filter_trivial and outcome == "SUCCESS":
+                continue
 
-        return nontrivial
+            notes = f"stdout:\n{stdout}\n\nstderr:\n{stderr}"
+            examples.append({
+                "prompt": "repair",
+                "arguments": {"program": text, "notes": notes},
+                "metadata": {"source": "dfy", "program_name": name},
+            })
+
+        return examples
 
     # ------------------------------------------------------------------
     # (b) Evaluation
