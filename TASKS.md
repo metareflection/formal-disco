@@ -1,5 +1,24 @@
 # Task System
 
+## Eval Cheatsheet
+
+```bash
+# Fixer on DafnyBench (default)
+python eval.py task=fixer llm=vllm
+
+# Fixer on a pickle
+python eval.py task=fixer llm=vllm data=pickle pickle=$VAL_PATH
+
+# Lemma synthesis on a pickle
+python eval.py task=lemma_synth llm=vllm data=pickle pickle=$VAL_PATH
+
+# Implement on a pickle
+python eval.py task=implement llm=vllm data=pickle pickle=$VAL_PATH
+
+# Fixer on an arbitrary dfy glob
+python eval.py task=fixer llm=vllm data=glob glob="path/to/**/*.dfy"
+```
+
 ## Overview
 
 The discovery system (`scheduler.py`) produces agenda checkpoints (e.g. `agenda-run3.pkl`) containing verified Dafny programs. The task system turns these into training data, trains models, and evaluates them. The full flow:
