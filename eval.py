@@ -64,6 +64,7 @@ def main(cfg: DictConfig) -> None:
     if use_wandb:
         wandb.init(
             project=cfg.wandb_project,
+            name=f"{task.name}",
             config=OmegaConf.to_container(cfg, resolve=True),
         )
 
