@@ -107,7 +107,7 @@ class FixerTask(EvaluationTask):
                 programs = load_dfy_source(source)
                 if self.filter_trivial:
                     programs = self._filter_nontrivial(programs)
-                for name, text in programs:
+                for name, text in tqdm(programs, desc="Getting verification errors"):
                     prog = DafnyProgram(text, name=name)
                     ver = prog.verify()
                     notes = f"stdout:\n{ver.stdout}\n\nstderr:\n{ver.stderr}"
