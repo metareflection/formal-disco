@@ -3,8 +3,7 @@
 cleaner.py - Clean unverified Dafny programs by removing failing constructs.
 
 This script processes agenda pickle files and repairs FAIL programs by
-systematically removing constructs (lemmas, functions, methods, ensures)
-until the program verifies.
+using Dafny's error output to identify and remove failing constructs.
 
 Usage:
     python cleaner.py agenda.pkl                    # Process all FAIL programs
@@ -43,6 +42,51 @@ class CleanResult:
     cleaned_lines: int
 
 
+@dataclass
+class DafnyError:
+    """A parsed error from Dafny's output."""
+    line: int
+    column: int
+    error_type: str
+    message: str
+
+
+def parse_dafny_errors(stdout: str) -> list[DafnyError]:
+    """
+    Parse Dafny's stdout to extract error locations and types.
+
+    Dafny errors typically look like:
+        program.dfy(15,4): Error: assertion might not hold
+        program.dfy(23,8): Error BP5003: postcondition might not hold
+    """
+    errors = []
+    # Match patterns like: filename.dfy(line,col): Error...
+    pattern = r'\.dfy\((\d+),(\d+)\):\s*(Error|Warning)[^:]*:\s*(.+)'
+
+    for match in re.finditer(pattern, stdout):
+        line = int(match.group(1)) - 1  # Convert to 0-indexed
+        column = int(match.group(2))
+        error_type = match.group(3)
+        message = match.group(4).strip()
+        errors.append(DafnyError(line, column, error_type, message))
+
+    return errors
+
+
+def count_ensures_clauses(program: str) -> int:
+    """Count the number of 'ensures' clauses in a program."""
+    count = 0
+    for line in program.splitlines():
+        if line.strip().startswith('ensures '):
+            count += 1
+    return count
+
+
+def has_ensures_clause(program: str) -> bool:
+    """Check if a program has at least one 'ensures' clause."""
+    return count_ensures_clauses(program) > 0
+
+
 def find_block_end(lines: list[str], start: int) -> int:
     """Find the end of a brace-delimited block starting at 'start'."""
     brace_count = 0
@@ -62,30 +106,54 @@ def find_block_end(lines: list[str], start: int) -> int:
     return len(lines) - 1
 
 
-def find_removable_constructs(program: str) -> list[tuple[int, int, str, str]]:
+@dataclass
+class Construct:
+    """A removable construct in a Dafny program."""
+    start_line: int
+    end_line: int
+    construct_type: str
+    name: str
+
+    def contains_line(self, line: int) -> bool:
+        """Check if this construct contains the given line."""
+        return self.start_line <= line <= self.end_line
+
+
+def find_all_constructs(program: str) -> list[Construct]:
     """
-    Find constructs that can be removed to fix a failing program.
-    
-    Returns list of (start_line, end_line, construct_type, name) tuples,
-    sorted by removal priority (most disposable first).
+    Find all constructs in a program that could potentially be removed.
+
+    Returns list of Construct objects.
     """
     lines = program.splitlines()
-    removable = []
+    constructs = []
 
     i = 0
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
 
-        # ensures clauses (postconditions) - most disposable
+        # ensures clauses (postconditions)
         if stripped.startswith('ensures '):
-            removable.append((i, i, 'ensures', stripped[:50]))
+            constructs.append(Construct(i, i, 'ensures', stripped[:50]))
             i += 1
             continue
 
         # requires clauses (preconditions)
         if stripped.startswith('requires '):
-            removable.append((i, i, 'requires', stripped[:50]))
+            constructs.append(Construct(i, i, 'requires', stripped[:50]))
+            i += 1
+            continue
+
+        # assert statements
+        if stripped.startswith('assert '):
+            constructs.append(Construct(i, i, 'assert', stripped[:50]))
+            i += 1
+            continue
+
+        # invariant clauses
+        if stripped.startswith('invariant '):
+            constructs.append(Construct(i, i, 'invariant', stripped[:50]))
             i += 1
             continue
 
@@ -94,7 +162,7 @@ def find_removable_constructs(program: str) -> list[tuple[int, int, str, str]]:
         if lemma_match:
             name = lemma_match.group(2)
             end = find_block_end(lines, i)
-            removable.append((i, end, 'lemma', name))
+            constructs.append(Construct(i, end, 'lemma', name))
             i = end + 1
             continue
 
@@ -103,7 +171,7 @@ def find_removable_constructs(program: str) -> list[tuple[int, int, str, str]]:
         if func_match:
             name = func_match.group(2)
             end = find_block_end(lines, i)
-            removable.append((i, end, 'function', name))
+            constructs.append(Construct(i, end, 'function', name))
             i = end + 1
             continue
 
@@ -112,17 +180,55 @@ def find_removable_constructs(program: str) -> list[tuple[int, int, str, str]]:
         if method_match:
             name = method_match.group(1)
             end = find_block_end(lines, i)
-            removable.append((i, end, 'method', name))
+            constructs.append(Construct(i, end, 'method', name))
             i = end + 1
             continue
 
         i += 1
 
-    # Sort by priority: ensures > requires > lemma > function > method
-    priority = {'ensures': 0, 'requires': 1, 'lemma': 2, 'function': 3, 'method': 4}
-    removable.sort(key=lambda x: (priority.get(x[2], 99), x[0]))
+    return constructs
 
-    return removable
+
+def find_constructs_with_errors(
+    constructs: list[Construct],
+    errors: list[DafnyError],
+) -> list[Construct]:
+    """
+    Find constructs that contain errors, sorted by priority.
+
+    Priority order for removal:
+    1. assert statements with errors
+    2. invariants with errors
+    3. ensures clauses with errors
+    4. requires clauses with errors
+    5. lemmas with errors
+    6. functions with errors
+    7. methods with errors
+    """
+    priority = {
+        'assert': 0,
+        'invariant': 1,
+        'ensures': 2,
+        'requires': 3,
+        'lemma': 4,
+        'function': 5,
+        'method': 6,
+    }
+
+    error_lines = {e.line for e in errors}
+
+    # Find constructs containing error lines
+    constructs_with_errors = []
+    for construct in constructs:
+        for error_line in error_lines:
+            if construct.contains_line(error_line):
+                constructs_with_errors.append(construct)
+                break
+
+    # Sort by priority
+    constructs_with_errors.sort(key=lambda c: (priority.get(c.construct_type, 99), c.start_line))
+
+    return constructs_with_errors
 
 
 def remove_lines(program: str, start: int, end: int) -> str:
@@ -138,55 +244,113 @@ def clean_program(
     max_removals: int = 25,
 ) -> tuple[str, VerificationOutcome, list[str]]:
     """
-    Clean a program by removing constructs until it verifies.
-    
+    Clean a program by using Dafny's error output to identify and remove
+    failing constructs.
+
+    Strategy:
+    1. Run Dafny and parse error locations from stdout
+    2. Find constructs containing those error lines
+    3. Remove the highest-priority failing construct (preserving at least one ensures)
+    4. Repeat until success or no progress
+
+    Programs must retain at least one 'ensures' clause to be considered valid.
+
     Returns (cleaned_program, outcome, list_of_removed_items).
     """
     current = program
     removed_items = []
+
+    # Check if program has any ensures clauses - reject if none
+    if not has_ensures_clause(current):
+        return current, VerificationOutcome.FAIL, []
 
     # Check if already verifies
     result = DafnyProgram(current).verify()
     if result.outcome == VerificationOutcome.SUCCESS:
         return current, result.outcome, []
 
-    # Iteratively remove constructs
+    # Iteratively remove failing constructs
     for _ in range(max_removals):
-        removable = find_removable_constructs(current)
-        if not removable:
+        # Parse errors from Dafny output
+        errors = parse_dafny_errors(result.stdout)
+        all_constructs = find_all_constructs(current)
+
+        if not all_constructs:
             break
 
+        # Count ensures clauses to know if we can remove any
+        ensures_count = count_ensures_clauses(current)
+
+        # Find constructs containing errors
+        if errors:
+            failing_constructs = find_constructs_with_errors(all_constructs, errors)
+        else:
+            # No parseable errors - fall back to priority order
+            failing_constructs = []
+
+        # If no specific failing constructs found, use all constructs in priority order
+        if not failing_constructs:
+            priority = {
+                'assert': 0,
+                'invariant': 1,
+                'ensures': 2,
+                'requires': 3,
+                'lemma': 4,
+                'function': 5,
+                'method': 6,
+            }
+            failing_constructs = sorted(
+                all_constructs,
+                key=lambda c: (priority.get(c.construct_type, 99), c.start_line)
+            )
+
         made_progress = False
-        for start, end, construct_type, name in removable:
-            candidate = remove_lines(current, start, end)
+        for construct in failing_constructs:
+            # Don't remove the last ensures clause
+            if construct.construct_type == 'ensures' and ensures_count <= 1:
+                continue
+
+            candidate = remove_lines(current, construct.start_line, construct.end_line)
 
             if not candidate.strip():
+                continue
+
+            # Verify candidate still has ensures clause
+            if not has_ensures_clause(candidate):
                 continue
 
             result = DafnyProgram(candidate).verify()
 
             if result.outcome == VerificationOutcome.SUCCESS:
-                removed_items.append(f"{construct_type}: {name}")
+                removed_items.append(f"{construct.construct_type}: {construct.name}")
                 return candidate, result.outcome, removed_items
 
-            # Accept if it improves from FAIL to GOAL_UNPROVEN
-            if result.outcome == VerificationOutcome.GOAL_UNPROVEN:
+            # Accept if it reduces errors or improves outcome
+            new_errors = parse_dafny_errors(result.stdout)
+            if (result.outcome == VerificationOutcome.GOAL_UNPROVEN or
+                    len(new_errors) < len(errors)):
                 current = candidate
-                removed_items.append(f"{construct_type}: {name}")
+                removed_items.append(f"{construct.construct_type}: {construct.name}")
                 made_progress = True
                 break
 
         if not made_progress:
-            # Force remove first item to make progress
-            if removable:
-                start, end, construct_type, name = removable[0]
-                candidate = remove_lines(current, start, end)
-                if candidate.strip():
+            # Force remove first failing construct to make progress
+            # (but still respect the ensures constraint)
+            for construct in failing_constructs:
+                if construct.construct_type == 'ensures' and ensures_count <= 1:
+                    continue
+                candidate = remove_lines(current, construct.start_line, construct.end_line)
+                if candidate.strip() and has_ensures_clause(candidate):
                     current = candidate
-                    removed_items.append(f"{construct_type}: {name} (forced)")
+                    removed_items.append(f"{construct.construct_type}: {construct.name} (forced)")
+                    result = DafnyProgram(current).verify()
+                    break
 
-    # Final verification
+    # Final verification - only accept if program still has ensures
     result = DafnyProgram(current).verify()
+    if not has_ensures_clause(current):
+        return current, VerificationOutcome.FAIL, removed_items
     return current, result.outcome, removed_items
 
 
