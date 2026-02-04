@@ -228,6 +228,7 @@ Typically rescues ~80-90% of GOAL_UNPROVEN programs with minimal spec loss.
                 obj = objects[path]
                 obj.content = saved.encode('utf-8') if isinstance(obj.content, bytes) else saved
                 obj.properties['verification_status'] = 'success'
+                obj.properties['verification_outcome'] = 'SUCCESS'
                 obj.properties['saved_from_goal_unproven'] = True
                 obj.properties['ensures_removed'] = num_removed
                 if args.verbose:

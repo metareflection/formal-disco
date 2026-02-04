@@ -19,10 +19,12 @@ Runtime: ~30 seconds per program.
 """
 
 import argparse
+import os
 import pickle
 import re
 from pathlib import Path
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Optional
 
@@ -194,10 +196,11 @@ def clean_agenda(
     max_programs: Optional[int] = None,
     timeout: float = 15.0,
     verbose: bool = False,
+    workers: int = 1,
 ) -> dict:
     """
     Clean FAIL programs in an agenda pickle file.
-    
+
     Returns statistics dictionary.
     """
     print(f"Loading {input_path}...")
@@ -222,28 +225,61 @@ def clean_agenda(
         fail_programs = fail_programs[:max_programs]
         print(f"Processing first {max_programs}")
 
+    print(f"Using {workers} workers")
+
     # Process programs
     stats = Counter()
-    repairs = {}
+    processed = 0
 
-    for task_id, program_path in tqdm(fail_programs, desc="Cleaning"):
-        obj = objects[program_path]
-        content = obj.content.decode('utf-8') if isinstance(obj.content, bytes) else obj.content
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        # Submit all tasks
+        futures = {}
+        for task_id, program_path in fail_programs:
+            obj = objects[program_path]
+            content = obj.content.decode('utf-8') if isinstance(obj.content, bytes) else obj.content
+            future = executor.submit(clean_program, content, timeout)
+            futures[future] = (task_id, program_path)
 
-        cleaned, outcome, removed = clean_program(content, timeout=timeout)
+        pbar = tqdm(as_completed(futures), total=len(futures), desc="Cleaning")
+        for future in pbar:
+            task_id, program_path = futures[future]
+            try:
+                cleaned, outcome, removed = future.result()
+            except Exception as e:
+                stats['error'] += 1
+                if verbose:
+                    print(f"  ! {program_path}: error: {e}")
+                pbar.set_postfix_str(f"{stats['cleaned_to_success']:>6}✓ {stats['still_fail']:>6}✗")
+                continue
 
-        if outcome == VerificationOutcome.SUCCESS:
-            stats['cleaned_to_success'] += 1
-            repairs[program_path] = (task_id, cleaned, 'SUCCESS', removed)
-            if verbose:
-                print(f"  ✓ {program_path}: removed {len(removed)} constructs")
-        elif outcome == VerificationOutcome.GOAL_UNPROVEN:
-            stats['cleaned_to_goal_unproven'] += 1
-            repairs[program_path] = (task_id, cleaned, 'GOAL_UNPROVEN', removed)
-        else:
-            stats['still_fail'] += 1
-            if verbose:
-                print(f"  ✗ {program_path}: could not clean")
+            if outcome == VerificationOutcome.SUCCESS:
+                stats['cleaned_to_success'] += 1
+                # Apply immediately
+                objects[program_path].content = cleaned.encode('utf-8')
+                objects[program_path].properties['verification_status'] = 'success'
+                objects[program_path].properties['verification_outcome'] = 'SUCCESS'
+                objects[program_path].properties['cleaned_from_fail'] = True
+                status[task_id].worker_notes['verification'] = 'SUCCESS'
+                if verbose:
+                    print(f"  ✓ {program_path}: removed {len(removed)} constructs")
+            elif outcome == VerificationOutcome.GOAL_UNPROVEN:
+                stats['cleaned_to_goal_unproven'] += 1
+                objects[program_path].content = cleaned.encode('utf-8')
+                objects[program_path].properties['verification_status'] = 'goal_unproven'
+                objects[program_path].properties['verification_outcome'] = 'GOAL_UNPROVEN'
+                status[task_id].worker_notes['verification'] = 'GOAL_UNPROVEN'
+            else:
+                stats['still_fail'] += 1
+                if verbose:
+                    print(f"  ✗ {program_path}: could not clean")
+
+            pbar.set_postfix_str(f"{stats['cleaned_to_success']:>6}✓ {stats['still_fail']:>6}✗")
+
+            # Save periodically
+            processed += 1
+            if processed % 50 == 0 and stats['cleaned_to_success'] > 0:
+                with open(output_path, 'wb') as f:
+                    pickle.dump(data, f)
 
     # Print summary
     total = len(fail_programs)
@@ -251,22 +287,13 @@ def clean_agenda(
     print(f"CLEANING SUMMARY")
     print(f"{'='*50}")
     print(f"Total processed:         {total}")
-    print(f"Cleaned to SUCCESS:      {stats['cleaned_to_success']} ({100*stats['cleaned_to_success']/total:.1f}%)")
+    print(f"Cleaned to SUCCESS:      {stats['cleaned_to_success']} ({100*stats['cleaned_to_success']/total:.1f}%)" if total else "")
     print(f"Cleaned to GOAL_UNPROVEN:{stats['cleaned_to_goal_unproven']}")
     print(f"Still FAIL:              {stats['still_fail']}")
 
-    # Apply repairs
-    if repairs:
-        print(f"\nApplying {len(repairs)} repairs...")
-        
-        for program_path, (task_id, new_content, new_outcome, _) in repairs.items():
-            # Update program content
-            objects[program_path].content = new_content.encode('utf-8')
-            
-            # Update task status
-            status[task_id].worker_notes['verification'] = new_outcome
-
-        print(f"Saving to {output_path}...")
+    # Final save
+    if stats['cleaned_to_success'] or stats['cleaned_to_goal_unproven']:
+        print(f"\nSaving to {output_path}...")
         with open(output_path, 'wb') as f:
             pickle.dump(data, f)
         print("Done!")
@@ -291,6 +318,8 @@ Success rate: ~54% of FAIL programs can be cleaned to SUCCESS.
     parser.add_argument('-o', '--output', type=Path, help="Output pickle file (default: input_cleaned.pkl)")
     parser.add_argument('-n', '--max', type=int, help="Maximum programs to process")
     parser.add_argument('-t', '--timeout', type=float, default=15.0, help="Verification timeout in seconds (default: 15)")
+    parser.add_argument('-w', '--workers', type=int, default=os.cpu_count(),
+                        help="Number of parallel workers (default: cpu count)")
     parser.add_argument('-v', '--verbose', action='store_true', help="Print details for each program")
 
     args = parser.parse_args()
@@ -304,6 +333,7 @@ Success rate: ~54% of FAIL programs can be cleaned to SUCCESS.
         max_programs=args.max,
         timeout=args.timeout,
         verbose=args.verbose,
+        workers=args.workers or 1,
     )
 
 
