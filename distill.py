@@ -27,9 +27,8 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
 from trl import SFTTrainer
 
-from hydra import main as hydra_main
-from omegaconf import DictConfig
-
+from hydra import compose, initialize_config_dir
+from omegaconf import DictConfig, OmegaConf
 
 DEFAULT_HF_MODEL_ID = "Qwen/Qwen3-Coder-30B-A3B-Instruct"
 DISTIL_PREFIX = "distil/"
@@ -420,62 +419,75 @@ def _main_sft() -> None:
         wandb_project: str | None = None
         wandb_run_name: str | None = None
 
-    @hydra_main(config_path="config", config_name="distill", version_base=None)
-    def run(cfg: DictConfig) -> None:
-        # Merge user cfg into typed defaults
-        c = SftCfg(**{k: v for k, v in cfg.items()})
+        dry_run: bool = False
 
-        success_values = ("success",)
-        if c.treat_goal_unproven_as_success:
-            success_values = ("success", "goal_unproven")
+    # Collect Hydra-style overrides from sys.argv (everything after "sft" was stripped).
+    overrides = [a for a in sys.argv[1:] if "=" in a]
 
-        pickle_paths: list[str]
-        if isinstance(c.data, str):
-            pickle_paths = [c.data]
-        else:
-            pickle_paths = [str(p) for p in c.data]
+    config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
+    with initialize_config_dir(config_dir=config_dir, version_base=None):
+        cfg = compose(config_name="distill", overrides=overrides)
 
-        records, counts = build_sft_records(
-            pickle_paths=pickle_paths,
-            success_only=bool(c.success_only),
-            outcome_success_values=success_values,
-        )
+    # Merge user cfg into typed defaults
+    c = SftCfg(**{k: v for k, v in cfg.items()})
 
-        # Print training data statistics
-        print("\n=== SFT Training Data ===")
-        print(f"Total examples: {len(records)}")
-        print("By prompt type:")
-        for prompt_type, count in sorted(counts.items()):
-            print(f"  {prompt_type}: {count}")
-        print()
+    success_values = ("success",)
+    if c.treat_goal_unproven_as_success:
+        success_values = ("success", "goal_unproven")
 
-        # If running under Hydra, output_dir is relative to the hydra run dir.
-        out_dir = os.path.abspath(c.output_dir)
+    pickle_paths: list[str]
+    if isinstance(c.data, str):
+        pickle_paths = [c.data]
+    else:
+        pickle_paths = [str(p) for p in c.data]
 
-        _train_with_trl(
-            records=records,
-            model_id=c.model_id or DEFAULT_HF_MODEL_ID,
-            output_dir=out_dir,
-            max_seq_length=c.max_seq_length,
-            per_device_train_batch_size=c.per_device_train_batch_size,
-            gradient_accumulation_steps=c.gradient_accumulation_steps,
-            learning_rate=c.learning_rate,
-            num_train_epochs=c.num_train_epochs,
-            warmup_ratio=c.warmup_ratio,
-            lr_scheduler_type=c.lr_scheduler_type,
-            logging_steps=c.logging_steps,
-            save_steps=c.save_steps,
-            seed=c.seed,
-            use_wandb=c.wandb,
-            wandb_project=c.wandb_project,
-            wandb_run_name=c.wandb_run_name,
-            lora_r=c.lora_r,
-            lora_alpha=c.lora_alpha,
-            lora_dropout=c.lora_dropout,
-            lora_target_modules=c.lora_target_modules,
-        )
+    records, counts = build_sft_records(
+        pickle_paths=pickle_paths,
+        success_only=bool(c.success_only),
+        outcome_success_values=success_values,
+    )
 
-    run()
+    # Print training data statistics
+    print("\n=== SFT Training Data ===")
+    print(f"Total examples: {len(records)}")
+    print("By prompt type:")
+    for prompt_type, count in sorted(counts.items()):
+        print(f"  {prompt_type}: {count}")
+    print()
+
+    if c.dry_run:
+        DRY_RUN_OUT = Path('distil.dry-run.json').absolute()
+        print(f"Dry run: writing training data to {DRY_RUN_OUT} and exiting...")
+
+        with open(DRY_RUN_OUT, 'w') as f:
+            json.dump(records, f, indent=4)
+
+        return
+
+    out_dir = os.path.abspath(c.output_dir)
+
+    _train_with_trl(
+        records=records,
+        model_id=c.model_id or DEFAULT_HF_MODEL_ID,
+        output_dir=out_dir,
+        max_seq_length=c.max_seq_length,
+        per_device_train_batch_size=c.per_device_train_batch_size,
+        gradient_accumulation_steps=c.gradient_accumulation_steps,
+        learning_rate=c.learning_rate,
+        num_train_epochs=c.num_train_epochs,
+        warmup_ratio=c.warmup_ratio,
+        lr_scheduler_type=c.lr_scheduler_type,
+        logging_steps=c.logging_steps,
+        save_steps=c.save_steps,
+        seed=c.seed,
+        use_wandb=c.wandb,
+        wandb_project=c.wandb_project,
+        wandb_run_name=c.wandb_run_name,
+        lora_r=c.lora_r,
+        lora_alpha=c.lora_alpha,
+        lora_dropout=c.lora_dropout,
+        lora_target_modules=c.lora_target_modules,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -490,7 +502,7 @@ def main(argv: list[str] | None = None) -> int:
     sft_p = sub.add_parser("sft", help="Train an SFT model from distil examples (Hydra config)")
     sft_p.set_defaults(func=lambda _args: _main_sft())
 
-    ns = parser.parse_args(argv)
+    ns, _ = parser.parse_known_args(argv)
 
     # Remove command from argv (hack to make Hydra not think sft is an override).
     sys.argv = [s for s in sys.argv if s not in ("stats", "sft")]
