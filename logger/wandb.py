@@ -93,22 +93,24 @@ class WandbLogger(AgendaLogger):
         wandb_stats = {f"codebase/{key}": value for key, value in codebase_stats.items()}
 
         # Compute hourly rates based on delta since last call
-        now = time.time()
-        current_verified_programs = codebase_stats.get("total_verified_programs", 0)
-        current_verified_loc = codebase_stats.get("loc_verified_programs", 0)
+        # Only process if these are regular codebase stats (not benchmark/ prefixed)
+        if "total_verified_programs" in codebase_stats:
+            now = time.time()
+            current_verified_programs = codebase_stats["total_verified_programs"]
+            current_verified_loc = codebase_stats.get("loc_verified_programs", 0)
 
-        if self._last_codebase_stats_time is not None:
-            elapsed_hours = (now - self._last_codebase_stats_time) / 3600.0
-            if elapsed_hours > 0:
-                delta_programs = current_verified_programs - self._last_verified_programs
-                delta_loc = current_verified_loc - self._last_verified_loc
-                wandb_stats["perf/verified_programs_per_hour"] = delta_programs / elapsed_hours
-                wandb_stats["perf/verified_loc_per_hour"] = delta_loc / elapsed_hours
+            if self._last_codebase_stats_time is not None:
+                elapsed_hours = (now - self._last_codebase_stats_time) / 3600.0
+                if elapsed_hours > 0:
+                    delta_programs = current_verified_programs - self._last_verified_programs
+                    delta_loc = current_verified_loc - self._last_verified_loc
+                    wandb_stats["perf/verified_programs_per_hour"] = delta_programs / elapsed_hours
+                    wandb_stats["perf/verified_loc_per_hour"] = delta_loc / elapsed_hours
 
-        # Update tracking state
-        self._last_codebase_stats_time = now
-        self._last_verified_programs = current_verified_programs
-        self._last_verified_loc = current_verified_loc
+            # Update tracking state
+            self._last_codebase_stats_time = now
+            self._last_verified_programs = current_verified_programs
+            self._last_verified_loc = current_verified_loc
 
         self._wandb.log(wandb_stats)
 
