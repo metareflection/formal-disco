@@ -214,7 +214,7 @@ def build_sft_records(
                 example_after=TEXT_AFTER_EXAMPLE,
             )
 
-            records.append({"messages": json.dumps(messages, ensure_ascii=False), "completion": response_s})
+            records.append({"prompt": messages, "completion": [{"role": "assistant", "content": response_s}]})
             counts[kind] += 1
 
     return records, counts
