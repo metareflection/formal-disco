@@ -16,6 +16,7 @@ import json
 import pickle
 import re
 import subprocess
+import random
 from pathlib import Path
 from typing import TypedDict
 
@@ -101,7 +102,7 @@ def load_verified_programs(
     print(f"Loading {pickle_path}...", flush=True)
     with open(pickle_path, 'rb') as f:
         data = pickle.load(f)
-    print(f"Loaded pickle ({len(data.get('objects', {}))} objects)", flush=True)
+    print(f"Loaded pickle ({len(data.get('dataset', {}))} objects)", flush=True)
 
     valid_statuses = {'success'}
     if include_goal_unproven:
@@ -110,7 +111,7 @@ def load_verified_programs(
     print(f"Including verification statuses: {valid_statuses}", flush=True)
 
     verified = []
-    for path, obj in data.get('objects', {}).items():
+    for path, obj in data.get('dataset', {}).items():
         if obj.type != 'dafny-program':
             continue
         ver_status = obj.properties.get('verification_status')
@@ -125,35 +126,42 @@ def load_verified_programs(
 # Hint removal
 # ---------------------------------------------------------------------------
 
-def remove_hints(program: str) -> tuple[str, int]:
+def remove_hints(program: str, min_hints: int = 1, lam: float = 2) -> tuple[str, int]:
     """
     Remove hints (invariants, assertions, decreases) from a Dafny program.
+
+    If min_hints is positive, this will remove at least min_hints
+    (unless there are fewer than that in the program).
+
+    Otherwise, if min_hints is <= 0, this will always remove all hints.
 
     Returns:
         (stripped_program, num_hints_removed)
     """
     lines = program.splitlines(keepends=True)
     result_lines = []
+    hint_lines = []
+
     hints_removed = 0
 
-    for line in lines:
+    for i, line in enumerate(lines):
         stripped = line.strip()
 
-        if re.match(r'^invariant\b', stripped):
-            hints_removed += 1
-            continue
+        if (re.match(r'^invariant\b', stripped) or
+            re.match(r'^assert[\s(]', stripped) or
+            re.match(r'^decreases\b', stripped)):
+            hint_lines.append(i)
 
-        if re.match(r'^assert[\s(]', stripped):
-            hints_removed += 1
-            continue
+    if min_hints <= 0:
+        min_hints = len(hint_lines)
 
-        if re.match(r'^decreases\b', stripped):
-            hints_removed += 1
-            continue
+    lo = min(min_hints, len(hint_lines))
 
-        result_lines.append(line)
+    n_removed = min(len(hint_lines), lo + int(random.expovariate(lam)))
+    removed_lines = set(random.sample(hint_lines, k=n_removed))
+    result_lines = [l for i, l in enumerate(lines) if i not in removed_lines]
 
-    return ''.join(result_lines), hints_removed
+    return ''.join(result_lines), n_removed
 
 
 # ---------------------------------------------------------------------------

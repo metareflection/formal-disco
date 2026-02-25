@@ -128,55 +128,51 @@ class FixerTask(EvaluationTask):
                 stats['skip_no_content'] += 1
                 continue
 
-            stripped_program, num_hints = remove_hints(program_content)
-            if num_hints < min_hints:
-                stats['skip_too_few_hints'] += 1
-                continue
+            original_program, trivial_diff = True, False
 
-            if verify_stripped:
-                try:
-                    prog = DafnyProgram(stripped_program, name="stripped")
-                    ver = prog.verify()
-                    if ver.outcome == VerificationOutcome.SUCCESS:
-                        stats['skip_still_verifies'] += 1
+            while True:
+                stripped_program, num_hints = remove_hints(program_content)
+                if original_program and num_hints < min_hints:
+                    if original_program:
+                        stats['skip_too_few_hints'] += 1
+                    break
+
+                if verify_stripped:
+                    try:
+                        prog = DafnyProgram(stripped_program, name="stripped")
+                        ver = prog.verify()
+                        trivial_diff = (ver.outcome == VerificationOutcome.SUCCESS)
+                        notes = ver.stdout
+                        if ver.stderr:
+                            notes = f"{notes}\n\nstderr:\n{ver.stderr}"
+                    except Exception:
+                        stats['skip_verification_error'] += 1
+                        original_trivial = True
                         continue
-                    notes = ver.stdout
-                    if ver.stderr:
-                        notes = f"{notes}\n\nstderr:\n{ver.stderr}"
-                except Exception:
-                    stats['skip_verification_error'] += 1
-                    continue
-            else:
-                notes = "(verification not run)"
+                else:
+                    notes = "(verification not run)"
 
-            diff = compute_text_diff(stripped_program, program_content)
-            if not diff.strip():
-                stats['skip_empty_diff'] += 1
-                continue
+                if not trivial_diff:
+                    assert stripped_program != program_content
+                    diff = compute_text_diff(stripped_program, program_content)
+                    assert apply_text_diff(stripped_program, diff) == program_content
 
-            try:
-                result = apply_text_diff(stripped_program, diff)
-                if result.strip() != program_content.strip():
-                    stats['skip_bad_diff'] += 1
-                    continue
-            except Exception:
-                stats['skip_diff_error'] += 1
-                continue
+                    ver_status = obj.properties.get('verification_status', 'success')
 
-            ver_status = obj.properties.get('verification_status', 'success')
-
-            examples.append({
-                "prompt": "repair",
-                "arguments": {"program": stripped_program, "notes": notes},
-                "response": diff,
-                "outcome": ver_status,
-                "metadata": {
-                    "source": "fixer_distill",
-                    "program_path": path,
-                    "hints_removed": num_hints,
-                },
-            })
-            stats['examples_created'] += 1
+                    examples.append({
+                        "prompt": "repair",
+                        "arguments": {"program": stripped_program, "notes": notes},
+                        "response": diff,
+                        "outcome": ver_status,
+                        "metadata": {
+                            "source": "fixer_distill",
+                            "program_path": path,
+                            "hints_removed": num_hints,
+                        },
+                    })
+                    stats['examples_created'] += 1
+                program_content = stripped_program
+                original_program = False
 
         logger.info(f"Fixer extraction stats: {dict(stats)}")
         return examples
