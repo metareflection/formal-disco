@@ -25,7 +25,7 @@ from typing import Any, Iterable, Literal
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig, OmegaConf
@@ -323,9 +323,8 @@ def _train_with_trl(
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype="auto",
-        device_map="auto",
-    )
+        attn_implementation="kernels-community/flash-attn2",
+    ) # , device_map="auto")
 
     peft_config = LoraConfig(
         r=int(lora_r),
@@ -340,7 +339,7 @@ def _train_with_trl(
 
     report_to = ["wandb"] if use_wandb else ["none"]
 
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir=output_dir,
         per_device_train_batch_size=int(per_device_train_batch_size),
         gradient_accumulation_steps=int(gradient_accumulation_steps),
@@ -351,12 +350,14 @@ def _train_with_trl(
         logging_steps=int(logging_steps),
         save_steps=int(save_steps),
         save_total_limit=2,
+#        use_liger_kernel=True,
         resume_from_checkpoint=True,
         seed=int(seed),
         report_to=report_to,
         remove_unused_columns=False,
         fp16=False,
         bf16=True,
+        packing=True,
     )
 
     trainer = SFTTrainer(
@@ -409,6 +410,7 @@ def _main_sft() -> None:
         logging_steps: int = 10
         save_steps: int = 200
         seed: int = 0
+        max_grad_norm: float = 1.0
 
         lora_r: int = 16
         lora_alpha: int = 32
