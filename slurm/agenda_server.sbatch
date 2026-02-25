@@ -2,8 +2,8 @@
 #SBATCH --job-name=agenda_server
 #SBATCH --account=kempner_fellows
 #SBATCH --partition=seas_compute
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=300G
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=100G
 #SBATCH --time=3-00:00:00
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
