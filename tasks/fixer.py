@@ -14,6 +14,7 @@ import logging
 import os
 import random
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Optional
 
@@ -109,8 +110,78 @@ class FixerTask(EvaluationTask):
 
         return examples
 
+    def extract_one(
+        self,
+        path: str,
+        obj: Any,
+        min_hints: int = 1,
+        verify_stripped: bool = True,
+    ) -> tuple[list[dict], Counter]:
+        """Extract fixer examples from a single verified program.
+
+        Iteratively strips hints and creates (broken, fixed) pairs until no
+        more hints remain. Returns (examples, stats).
+        """
+        examples = []
+        stats = Counter()
+
+        program_content = get_content(obj)
+        if not program_content:
+            stats['skip_no_content'] += 1
+            return examples, stats
+
+        original_program, trivial_diff = True, False
+
+        while True:
+            stripped_program, num_hints = remove_hints(program_content)
+
+            if num_hints < min_hints:
+                if original_program:
+                    stats['skip_too_few_hints'] += 1
+                break
+
+            if verify_stripped:
+                try:
+                    prog = DafnyProgram(stripped_program, name="stripped")
+                    ver = prog.verify()
+                    trivial_diff = (ver.outcome == VerificationOutcome.SUCCESS)
+                    notes = ver.stdout
+                    if ver.stderr:
+                        notes = f"{notes}\n\nstderr:\n{ver.stderr}"
+                except Exception:
+                    stats['skip_verification_error'] += 1
+                    continue
+            else:
+                notes = "(verification not run)"
+
+            if not trivial_diff:
+                assert stripped_program != program_content
+                diff = compute_text_diff(stripped_program, program_content)
+                assert apply_text_diff(stripped_program, diff) == program_content
+
+                ver_status = obj.properties.get('verification_status', 'success')
+
+                examples.append({
+                    "prompt": "repair",
+                    "arguments": {"program": stripped_program, "notes": notes},
+                    "response": diff,
+                    "outcome": ver_status,
+                    "metadata": {
+                        "source": "fixer_distill",
+                        "program_path": path,
+                        "hints_removed": num_hints,
+                    },
+                })
+                stats['examples_created'] += 1
+            program_content = stripped_program
+            original_program = False
+
+        return examples, stats
+
     def _extract_from_verified(self, source: dict) -> list[dict]:
         """Generate fixer examples by removing hints from verified programs."""
+        N_THREADS = 32
+
         pickle_path = Path(source["path"])
         min_hints = source.get("min_hints", 1)
         verify_stripped = source.get("verify_stripped", True)
@@ -119,63 +190,23 @@ class FixerTask(EvaluationTask):
             pickle_path, source.get("include_goal_unproven", False),
         )
 
-        examples = []
-        stats = Counter()
+        all_examples = []
+        total_stats = Counter()
 
-        for path, obj in tqdm(verified_programs, desc="Generating fixer examples"):
-            program_content = get_content(obj)
-            if not program_content:
-                stats['skip_no_content'] += 1
-                continue
+        with ThreadPoolExecutor(max_workers=N_THREADS) as executor:
+            futures = {
+                executor.submit(self.extract_one, path, obj, min_hints, verify_stripped): path
+                for path, obj in verified_programs
+            }
+            with tqdm(total=len(futures), desc="Generating fixer examples") as pbar:
+                for future in as_completed(futures):
+                    examples, stats = future.result()
+                    all_examples.extend(examples)
+                    total_stats.update(stats)
+                    pbar.update(1)
 
-            original_program, trivial_diff = True, False
-
-            while True:
-                stripped_program, num_hints = remove_hints(program_content)
-
-                if num_hints < min_hints:
-                    if original_program:
-                        stats['skip_too_few_hints'] += 1
-                    break
-
-                if verify_stripped:
-                    try:
-                        prog = DafnyProgram(stripped_program, name="stripped")
-                        ver = prog.verify()
-                        trivial_diff = (ver.outcome == VerificationOutcome.SUCCESS)
-                        notes = ver.stdout
-                        if ver.stderr:
-                            notes = f"{notes}\n\nstderr:\n{ver.stderr}"
-                    except Exception:
-                        stats['skip_verification_error'] += 1
-                        continue
-                else:
-                    notes = "(verification not run)"
-
-                if not trivial_diff:
-                    assert stripped_program != program_content
-                    diff = compute_text_diff(stripped_program, program_content)
-                    assert apply_text_diff(stripped_program, diff) == program_content
-
-                    ver_status = obj.properties.get('verification_status', 'success')
-
-                    examples.append({
-                        "prompt": "repair",
-                        "arguments": {"program": stripped_program, "notes": notes},
-                        "response": diff,
-                        "outcome": ver_status,
-                        "metadata": {
-                            "source": "fixer_distill",
-                            "program_path": path,
-                            "hints_removed": num_hints,
-                        },
-                    })
-                    stats['examples_created'] += 1
-                program_content = stripped_program
-                original_program = False
-
-        logger.info(f"Fixer extraction stats: {dict(stats)}")
-        return examples
+        logger.info(f"Fixer extraction stats: {dict(total_stats)}")
+        return all_examples
 
     def _build_dfy_examples(
         self,
