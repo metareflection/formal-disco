@@ -261,7 +261,7 @@ class FixerTask(EvaluationTask):
     ) -> dict:
         """Iterative repair loop."""
         current_text = prog_text
-        diffs_applied = []
+        interaction_log = []
         ver_notes = initial_notes
         ver = None
 
@@ -293,15 +293,17 @@ class FixerTask(EvaluationTask):
 
             try:
                 diff_text = self._chain.invoke(llm_args).strip()
-                diffs_applied.append(diff_text)
+                interaction = {'program': current_text, 'notes': ver_notes, 'diff': diff_text}
             except Exception as e:
                 logger.warning(f"LLM call failed for {program_name}: {e}")
+                interaction_log.append({**interaction, 'result': f'Error: {e}'})
                 continue
 
             try:
                 repaired_text = apply_text_diff(current_text, diff_text)
             except Exception as e:
                 logger.warning(f"Failed to apply diff for {program_name}: {e}")
+                interaction_log.append({**interaction, 'result': f'Error: {e}'})
                 continue
 
             repaired_prog = DafnyProgram(repaired_text, name=program_name)
@@ -310,6 +312,8 @@ class FixerTask(EvaluationTask):
             current_text = repaired_text
             ver_notes = f"Output of dafny verify on this program:\nstdout:\n{ver.stdout}\n\nstderr:\n{ver.stderr}\n"
 
+            interaction_log.append({**interaction, 'result': repaired_text, 'result_notes': ver_notes})
+
             if ver.outcome == VerificationOutcome.SUCCESS:
                 return {
                     "success": True,
@@ -317,7 +321,7 @@ class FixerTask(EvaluationTask):
                     "num_attempts": attempt + 1,
                     "verification_outcome": "SUCCESS",
                     "final_program": current_text,
-                    "diffs_applied": diffs_applied,
+                    "interaction_log": interaction_log,
                 }
 
         return {
@@ -327,6 +331,7 @@ class FixerTask(EvaluationTask):
             "verification_outcome": ver.outcome.name if ver else "UNKNOWN",
             "final_program": current_text,
             "diffs_applied": diffs_applied,
+            "interaction_log": interaction_log,
         }
 
     # ------------------------------------------------------------------
