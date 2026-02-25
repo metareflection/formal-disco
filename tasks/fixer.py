@@ -132,7 +132,8 @@ class FixerTask(EvaluationTask):
 
             while True:
                 stripped_program, num_hints = remove_hints(program_content)
-                if original_program and num_hints < min_hints:
+
+                if num_hints < min_hints:
                     if original_program:
                         stats['skip_too_few_hints'] += 1
                     break
@@ -147,7 +148,6 @@ class FixerTask(EvaluationTask):
                             notes = f"{notes}\n\nstderr:\n{ver.stderr}"
                     except Exception:
                         stats['skip_verification_error'] += 1
-                        original_trivial = True
                         continue
                 else:
                     notes = "(verification not run)"
