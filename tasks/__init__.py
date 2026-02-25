@@ -19,7 +19,7 @@ import pickle
 import pkgutil
 import random
 from abc import ABC, abstractmethod
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -108,7 +108,7 @@ class EvaluationTask(ABC):
         results = [None] * len(examples)
         success_count = 0
 
-        with ProcessPoolExecutor(max_workers=N_PROCS) as executor:
+        with ThreadPoolExecutor(max_workers=N_PROCS) as executor:
             futures = {
                 executor.submit(_evaluate_one_worker, (self, llm, ex)): i
                 for i, ex in enumerate(examples)
