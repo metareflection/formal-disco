@@ -330,7 +330,6 @@ class FixerTask(EvaluationTask):
             "num_attempts": self.max_attempts,
             "verification_outcome": ver.outcome.name if ver else "UNKNOWN",
             "final_program": current_text,
-            "diffs_applied": diffs_applied,
             "interaction_log": interaction_log,
         }
 
