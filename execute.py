@@ -1,42 +1,29 @@
 import hashlib
 import os
+import subprocess
 
 def execute(cmd, ext, v):
     HOME = os.environ["HOME"]
     TMP_DIR = f"{HOME}/tmp/formal-disco/{ext}/"
     key = hashlib.md5(v.encode("utf-8")).hexdigest()
-    dir = "%s%s/" % (TMP_DIR, key)
-    old_dir = os.getcwd()
-    if not os.path.exists(dir):
-        os.makedirs(dir)
-    os.chdir(dir)
+    dir = f"{TMP_DIR}{key}/"
 
-    try:
-        fn = f"ex.{ext}"
-        outfn = "out.txt"
-        errfn = "err.txt"
+    os.makedirs(dir, exist_ok=True)
 
-        f = open(fn, "w", encoding='utf-8')
+    fn = f"ex.{ext}"
+    with open(os.path.join(dir, fn), "w", encoding="utf-8") as f:
         f.write(v)
-        f.close()
 
-        status = os.system("timeout -k 5s 10s %s %s >%s 2>%s" % (cmd, fn, outfn, errfn))
+    result = subprocess.run(
+        ["timeout", "-k", "5s", "10s", cmd, fn],
+        cwd=dir,
+        capture_output=True,
+        text=True,
+    )
 
-        f = open(outfn, "r", encoding='utf-8')
-        outlog = f.read()
-        f.close()
+    log = result.stderr
+    sys_error_prefix = "sh: line 1:"
+    if log.startswith(sys_error_prefix):
+        raise RuntimeError(log[len(sys_error_prefix):] + " -- install tool locally")
 
-        f = open(errfn, "r", encoding='utf-8')
-        log = f.read()
-        f.close()
-
-        sys_error_prefix = "sh: line 1:"
-        if log.startswith(sys_error_prefix):
-            raise RuntimeError(
-                log[len(sys_error_prefix) :]
-                + " -- install tool locally"
-            )
-    finally:
-        os.chdir(old_dir)
-
-    return {"status": status, "log": log, "out": outlog}
+    return {"status": result.returncode, "log": log, "out": result.stdout}
