@@ -4,16 +4,25 @@
 # Can be a single pickle path (string), or a list of pickle paths.
 # data: local-agenda.pkl
 # Example:
+
 data:
-    - /n/holylabs/kempner_fellows/Lab/poesia/formal-disco/checkpoints/local-agenda-claude.pkl
-    - /n/holylabs/kempner_fellows/Lab/poesia/formal-disco/checkpoints/local-agenda-claude-opus.pkl
-    # - data/sft/nontrivial_fixer_train.pkl
+#    - /n/holylabs/amin_lab/Lab/namin/implementer.pkl
+#    - /n/holylabs/amin_lab/Lab/namin/free_autogen.pkl
+#    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/checkpoints/local-agenda-claude.pkl
+#    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/checkpoints/local-agenda-claude-opus.pkl
+#    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/checkpoints/agenda-claude-opus-distill.pkl
+#    - /n/holylabs/amin_lab/Lab/kempner-accelerator/agenda-checkpoints/agenda-run3-jan29.pkl
+    - /n/holylabs/amin_lab/Lab/namin/nontrivial_fixer_train.pkl
+#    - /n/holylabs/amin_lab/Lab/namin/nontrivial_lemma_repair_train.pkl
 
 # HF model id
-model_id: Qwen/Qwen3-Coder-30B-A3B-Instruct
+# model_id: Qwen/Qwen3-Coder-30B-A3B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B # 
+model_id: Qwen/Qwen2.5-Coder-14B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B # 
 
 # Output directory (relative to Hydra run dir unless absolute)
-output_dir: sft-out
+# output_dir:  /n/holylabs/amin_lab/Lab/kempner-accelerator/qwen3-coder-claude+self-v7
+# output_dir:  /n/holylabs/kempner_poesia_lab/Lab/kempner-accelerator/qwen3-coder-claude+self-v7
+output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen3-coder-nontrivial-fixer-v3
 
 # Whether to filter to success only examples
 success_only: true
@@ -22,19 +31,20 @@ success_only: true
 treat_goal_unproven_as_success: false
 
 # Training
-max_seq_length: 16384
-per_device_train_batch_size: 1
+max_seq_length: 8192
+per_device_train_batch_size: 2
 gradient_accumulation_steps: 4
 learning_rate: 2.0e-4
-num_train_epochs: 1.0
-warmup_ratio: 0.03
+num_train_epochs: 3.0
+warmup_ratio: 0.02
 lr_scheduler_type: cosine
 logging_steps: 10
-save_steps: 200
+max_grad_norm: 1.0
+save_steps: 500
 seed: 0
 
 # LoRA
-lora_r: 64
+lora_r: 16
 lora_alpha: 32
 lora_dropout: 0.05
 
