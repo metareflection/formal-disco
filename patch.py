@@ -122,7 +122,7 @@ def apply_text_diff(text: str, diff: str) -> str:
 
     def find_forward(target: str, start: int) -> int | None:
         for idx in range(start, len(lines)):
-            if line_content(idx) == target:
+            if line_content(idx).strip() == target.strip():
                 return idx
         return None
 
