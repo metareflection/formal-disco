@@ -19,12 +19,19 @@ import pickle
 import pkgutil
 import random
 from abc import ABC, abstractmethod
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+
+
+def _evaluate_one_worker(args):
+    """Top-level helper so ProcessPoolExecutor can pickle it."""
+    task, llm, example = args
+    return task.evaluate_one(llm, example)
 
 try:
     import wandb
@@ -95,23 +102,34 @@ class EvaluationTask(ABC):
         use_wandb: bool = False,
         verbose: bool = False,
     ) -> dict:
-        """Run evaluate_one over all examples, aggregate metrics, log."""
-        results = []
+        """Run evaluate_one over all examples in parallel, aggregate metrics, log."""
+        N_PROCS = 32
+
+        results = [None] * len(examples)
         success_count = 0
 
-        for ex in tqdm(examples, desc=f"Evaluating {self.name}"):
-            result = self.evaluate_one(llm, ex)
-            results.append(result)
-            if result.get('success'):
-                success_count += 1
+        with ProcessPoolExecutor(max_workers=N_PROCS) as executor:
+            futures = {
+                executor.submit(_evaluate_one_worker, (self, llm, ex)): i
+                for i, ex in enumerate(examples)
+            }
 
-            if use_wandb and WANDB_AVAILABLE:
-                n = len(results)
-                wandb.log({
-                    "examples_evaluated": n,
-                    "success_count": success_count,
-                    "success_rate": success_count / n,
-                })
+            with tqdm(total=len(examples), desc=f"Evaluating {self.name}") as pbar:
+                for future in as_completed(futures):
+                    i = futures[future]
+                    result = future.result()
+                    results[i] = result
+                    if result.get('success'):
+                        success_count += 1
+                    pbar.update(1)
+
+                    if use_wandb and WANDB_AVAILABLE:
+                        n = sum(1 for r in results if r is not None)
+                        wandb.log({
+                            "examples_evaluated": n,
+                            "success_count": success_count,
+                            "success_rate": success_count / n,
+                        })
 
         return {
             "results": results,
