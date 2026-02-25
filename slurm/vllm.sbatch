@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:4
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=600G
-#SBATCH --time=2-00:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 
@@ -30,11 +30,11 @@ echo "http://${HOSTNAME}:${PORT}/v1" >> "$HOME/vllm_servers"
 # vllm serve /n/holylabs/amin_lab/Lab/kempner-accelerator/models/deepseekcoder-v2-lite-sft-v1/merged \
 # vllm serve /n/holylabs/amin_lab/Lab/kempner-accelerator/models/gpt-oss-20b-sft-v1/merged \
 # vllm serve /n/holylabs/amin_lab/Lab/kempner-accelerator/models/gpt-oss-20b-distill-v2/merged \
-vllm serve /n/holylabs/amin_lab/Lab/kempner-accelerator/models/qwen3coder-sft-ep3-v3/merged \
+# vllm serve /n/holylabs/amin_lab/Lab/kempner-accelerator/models/qwen3-coder-ideafix-v6/merged \
+vllm serve /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen3-coder-claude+self-v7/merged \
     --max-model-len 8K \
-    --tensor-parallel-size 2 \
+    --tensor-parallel-size 4 \
     --dtype auto \
     --served-model-name llm \
     --host 0.0.0.0 \
     --port $PORT
-
