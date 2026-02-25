@@ -15,7 +15,7 @@ def execute(cmd, ext, v):
         f.write(v)
 
     result = subprocess.run(
-        ["timeout", "-k", "5s", "10s", cmd, fn],
+        ["timeout", "-k", "5s", "10s"] + cmd.split() + [fn],
         cwd=dir,
         capture_output=True,
         text=True,
