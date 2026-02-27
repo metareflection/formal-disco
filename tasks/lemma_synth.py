@@ -289,7 +289,9 @@ class LemmaSynthTask(EvaluationTask):
         program_path = example.get("metadata", {}).get("program_path", "unknown")
         name = f"{program_path}::{lemma_name}"
 
-        return self._synthesize(llm, program, lemma_name, notes, name)
+        result = self._synthesize(llm, program, lemma_name, notes, name)
+        result["program"] = program
+        return result
 
     def _synthesize(
         self,
