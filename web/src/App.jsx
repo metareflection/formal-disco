@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Link, NavLink } from 'react-router-dom';
 import Home from './pages/Home';
 import FixerReport from './pages/FixerReport';
 import LemmaReport from './pages/LemmaReport';
+import DiversityReport from './pages/DiversityReport';
 
 export default function App() {
   return (
@@ -15,6 +16,9 @@ export default function App() {
           <NavLink to="/lemma-report" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
             Lemma Report
           </NavLink>
+          <NavLink to="/diversity-report" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+            Diversity Report
+          </NavLink>
         </div>
       </nav>
       <main className="main-content">
@@ -22,6 +26,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/fixer-report" element={<FixerReport />} />
           <Route path="/lemma-report" element={<LemmaReport />} />
+          <Route path="/diversity-report" element={<DiversityReport />} />
         </Routes>
       </main>
     </BrowserRouter>

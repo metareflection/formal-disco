@@ -13,6 +13,10 @@ export default function Home() {
           <h2>Lemma Synthesis Report</h2>
           <p>Compare LLM models on Dafny lemma body synthesis tasks.</p>
         </Link>
+        <Link to="/diversity-report" className="card">
+          <h2>Diversity Report</h2>
+          <p>Compare structural diversity and complexity across Dafny program corpora.</p>
+        </Link>
       </div>
     </div>
   );
