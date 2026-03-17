@@ -155,7 +155,7 @@ def generate_repair_examples(
         if skip_dafny:
             errors = "(Dafny errors would appear here)"
         else:
-            errors = get_dafny_errors(hr_code)
+            errors = f"Output of dafny verify on this program:\n{get_dafny_errors(hr_code)}"
 
         examples.append({
             "prompt": "repair",
