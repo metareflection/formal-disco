@@ -23,13 +23,13 @@ import argparse
 import difflib
 import json
 import pickle
-import subprocess
 from pathlib import Path
 from typing import Optional
 
 from tqdm import tqdm
 
 from agenda import Object  # Use the real Object class for pickle compatibility
+from execute import get_dafny_errors
 
 
 def compute_text_diff(before: str, after: str) -> str:
@@ -79,21 +79,6 @@ def compute_text_diff(before: str, after: str) -> str:
     return "\n".join(diff_parts)
 
 
-def get_dafny_errors(program: str, timeout: int = 30) -> str:
-    """Run Dafny and capture verification errors."""
-    try:
-        result = subprocess.run(
-            ["dafny", "verify", "/dev/stdin"],
-            input=program,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        return f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
-    except subprocess.TimeoutExpired:
-        return "Dafny verification timed out"
-    except Exception as e:
-        return f"Error running Dafny: {e}"
 
 
 def generate_repair_examples(

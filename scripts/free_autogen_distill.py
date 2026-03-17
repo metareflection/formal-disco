@@ -13,39 +13,13 @@ import argparse
 import json
 import pickle
 import re
-import subprocess
-import tempfile
-import os
 from pathlib import Path
 from typing import Optional
 
 from tqdm import tqdm
 
 from agenda import Object
-
-
-def get_dafny_errors(program: str, timeout: int = 2) -> str:
-    """Run Dafny and capture verification errors."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.dfy', delete=False) as f:
-        f.write(program)
-        tmp_path = f.name
-
-    try:
-        result = subprocess.run(
-            ["dafny", "verify", f"--verification-time-limit={timeout}", tmp_path],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        stdout = result.stdout.replace(tmp_path, "program.dfy") if result.stdout else ""
-        stderr = result.stderr.replace(tmp_path, "program.dfy") if result.stderr else ""
-        return f"stdout:\n{stdout}\n\nstderr:\n{stderr}"
-    except subprocess.TimeoutExpired:
-        return "stdout:\nDafny verification timed out\n\nstderr:\n"
-    except Exception as e:
-        return f"Error running Dafny: {e}"
-    finally:
-        os.unlink(tmp_path)
+from execute import get_dafny_errors
 
 
 def find_removable_lines(program: str) -> list[tuple[int, str, str]]:
@@ -129,7 +103,7 @@ def generate_mutation_examples(
             if skip_dafny:
                 errors = "(Dafny errors would appear here)"
             else:
-                errors = get_dafny_errors(broken)
+                errors = get_dafny_errors(broken, timeout=2)
                 # Skip if it still verifies (the line wasn't needed)
                 if "0 errors" in errors:
                     skipped_still_verifies += 1
