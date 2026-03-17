@@ -320,11 +320,12 @@ class FixerTask(EvaluationTask):
 
             try:
                 diff_text = self._chain.invoke(llm_args).strip()
-                interaction = {'program': current_text, 'notes': ver_notes, 'diff': diff_text}
             except Exception as e:
                 logger.warning(f"LLM call failed for {program_name}: {e}")
-                interaction_log.append({**interaction, 'result': f'Error: {e}'})
+                interaction_log.append({'program': current_text, 'notes': ver_notes, 'result': f'Error: {e}'})
                 continue
+
+            interaction = {'program': current_text, 'notes': ver_notes, 'diff': diff_text}
 
             try:
                 repaired_text = apply_text_diff(current_text, diff_text)
