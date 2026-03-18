@@ -20,16 +20,16 @@ from typing import Any, Optional
 
 from tqdm import tqdm
 
-from langchain_core.prompts import ChatPromptTemplate
 from code_output_parser import CodeOutputParser
-from dafny import DafnyProgram, VerificationOutcome
+from language import Language, Program, VerificationOutcome
 from patch import apply_text_diff, TEXT_DIFF_EXAMPLE, TEXT_BEFORE_EXAMPLE, TEXT_AFTER_EXAMPLE
-from prompt import system_repair, format_repair_user, reconstruct_chat_messages
 from distill_common import (
     remove_hints, compute_text_diff, get_dafny_errors,
     load_verified_programs, get_content, create_agenda_pickle,
 )
-from tasks import EvaluationTask, load_pickle_source, load_dfy_source
+from tasks import EvaluationTask, load_pickle_source, load_dfy_source, _to_langchain_messages
+
+_backend = Language.DAFNY.get_backend()
 
 logger = logging.getLogger(__name__)
 
@@ -56,21 +56,7 @@ class FixerTask(EvaluationTask):
     def _ensure_chain(self, llm: Any) -> None:
         if self._chain is not None:
             return
-        prompt = ChatPromptTemplate.from_messages([
-            (
-                "system",
-                system_repair(
-                    example_before="{example_before}",
-                    example_diff="{example_diff}",
-                    example_after="{example_after}",
-                ),
-            ),
-            (
-                "human",
-                format_repair_user(program="{program}", notes="{notes}"),
-            ),
-        ])
-        self._chain = prompt | llm | CodeOutputParser()
+        self._chain = llm | CodeOutputParser()
 
     # ------------------------------------------------------------------
     # (a) Data extraction
@@ -142,7 +128,7 @@ class FixerTask(EvaluationTask):
 
             if verify_stripped:
                 try:
-                    prog = DafnyProgram(stripped_program, name="stripped")
+                    prog = Program(stripped_program, Language.DAFNY, name="stripped")
                     ver = prog.verify()
                     trivial_diff = (ver.outcome == VerificationOutcome.SUCCESS)
                     notes = ver.stdout
@@ -236,7 +222,7 @@ class FixerTask(EvaluationTask):
                     stdout = entry.get("stdout", "")
                     stderr = entry.get("stderr", "")
             else:
-                prog = DafnyProgram(text, name=name)
+                prog = Program(text, Language.DAFNY, name=name)
                 ver = prog.verify()
                 outcome = ver.outcome.name
                 stdout = ver.stdout
@@ -294,7 +280,7 @@ class FixerTask(EvaluationTask):
 
         # Get initial verification if no notes provided
         if not ver_notes:
-            prog = DafnyProgram(current_text, name=program_name)
+            prog = Program(current_text, Language.DAFNY, name=program_name)
             ver = prog.verify()
             if ver.outcome == VerificationOutcome.SUCCESS:
                 return {
@@ -310,16 +296,16 @@ class FixerTask(EvaluationTask):
             if self.verbose:
                 logger.info(f"Attempt {attempt + 1}/{self.max_attempts} for {program_name}")
 
-            llm_args = {
-                "program": current_text,
-                "notes": ver_notes,
-                "example_diff": TEXT_DIFF_EXAMPLE,
-                "example_before": TEXT_BEFORE_EXAMPLE,
-                "example_after": TEXT_AFTER_EXAMPLE,
-            }
+            msgs = _to_langchain_messages(_backend.prompt_builder.repair(
+                program=current_text,
+                notes=ver_notes,
+                example_before=TEXT_BEFORE_EXAMPLE,
+                example_diff=TEXT_DIFF_EXAMPLE,
+                example_after=TEXT_AFTER_EXAMPLE,
+            ))
 
             try:
-                diff_text = self._chain.invoke(llm_args).strip()
+                diff_text = self._chain.invoke(msgs).strip()
             except Exception as e:
                 logger.warning(f"LLM call failed for {program_name}: {e}")
                 interaction_log.append({'program': current_text, 'notes': ver_notes, 'result': f'Error: {e}'})
@@ -334,7 +320,7 @@ class FixerTask(EvaluationTask):
                 interaction_log.append({**interaction, 'result': f'Error: {e}'})
                 continue
 
-            repaired_prog = DafnyProgram(repaired_text, name=program_name)
+            repaired_prog = Program(repaired_text, Language.DAFNY, name=program_name)
             ver = repaired_prog.verify()
 
             current_text = repaired_text
@@ -370,9 +356,10 @@ class FixerTask(EvaluationTask):
         if not response:
             return None
 
-        messages = reconstruct_chat_messages(
-            "repair",
-            example.get("arguments", {}),
+        args = example.get("arguments", {})
+        messages = _backend.prompt_builder.repair(
+            program=args.get("program", ""),
+            notes=args.get("notes", ""),
             example_before=TEXT_BEFORE_EXAMPLE,
             example_diff=TEXT_DIFF_EXAMPLE,
             example_after=TEXT_AFTER_EXAMPLE,

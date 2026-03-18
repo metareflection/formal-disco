@@ -18,7 +18,7 @@ from typing import Any
 from tqdm import tqdm
 
 from code_output_parser import CodeOutputParser
-from dafny import DafnyProgram, VerificationOutcome
+from language import Language, Program, VerificationOutcome
 from distill_common import get_content, create_agenda_pickle
 from tasks import EvaluationTask, load_pickle_source
 
@@ -240,7 +240,7 @@ class LemmaSynthTask(EvaluationTask):
 
                 if verify_hollowed:
                     try:
-                        prog = DafnyProgram(hollowed, name="hollowed")
+                        prog = Program(hollowed, Language.DAFNY, name="hollowed")
                         ver = prog.verify()
                         if ver.outcome == VerificationOutcome.SUCCESS:
                             stats['skip_still_verifies'] += 1
@@ -330,7 +330,7 @@ class LemmaSynthTask(EvaluationTask):
                 logger.warning(f"Failed to insert body for {example_name}: {e}")
                 continue
 
-            prog = DafnyProgram(filled, name=example_name)
+            prog = Program(filled, Language.DAFNY, name=example_name)
             ver = prog.verify()
 
             if ver.outcome == VerificationOutcome.SUCCESS:

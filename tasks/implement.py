@@ -12,11 +12,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from langchain_core.prompts import ChatPromptTemplate
 from code_output_parser import CodeOutputParser
-from dafny import DafnyProgram, VerificationOutcome
-from prompt import system_implement, format_implement_user, reconstruct_chat_messages
-from tasks import EvaluationTask, load_pickle_source, load_dfy_source
+from language import Language, Program, VerificationOutcome
+from tasks import EvaluationTask, load_pickle_source, load_dfy_source, _to_langchain_messages
+
+_backend = Language.DAFNY.get_backend()
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +37,7 @@ class ImplementTask(EvaluationTask):
     def _ensure_chain(self, llm: Any) -> None:
         if self._chain is not None:
             return
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_implement()),
-            ("user", "{user_message}"),
-        ])
-        self._chain = prompt | llm | CodeOutputParser()
+        self._chain = llm | CodeOutputParser()
 
     # ------------------------------------------------------------------
     # (a) Data extraction
@@ -118,10 +114,10 @@ class ImplementTask(EvaluationTask):
         example_id = example.get("_path", example.get("metadata", {}).get("file_name", "unknown"))
         ground_truth_outcome = example.get("outcome")
 
-        user_message = format_implement_user(idea=idea)
+        msgs = _to_langchain_messages(_backend.prompt_builder.implement(idea=idea))
 
         try:
-            generated_code = self._chain.invoke({"user_message": user_message}).strip()
+            generated_code = self._chain.invoke(msgs).strip()
         except Exception as e:
             logger.warning(f"LLM call failed for {example_id}: {e}")
             return {
@@ -134,7 +130,7 @@ class ImplementTask(EvaluationTask):
             }
 
         try:
-            prog = DafnyProgram(generated_code, name=example_id)
+            prog = Program(generated_code, Language.DAFNY, name=example_id)
             ver = prog.verify()
             outcome = ver.outcome.name
         except Exception as e:
@@ -169,8 +165,7 @@ class ImplementTask(EvaluationTask):
         if not response:
             return None
 
-        messages = reconstruct_chat_messages(
-            "implement",
-            example.get("arguments", {}),
+        messages = _backend.prompt_builder.implement(
+            idea=example.get("arguments", {}).get("idea", ""),
         )
         return {"messages": messages, "completion": str(response)}

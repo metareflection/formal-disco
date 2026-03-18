@@ -25,7 +25,15 @@ from typing import Any
 
 from tqdm import tqdm
 
+from langchain_core.messages import HumanMessage, SystemMessage
+
 logger = logging.getLogger(__name__)
+
+
+def _to_langchain_messages(messages):
+    """Convert a list of ChatMessage dicts to LangChain BaseMessage objects."""
+    mapping = {"system": SystemMessage, "user": HumanMessage}
+    return [mapping[m["role"]](content=m["content"]) for m in messages]
 
 
 def _evaluate_one_worker(args):
