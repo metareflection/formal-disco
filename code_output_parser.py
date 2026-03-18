@@ -13,8 +13,8 @@ class CodeOutputParser(BaseOutputParser[str]):
     Extracts code content from LLM outputs that may be wrapped in fenced code blocks.
 
     Behavior:
-    - If any line matches a language fence like "```<lang>", then find the FIRST line containing
-      triple backticks (```), and return the text between that line and the NEXT triple backtick line.
+    - If any line matches a language fence like "```<lang>", then find the LAST such fence,
+      and return the text between that line and the next closing triple backtick line.
     - If no language fence is present, return the entire output as-is.
 
     This helps when models wrap outputs in markdown fences like ```dafny ... ```.
@@ -32,14 +32,13 @@ class CodeOutputParser(BaseOutputParser[str]):
         if not has_lang_fence:
             return text
 
-        # Find first fence (opening) and next fence (closing)
+        # Find last language fence (opening) and next fence (closing)
         open_idx: int | None = None
         close_idx: int | None = None
 
         for i, line in enumerate(lines):
-            if line.strip().startswith("```"):
+            if self._lang_fence_re.match(line.strip()):
                 open_idx = i
-                break
 
         if open_idx is None:
             return text
@@ -96,7 +95,7 @@ def test_extracts_after_open_when_no_closing_fence():
     assert out == essential_text
 
 
-def test_prefers_first_block_when_lang_fence_present():
+def test_prefers_last_block_when_lang_fence_present():
     text = (
         "intro\n"
         "```dafny\n"
@@ -108,4 +107,4 @@ def test_prefers_first_block_when_lang_fence_present():
     )
     parser = CodeOutputParser()
     out = parser.parse(text)
-    assert out == "Dafny content A\n"
+    assert out == "Python content B\n"
