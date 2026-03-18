@@ -21,13 +21,13 @@ import argparse
 import json
 import pickle
 import re
-import subprocess
 from pathlib import Path
 from typing import Optional
 
 from tqdm import tqdm
 
 from agenda import Object  # Use the real Object class for pickle compatibility
+from execute import get_dafny_errors
 
 
 def compute_insertion_diff(program: str, method_name: str, body: str) -> Optional[str]:
@@ -76,34 +76,6 @@ def compute_insertion_diff(program: str, method_name: str, body: str) -> Optiona
 
     return "\n".join(diff_parts)
 
-
-def get_dafny_errors(program: str, timeout: int = 2) -> str:
-    """Run Dafny and capture verification errors."""
-    import tempfile
-    import os
-
-    # Use temp file since /dev/stdin doesn't work on all systems
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.dfy', delete=False) as f:
-        f.write(program)
-        tmp_path = f.name
-
-    try:
-        result = subprocess.run(
-            ["dafny", "verify", f"--verification-time-limit={timeout}", tmp_path],
-            capture_output=True,
-            text=True,
-            timeout=10,  # Subprocess timeout as backup
-        )
-        # Replace temp path with generic name in output for cleaner errors
-        stdout = result.stdout.replace(tmp_path, "program.dfy") if result.stdout else ""
-        stderr = result.stderr.replace(tmp_path, "program.dfy") if result.stderr else ""
-        return f"stdout:\n{stdout}\n\nstderr:\n{stderr}"
-    except subprocess.TimeoutExpired:
-        return "stdout:\nDafny verification timed out\n\nstderr:\n"
-    except Exception as e:
-        return f"Error running Dafny: {e}"
-    finally:
-        os.unlink(tmp_path)
 
 
 def extract_method_name_from_id(entry_id: str, program: str) -> Optional[str]:
@@ -201,7 +173,7 @@ def generate_vfp_examples(
             errors = "(Dafny errors would appear here)"
         else:
             tqdm.write(f"  Running Dafny on {entry_id}...")
-            errors = get_dafny_errors(emptied_code)
+            errors = get_dafny_errors(emptied_code, timeout=2)
 
         examples.append({
             "prompt": "repair",

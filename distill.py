@@ -24,6 +24,7 @@ from typing import Any, Iterable, Literal
 
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
+import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
 from trl import SFTTrainer, SFTConfig
 
@@ -323,8 +324,9 @@ def _train_with_trl(
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
+        torch_dtype=torch.bfloat16,
         attn_implementation="kernels-community/flash-attn2",
-    ) # , device_map="auto")
+        device_map="auto")
 
     peft_config = LoraConfig(
         r=int(lora_r),

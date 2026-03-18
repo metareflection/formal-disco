@@ -15,12 +15,12 @@ import difflib
 import json
 import pickle
 import re
-import subprocess
 import random
 from pathlib import Path
 from typing import TypedDict
 
 from agenda import Object
+from execute import get_dafny_errors
 
 
 def get_content(obj) -> str | None:
@@ -211,22 +211,3 @@ def compute_text_diff(before: str, after: str) -> str:
     return "\n".join(diff_parts)
 
 
-# ---------------------------------------------------------------------------
-# Dafny verification
-# ---------------------------------------------------------------------------
-
-def get_dafny_errors(program: str, timeout: int = 30) -> str:
-    """Run Dafny and capture verification errors."""
-    try:
-        result = subprocess.run(
-            ["dafny", "verify", "/dev/stdin"],
-            input=program,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        return f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
-    except subprocess.TimeoutExpired:
-        return "Dafny verification timed out"
-    except Exception as e:
-        return f"Error running Dafny: {e}"
