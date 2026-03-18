@@ -24,6 +24,14 @@ class NoOpLogger(AgendaLogger):
         """Log aggregate statistics about programs (no-op)."""
         pass
 
+    def log_metrics(self, metrics: dict[str, float]) -> None:
+        """Log a flat dict of metrics verbatim (no-op)."""
+        pass
+
+    def log_task_outcomes(self, outcomes: dict[str, dict[str, int]]) -> None:
+        """Log cumulative task outcome counts and success rates (no-op)."""
+        pass
+
     def log_performance_statistics(
         self,
         per_procedure_stats: dict[str, dict[str, float]],

@@ -135,7 +135,7 @@ class LLMFixer(Worker):
                         content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
                     ))
 
-                if ver.outcome in (VerificationOutcome.SUCCESS, VerificationOutcome.GOAL_UNPROVEN):
+                if ver.outcome == VerificationOutcome.SUCCESS:
                     dataset_path = f"dataset/{os.path.basename(program_path)}"
                     parent_idea = prog_obj.parents[0] if prog_obj.parents else None
                     await agenda.create_object(Object(

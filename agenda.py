@@ -251,6 +251,10 @@ class LocalAgenda(Agenda):
         self._sorted_task_ids: list[str] = []
         self._sort_calls: int = 0
 
+        # Cumulative outcome counts: task_type -> {WorkStatus value -> count}.
+        # Persisted in checkpoints so rates accumulate across restarts.
+        self._task_outcomes: dict[str, dict[str, int]] = {}
+
         self._patch_executor = ProcessPoolExecutor(max_workers=1)
 
         self._load()
@@ -284,6 +288,7 @@ class LocalAgenda(Agenda):
 
                 self._objects = data.get('objects', {})
                 self._clock = data.get('clock', 0)
+                self._task_outcomes = data.get('task_outcomes', {})
             # Build initial sorted task ID cache.
             self._rebuild_sorted_task_ids()
             stats = self._compute_codebase_statistics()
@@ -306,6 +311,7 @@ class LocalAgenda(Agenda):
                     'status': self._status,
                     'clock': self._clock,
                     'objects': self._objects,
+                    'task_outcomes': self._task_outcomes,
                 }
                 pickle.dump(data, f)
                 f.flush()
@@ -320,8 +326,11 @@ class LocalAgenda(Agenda):
             logger.info(f"Codebase statistics: {s}")
 
             d = self._compute_diversity_metrics()
-            self._logger.log_code_base_statistics(d)
+            self._logger.log_metrics(d)
             logger.info(f"Diversity/complexity metrics: {d}")
+
+            self._logger.log_task_outcomes(self._task_outcomes)
+            logger.info(f"Task outcomes: {self._task_outcomes}")
 
             # Log performance statistics if tracker is available
             if self._performance_tracker is not None:
@@ -552,6 +561,11 @@ class LocalAgenda(Agenda):
                 status.work_status = work_status
                 self._logger.log_task_state(task.type, task_id, work_status.value)
 
+                # Accumulate outcome counts for success-rate tracking.
+                if work_status in (WorkStatus.DONE, WorkStatus.FAILED, WorkStatus.ATTEMPTED):
+                    counts = self._task_outcomes.setdefault(task.type, {})
+                    counts[work_status.value] = counts.get(work_status.value, 0) + 1
+
             if new_notes:
                 status.worker_notes.update(new_notes)
 
@@ -765,14 +779,14 @@ class LocalAgenda(Agenda):
                 (c / total) * math.log2(c / total)
                 for c in counter.values() if c > 0
             )
-            stats[f"diversity/{metric}/entropy"] = entropy
+            stats[f"diversity/{metric}-entropy"] = entropy
 
         for metric, values in complexity_values.items():
             if not values:
                 continue
             arr = np.array(values, dtype=float)
-            stats[f"complexity/{metric}/median"] = float(np.median(arr))
-            stats[f"complexity/{metric}/p90"] = float(np.percentile(arr, 90))
+            stats[f"complexity/{metric}-median"] = float(np.median(arr))
+            stats[f"complexity/{metric}-p90"] = float(np.percentile(arr, 90))
 
         return stats
 

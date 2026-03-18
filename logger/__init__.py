@@ -36,6 +36,20 @@ class AgendaLogger(ABC):
         pass
 
     @abstractmethod
+    def log_metrics(self, metrics: dict[str, float]) -> None:
+        """Log a flat dict of metric_name -> value verbatim, without any prefix."""
+        pass
+
+    @abstractmethod
+    def log_task_outcomes(self, outcomes: dict[str, dict[str, int]]) -> None:
+        """Log cumulative task outcome counts and derived success rates.
+
+        outcomes maps task_type -> {terminal_state: count}, where terminal states
+        are the WorkStatus string values (DONE, FAILED, ATTEMPTED).
+        """
+        pass
+
+    @abstractmethod
     def log_performance_statistics(
         self,
         per_procedure_stats: dict[str, dict[str, float]],

@@ -114,6 +114,21 @@ class WandbLogger(AgendaLogger):
 
         self._wandb.log(wandb_stats)
 
+    def log_metrics(self, metrics: dict[str, float]) -> None:
+        """Log a flat dict of metrics verbatim to wandb."""
+        if metrics:
+            self._wandb.log(metrics)
+
+    def log_task_outcomes(self, outcomes: dict[str, dict[str, int]]) -> None:
+        """Log success rate per task type to wandb as success-rate/<task_type>."""
+        metrics = {}
+        for task_type, counts in outcomes.items():
+            total = sum(counts.values())
+            if total > 0:
+                metrics[f"success-rate/{task_type}"] = counts.get("DONE", 0) / total
+        if metrics:
+            self._wandb.log(metrics)
+
     def log_performance_statistics(
         self,
         per_procedure_stats: dict[str, dict[str, float]],

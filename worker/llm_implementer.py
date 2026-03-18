@@ -123,7 +123,7 @@ class LLMImplementer(Worker):
 
                 notes = {"program_path": prog_obj_path, "verification": ver.outcome.name}
 
-                if ver.outcome in (VerificationOutcome.SUCCESS, VerificationOutcome.GOAL_UNPROVEN):
+                if ver.outcome == VerificationOutcome.SUCCESS:
                     dataset_path = f"dataset/{os.path.basename(prog_path)}"
                     await agenda.create_object(Object(
                         path=dataset_path,
