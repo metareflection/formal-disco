@@ -1,25 +1,19 @@
-import hashlib
 import os
 import subprocess
+import tempfile
 
 def execute(cmd, ext, v, timeout=10):
-    HOME = os.environ["HOME"]
-    TMP_DIR = f"{HOME}/tmp/formal-disco/{ext}/"
-    key = hashlib.md5(v.encode("utf-8")).hexdigest()
-    dir = f"{TMP_DIR}{key}/"
+    with tempfile.TemporaryDirectory() as dir:
+        fn = f"program.{ext}"
+        with open(os.path.join(dir, fn), "w", encoding="utf-8") as f:
+            f.write(v)
 
-    os.makedirs(dir, exist_ok=True)
-
-    fn = f"program.{ext}"
-    with open(os.path.join(dir, fn), "w", encoding="utf-8") as f:
-        f.write(v)
-
-    result = subprocess.run(
-        ["timeout", "-k", "5s", f"{timeout}s"] + cmd.split() + [fn],
-        cwd=dir,
-        capture_output=True,
-        text=True,
-    )
+        result = subprocess.run(
+            ["timeout", "-k", "5s", f"{timeout}s"] + cmd.split() + [fn],
+            cwd=dir,
+            capture_output=True,
+            text=True,
+        )
 
     log = result.stderr
     sys_error_prefix = "sh: line 1:"
