@@ -99,10 +99,20 @@ class LLMFixer(Worker):
                     fuel -= 1
                     continue
 
+                old_prog = Program(prog_text, Language[self._language.upper()], name=program_path)
+                new_prog = Program(repaired_text, Language[self._language.upper()], name=program_path)
+                if str(self._backend.strip(new_prog)) == str(self._backend.strip(old_prog)):
+                    await agenda.update_task(
+                        task.id, work_status=WorkStatus.ATTEMPTED,
+                        priority_factor=self._attempt_priority_factor,
+                        new_notes={"diff_error": "diff produced no meaningful change"},
+                    )
+                    fuel -= 1
+                    continue
+
                 await agenda.update_object(program_path, new_content=repaired_text.encode("utf-8"))
 
-                repaired_prog = Program(repaired_text, Language[self._language.upper()], name=program_path)
-                ver = self._backend.verify(repaired_prog)
+                ver = self._backend.verify(new_prog)
 
                 logger.info("Verification outcome for repair task %s: %s", task.id, ver.outcome.name)
                 logger.info("Program before fix:\n%s", prog_text)

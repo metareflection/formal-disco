@@ -78,9 +78,15 @@ class EditorWorker(Worker):
                     fuel -= 1
                     continue
 
+                old_prog = Program(prog_text, Language[self._language.upper()], name=program_path)
+                new_prog = Program(updated_text, Language[self._language.upper()], name=program_path)
+                if str(self._backend.strip(new_prog)) == str(self._backend.strip(old_prog)):
+                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, new_notes={"diff_error": "diff produced no meaningful change"})
+                    fuel -= 1
+                    continue
+
                 await agenda.update_object(program_path, new_content=updated_text.encode("utf-8"))
 
-                new_prog = Program(updated_text, Language[self._language.upper()], name=program_path)
                 ver = self._backend.verify(new_prog)
 
                 logger.info("Verification outcome for extend task %s: %s", task.id, ver.outcome.name)
