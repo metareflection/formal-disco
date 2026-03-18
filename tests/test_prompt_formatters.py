@@ -1,34 +1,34 @@
-from prompt import (
-    format_extend_user,
-    format_idea_user,
-    format_implement_user,
-    format_repair_user,
-    reconstruct_chat_messages,
-)
+from language import Language
+
+_backend = Language.DAFNY.get_backend()
+_pb = _backend.prompt_builder
 
 
-def test_format_implement_user_deterministic():
-    out = format_implement_user(idea="X")
-    assert "Idea/specification:" in out
-    assert "X" in out
-
-
-def test_format_repair_user_contains_sections():
-    out = format_repair_user(program="P", notes="N")
-    assert out.startswith("Program:")
-    assert "Notes (verification output):" in out
-    assert "P" in out
-    assert "N" in out
-
-
-def test_reconstruct_user_prompt_dispatch():
-    msgs = reconstruct_chat_messages("implement", {"idea": "abc"}, example_before="b", example_diff="d", example_after="a")
+def test_implement_prompt():
+    msgs = _pb.implement(idea="X")
     assert msgs[0]["role"] == "system"
     assert msgs[1]["role"] == "user"
-    assert "abc" in msgs[1]["content"]
+    assert "X" in msgs[1]["content"]
 
-    msgs = reconstruct_chat_messages("extend", {"program": "p"}, example_before="b", example_diff="d", example_after="a")
-    assert "Current program:" in msgs[1]["content"]
 
-    msgs = reconstruct_chat_messages("idea", {"repo": "r", "readme": "m"}, example_before="b", example_diff="d", example_after="a")
-    assert "Repository:" in msgs[1]["content"]
+def test_repair_prompt():
+    msgs = _pb.repair(program="P", notes="N", example_before="b", example_diff="d", example_after="a")
+    assert msgs[0]["role"] == "system"
+    assert msgs[1]["role"] == "user"
+    assert "P" in msgs[1]["content"]
+    assert "N" in msgs[1]["content"]
+
+
+def test_extend_prompt():
+    msgs = _pb.extend(program="P", example_before="b", example_diff="d", example_after="a")
+    assert msgs[0]["role"] == "system"
+    assert msgs[1]["role"] == "user"
+    assert "P" in msgs[1]["content"]
+
+
+def test_idea_prompt():
+    msgs = _pb.idea(repo="my-repo", readme="Some README text")
+    assert msgs[0]["role"] == "system"
+    assert msgs[1]["role"] == "user"
+    assert "my-repo" in msgs[1]["content"]
+    assert "Some README text" in msgs[1]["content"]

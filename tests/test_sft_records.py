@@ -32,9 +32,9 @@ def test_build_sft_records_success_only(tmp_path: Path):
     pkl = tmp_path / "agenda.pkl"
     pkl.write_bytes(pickle.dumps(data))
 
-    recs = build_sft_records(pickle_paths=[pkl], success_only=True)
+    recs, counts = build_sft_records(pickle_paths=[pkl], success_only=True)
     assert len(recs) == 1
-    assert "messages" in recs[0] and "completion" in recs[0]
+    assert "prompt" in recs[0] and "completion" in recs[0]
 
 
 def test_build_sft_records_all_outcomes(tmp_path: Path):
@@ -47,7 +47,7 @@ def test_build_sft_records_all_outcomes(tmp_path: Path):
     pkl = tmp_path / "agenda.pkl"
     pkl.write_bytes(pickle.dumps(data))
 
-    recs = build_sft_records(pickle_paths=[pkl], success_only=False)
+    recs, counts = build_sft_records(pickle_paths=[pkl], success_only=False)
     assert len(recs) == 2
 
 
@@ -68,5 +68,5 @@ def test_build_sft_records_multiple_pickles(tmp_path: Path):
     pkl1.write_bytes(pickle.dumps(data1))
     pkl2.write_bytes(pickle.dumps(data2))
 
-    recs = build_sft_records(pickle_paths=[pkl1, pkl2], success_only=True)
+    recs, counts = build_sft_records(pickle_paths=[pkl1, pkl2], success_only=True)
     assert len(recs) == 2

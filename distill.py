@@ -151,14 +151,31 @@ def build_sft_records(
     Returns:
       A tuple of (records, counts_by_prompt_type).
 
-    We reconstruct system+user messages from stored arguments using `prompt.py`.
+    We reconstruct system+user messages from stored arguments using the language backend's prompt builder.
 
     For "idea" examples, success is determined by whether the idea led to a
     successful implementation (i.e., there exists an "implement" example with
     a successful outcome that used this idea text).
     """
-    from prompt import reconstruct_chat_messages
+    from language import Language
     from patch import TEXT_BEFORE_EXAMPLE, TEXT_DIFF_EXAMPLE, TEXT_AFTER_EXAMPLE
+    _pb = Language.DAFNY.get_backend().prompt_builder
+
+    def reconstruct_chat_messages(kind, args, example_before, example_diff, example_after):
+        if kind == "implement":
+            return _pb.implement(idea=args.get("idea", ""))
+        elif kind == "repair":
+            return _pb.repair(program=args.get("program", ""), notes=args.get("notes", ""),
+                              example_before=example_before, example_diff=example_diff,
+                              example_after=example_after)
+        elif kind == "extend":
+            return _pb.extend(program=args.get("program", ""),
+                              example_before=example_before, example_diff=example_diff,
+                              example_after=example_after)
+        elif kind == "idea":
+            return _pb.idea(repo=args.get("repo", ""), readme=args.get("readme", ""))
+        else:
+            return []
 
     # First pass: collect idea texts that led to successful implementations.
     # An idea is successful if there's an implement example with successful outcome
