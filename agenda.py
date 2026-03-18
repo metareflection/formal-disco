@@ -9,8 +9,10 @@ be distributed so that we can spawn async workers on many machines.
 
 import atexit
 import asyncio
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 import datetime
+import math
 import signal
 import threading
 import pickle
@@ -21,6 +23,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Optional, Iterable, Protocol
 
+import numpy as np
+
+from language import Language
 from logger import AgendaLogger
 from logger.noop import NoOpLogger
 from patch import compute_reverse_patch
@@ -226,11 +231,14 @@ class LocalAgenda(Agenda):
             benchmark_codebase_time: Optional[int] = 5*60,
             performance_tracker: Optional[PerformanceTracker] = None,
             sort_every: int = 100,
+            language: str = 'dafny',
     ) -> None:
         self._lock = asyncio.Lock()
         self._tasks: dict[str, Task] = {}
         self._status: dict[str, TaskStatus] = {}
         self._objects: dict[str, Object] = {}
+        self._language = language.lower()
+        self._backend = Language[language.upper()].get_backend()
 
         self._clock = 0
         self._checkpoint_path = checkpoint_path
@@ -310,6 +318,10 @@ class LocalAgenda(Agenda):
             s = self._compute_codebase_statistics()
             self._logger.log_code_base_statistics(s)
             logger.info(f"Codebase statistics: {s}")
+
+            d = self._compute_diversity_metrics()
+            self._logger.log_code_base_statistics(d)
+            logger.info(f"Diversity/complexity metrics: {d}")
 
             # Log performance statistics if tracker is available
             if self._performance_tracker is not None:
@@ -650,7 +662,7 @@ class LocalAgenda(Agenda):
         programs_by_idea: dict[str, tuple[Object, str, int]] = {}  # idea -> (obj, text, num_lines)
 
         for obj in self._objects.values():
-            if obj.type != "dafny-program" or not obj.path.startswith("dataset/"):
+            if obj.type != f"{self._language}-program" or not obj.path.startswith("dataset/"):
                 continue
             content = obj.content
             if content is None:
@@ -668,6 +680,8 @@ class LocalAgenda(Agenda):
             if parent_idea not in programs_by_idea or num_lines > programs_by_idea[parent_idea][2]:
                 programs_by_idea[parent_idea] = (obj, text, num_lines)
 
+        declaration_keywords = self._backend.declaration_keywords
+
         # Compute statistics on the filtered programs (one per idea)
         for parent_idea, (obj, text, num_lines) in programs_by_idea.items():
             lines = text.splitlines()
@@ -677,9 +691,6 @@ class LocalAgenda(Agenda):
 
             verification_status = obj.properties.get("verification_status", "")
 
-            SPECIAL_LINES = ["lemma", "function", "method", "datatype", "class",
-                             "predicate", "invariant", "assert"]
-
             if verification_status == "success":
                 stats["total_verified_programs"] = stats.get("total_verified_programs", 0) + 1
                 stats["loc_verified_programs"] = stats.get("loc_verified_programs", 0) + num_lines
@@ -687,13 +698,81 @@ class LocalAgenda(Agenda):
                 stats["total_unproven_programs"] = stats.get("total_unproven_programs", 0) + 1
                 stats["loc_unproven_programs"] = stats.get("loc_unproven_programs", 0) + num_lines
 
-            for special in SPECIAL_LINES:
+            for special in declaration_keywords:
                 num_special = sum(1 for line in lines if line.strip().startswith(f"{special} "))
                 # Always count towards _all (verified + unproven)
                 stats[f"{special}_count_all"] = stats.get(f"{special}_count_all", 0) + num_special
                 # Additionally count towards _verified for successful programs
                 if verification_status == "success":
                     stats[f"{special}_count_verified"] = stats.get(f"{special}_count_verified", 0) + num_special
+
+        return stats
+
+    def _compute_diversity_metrics(self) -> dict[str, float]:
+        """Compute diversity and complexity metrics over dataset programs.
+
+        For each feature metric, computes the entropy of the pooled distribution
+        across all programs (one per parent idea, taking the longest).
+        For each complexity metric, computes the median and 90th percentile of
+        all values collected across all programs.
+        """
+        from language import Program, Language as Lang
+
+        # Same "longest per idea from dataset/" filter as _compute_codebase_statistics.
+        programs_by_idea: dict[str, tuple[str, str, int]] = {}  # idea -> (path, text, n_lines)
+        for obj in self._objects.values():
+            if obj.type != f"{self._language}-program" or not obj.path.startswith("dataset/"):
+                continue
+            if obj.content is None:
+                continue
+            try:
+                text = obj.content.decode("utf-8")
+            except Exception:
+                continue
+            parent_idea = obj.properties.get("parent_idea")
+            n_lines = len(text.splitlines())
+            if parent_idea not in programs_by_idea or n_lines > programs_by_idea[parent_idea][2]:
+                programs_by_idea[parent_idea] = (obj.path, text, n_lines)
+
+        feature_totals: dict[str, Counter] = {}
+        complexity_values: dict[str, list] = {}
+
+        for path, text, _ in programs_by_idea.values():
+            prog = Program(text, Lang[self._language.upper()], name=path)
+            try:
+                for metric, counter in self._backend.feature_sets(prog).items():
+                    if metric not in feature_totals:
+                        feature_totals[metric] = Counter()
+                    feature_totals[metric] += counter
+            except Exception:
+                pass
+            try:
+                for metric, values in self._backend.complexity(prog).items():
+                    if isinstance(values, list):
+                        if metric not in complexity_values:
+                            complexity_values[metric] = []
+                        complexity_values[metric].extend(values)
+            except Exception:
+                pass
+
+        stats: dict[str, float] = {}
+
+        for metric, counter in feature_totals.items():
+            total = sum(counter.values())
+            if total == 0:
+                continue
+            entropy = -sum(
+                (c / total) * math.log2(c / total)
+                for c in counter.values() if c > 0
+            )
+            stats[f"diversity/{metric}/entropy"] = entropy
+
+        for metric, values in complexity_values.items():
+            if not values:
+                continue
+            arr = np.array(values, dtype=float)
+            stats[f"complexity/{metric}/median"] = float(np.median(arr))
+            stats[f"complexity/{metric}/p90"] = float(np.percentile(arr, 90))
 
         return stats
 

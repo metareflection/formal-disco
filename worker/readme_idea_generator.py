@@ -1,23 +1,16 @@
-#!/usr/bin/env python3
-
-# Add this to worker.py
+"""Worker that generates program ideas from GitHub READMEs using an LLM."""
 
 import json
 import logging
-import os
+import random
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-import random
-
-from . import Worker
-from agenda import Agenda, Object, Task, WorkStatus  # already used above
-
-from langchain_core.prompts import ChatPromptTemplate
-
+from agenda import Agenda, Object, Task, WorkStatus
 from code_output_parser import CodeOutputParser
+from language import Language
 
-from prompt import format_idea_user, system_idea
+from . import Worker, _to_langchain_messages
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +37,7 @@ class ReadmeInspiredIdeaGenerator(Worker):
         self,
         jsonl_path: str,
         llm: Any,
+        language: str = 'dafny',
         rng: Optional[random.Random] = None,
         max_readme_chars: int = 2000,
         distill: Optional[Literal['success-only', 'all']] = 'success-only',
@@ -54,24 +48,10 @@ class ReadmeInspiredIdeaGenerator(Worker):
             raise ValueError(f"No valid rows found in JSONL: {jsonl_path}")
 
         self._llm = llm
+        self._backend = Language[language.upper()].get_backend()
         self._max_readme_chars = max_readme_chars
         self._distill = distill
-
-        self._prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    system_idea(),
-                ),
-                (
-                    "human",
-                    format_idea_user(repo="{repo}", readme="{readme}"),
-                ),
-            ]
-        )
-
-        # Chain: prompt -> LLM -> text
-        self._chain = self._prompt | self._llm | CodeOutputParser()
+        self._chain = self._llm | CodeOutputParser()
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
         for _ in range(fuel):
@@ -80,8 +60,10 @@ class ReadmeInspiredIdeaGenerator(Worker):
             readme = (row.get("readme") or "").strip()
             readme = self._truncate(readme, self._max_readme_chars)
 
-            # Run the LLM synchronously (LangChain invoke is sync).
-            idea_text = self._chain.invoke({"repo": repo, "readme": readme}).strip()
+            msgs = _to_langchain_messages(
+                self._backend.prompt_builder.idea(repo=repo, readme=readme)
+            )
+            idea_text = self._chain.invoke(msgs).strip()
 
             if self._distill:
                 distill_obj = {

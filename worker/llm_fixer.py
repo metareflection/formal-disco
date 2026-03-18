@@ -1,69 +1,47 @@
-#!/usr/bin/env python3
+"""Worker that repairs failing programs using an LLM-generated diff."""
 
-from typing import Any, Literal, Optional
-import logging
 import json
+import logging
 import os
+from typing import Any, Literal, Optional
 
 from agenda import Agenda, Object, Task, WorkStatus
-
-from . import Worker
-
-from langchain_core.prompts import ChatPromptTemplate
 from code_output_parser import CodeOutputParser
-
-from prompt import format_repair_user, system_repair
-
-from dafny import DafnyProgram, VerificationOutcome
+from language import Language, Program, VerificationOutcome
 from patch import apply_text_diff, TEXT_DIFF_EXAMPLE, TEXT_BEFORE_EXAMPLE, TEXT_AFTER_EXAMPLE
+
+from . import Worker, _to_langchain_messages
 
 logger = logging.getLogger(__name__)
 
 
 class LLMFixer(Worker):
-    """
-    Worker that processes 'repair' tasks by asking an LLM to fix a Dafny program.
+    """Consumes 'repair' tasks and uses an LLM to fix failing programs.
 
-    Behavior:
-      - Claim a 'repair' task.
-      - Load the program object referenced in task.properties['program']
-      - Prompt LLM with the failing program and verification outcome / notes
-      - Create a new program object with repaired text and verify it.
-      - On success: enqueue an 'extend' task with the new program path and mark the repair task DONE.
-      - On failure: if attempts < max_attempts, enqueue another 'repair' task with incremented attempts,
-        otherwise mark the repair task FAILED.
+    Prompts the LLM with the failing program and verifier output, applies the
+    returned diff, re-verifies, and either enqueues an 'extend' task on success
+    or retries repair up to max_attempts times.
     """
 
-    def __init__(self, llm: Any, max_attempts: int = 3, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9,
-                 interest_success_boost: float = 1.2, interest_recursion_gamma: float = 0.0, distill: Optional[Literal['success-only', 'all']] = 'success-only') -> None:
+    def __init__(
+        self,
+        llm: Any,
+        language: str = 'dafny',
+        max_attempts: int = 3,
+        attempt_priority_factor: float = 0.9,
+        interest_success_boost: float = 1.2,
+        interest_recursion_gamma: float = 0.0,
+        distill: Optional[Literal['success-only', 'all']] = 'success-only',
+    ) -> None:
         self._llm = llm
+        self._backend = Language[language.upper()].get_backend()
+        self._language = language.lower()
         self._max_attempts = max_attempts
         self._attempt_priority_factor = float(attempt_priority_factor)
         self._interest_success_boost = float(interest_success_boost)
         self._interest_recursion_gamma = float(interest_recursion_gamma)
         self._distill = distill
-
-        if prompt_template is None:
-            self._prompt = ChatPromptTemplate.from_messages(
-                [
-                    (
-                        "system",
-                        system_repair(
-                            example_before="{example_before}",
-                            example_diff="{example_diff}",
-                            example_after="{example_after}",
-                        ),
-                    ),
-                    (
-                        "human",
-                        format_repair_user(program="{program}", notes="{notes}"),
-                    ),
-                ]
-            )
-        else:
-            self._prompt = prompt_template
-
-        self._chain = self._prompt | self._llm | CodeOutputParser()
+        self._chain = self._llm | CodeOutputParser()
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
         while fuel > 0:
@@ -82,64 +60,62 @@ class LLMFixer(Worker):
 
                 prog_text = prog_obj.content.decode("utf-8")
 
-                # Attempt to read verification logs from object properties
-                # (set by last worker to write to this program object)
                 props = getattr(prog_obj, 'properties', {}) or {}
                 ver_out = props.get('verification_stdout', '')
                 ver_err = props.get('verification_stderr', '')
+                notes = f"Verifier stdout:\n{ver_out}\n\nVerifier stderr:\n{ver_err}\n"
 
-                prompt_notes = f"Output of dafny verify on this program:\nstdout:\n{ver_out}\n\nstderr:\n{ver_err}\n"
+                msgs = _to_langchain_messages(
+                    self._backend.prompt_builder.repair(
+                        program=prog_text,
+                        notes=notes,
+                        example_before=TEXT_BEFORE_EXAMPLE,
+                        example_diff=TEXT_DIFF_EXAMPLE,
+                        example_after=TEXT_AFTER_EXAMPLE,
+                    )
+                )
+                diff_text = self._chain.invoke(msgs).strip()
 
-                llm_args = {
-                    "program": prog_text,
-                    "notes": prompt_notes,
-                    "example_diff": TEXT_DIFF_EXAMPLE,
-                    "example_before": TEXT_BEFORE_EXAMPLE,
-                    "example_after": TEXT_AFTER_EXAMPLE,
-                }
-
-                # Ask LLM to produce a diff to repair the program.
-                diff_text = self._chain.invoke(llm_args).strip()
-
-                # Apply diff; if it fails or results in empty program, mark ATTEMPTED and continue
                 try:
                     repaired_text = apply_text_diff(prog_text, diff_text)
                 except Exception as e:
-                    logger.warning("Failed to apply diff produced by LLM for repair task %s: %s", task.id, str(e))
+                    logger.warning("Failed to apply diff for repair task %s: %s", task.id, e)
                     logger.info("Diff produced by LLM:\n%s", diff_text)
-                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"diff_error": str(e)})
+                    await agenda.update_task(
+                        task.id, work_status=WorkStatus.ATTEMPTED,
+                        priority_factor=self._attempt_priority_factor,
+                        new_notes={"diff_error": str(e)},
+                    )
                     fuel -= 1
                     continue
 
                 if not repaired_text.strip():
                     logger.warning("Diff produced empty program for repair task %s", task.id)
-                    logger.info("Diff produced by LLM:\n%s", diff_text)
-                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"diff_error": "resulting program is empty"})
+                    await agenda.update_task(
+                        task.id, work_status=WorkStatus.ATTEMPTED,
+                        priority_factor=self._attempt_priority_factor,
+                        new_notes={"diff_error": "resulting program is empty"},
+                    )
                     fuel -= 1
                     continue
 
-                # Update the existing program object in place so patch history is maintained
                 await agenda.update_object(program_path, new_content=repaired_text.encode("utf-8"))
 
-                # Verify repaired program
-                repaired_prog = DafnyProgram(repaired_text, name=program_path)
-
-                short_repaired = repaired_text if len(repaired_text) < 2000 else repaired_text[:2000] + "..."
-                logger.info("Verifying repaired Dafny program for task %s: %s", task.id, short_repaired)
-
-                ver = repaired_prog.verify()
+                repaired_prog = Program(repaired_text, Language[self._language.upper()], name=program_path)
+                ver = self._backend.verify(repaired_prog)
 
                 logger.info("Verification outcome for repair task %s: %s", task.id, ver.outcome.name)
-
                 logger.info("Program before fix:\n%s", prog_text)
-                logger.info("Dafny output before fix:\n%s", prompt_notes)
                 logger.info("Diff produced by LLM:\n%s", diff_text)
                 logger.info("Repaired program:\n%s", repaired_text)
-                logger.info("Dafny stdout after fix:\n%s", ver.stdout)
-                logger.info("Dafny stderr after fix:\n%s", ver.stderr)
-                logger.info("Verification outcome after fix: %s", ver.outcome)
-                # Save verification output on the program object
-                await agenda.update_object(program_path, new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
+                logger.info("Verifier stdout after fix:\n%s", ver.stdout)
+                logger.info("Verifier stderr after fix:\n%s", ver.stderr)
+
+                await agenda.update_object(program_path, new_properties={
+                    "verification_outcome": ver.outcome.name,
+                    "verification_stdout": ver.stdout,
+                    "verification_stderr": ver.stderr,
+                })
 
                 should_distill = (
                     self._distill == 'all' or
@@ -148,50 +124,55 @@ class LLMFixer(Worker):
                 if should_distill:
                     distill_obj = {
                         "prompt": "repair",
-                        "arguments": llm_args,
+                        "arguments": {"program": prog_text, "notes": notes},
                         "response": diff_text,
                         "outcome": ver.outcome.name.lower(),
                     }
-                    await agenda.create_object(
-                        Object(
-                            path="distil/example.json",
-                            type="distill-example",
-                            parents=[program_path],
-                            content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
-                        )
-                    )
+                    await agenda.create_object(Object(
+                        path="distil/example.json",
+                        type="distill-example",
+                        parents=[program_path],
+                        content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
+                    ))
 
-                # Save to dataset folder if verification succeeded or goal unproven
-                if ver.outcome == VerificationOutcome.SUCCESS or ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
+                if ver.outcome in (VerificationOutcome.SUCCESS, VerificationOutcome.GOAL_UNPROVEN):
                     dataset_path = f"dataset/{os.path.basename(program_path)}"
                     parent_idea = prog_obj.parents[0] if prog_obj.parents else None
-                    await agenda.create_object(
-                        Object(
-                            path=dataset_path,
-                            type="dafny-program",
-                            parents=[program_path],
-                            content=repaired_text.encode("utf-8"),
-                            properties={
-                                "verification_status": ver.outcome.name.lower(),
-                                "parent_idea": parent_idea,
-                            },
-                        )
-                    )
+                    await agenda.create_object(Object(
+                        path=dataset_path,
+                        type=f"{self._language}-program",
+                        parents=[program_path],
+                        content=repaired_text.encode("utf-8"),
+                        properties={
+                            "verification_status": ver.outcome.name.lower(),
+                            "parent_idea": parent_idea,
+                        },
+                    ))
 
                 if ver.outcome == VerificationOutcome.SUCCESS:
-                    # Boost interest on successful fix
-                    await agenda.update_object(program_path, interest_factor=self._interest_success_boost, interest_recursion_gamma=self._interest_recursion_gamma)
-                    # Enqueue extend task and mark DONE
-                    follow = Task(id="ext", type="extend", properties={"program": program_path}, interest_dependencies=[program_path])
-                    await agenda.add_task(follow)
-                    await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes={"program_path": program_path, "verification": ver.outcome.name})
+                    await agenda.update_object(
+                        program_path,
+                        interest_factor=self._interest_success_boost,
+                        interest_recursion_gamma=self._interest_recursion_gamma,
+                    )
+                    await agenda.add_task(Task(
+                        id="ext", type="extend",
+                        properties={"program": program_path},
+                        interest_dependencies=[program_path],
+                    ))
+                    await agenda.update_task(
+                        task.id, work_status=WorkStatus.DONE,
+                        new_notes={"program_path": program_path, "verification": ver.outcome.name},
+                    )
                 else:
-                    # Mark the existing repair task as ATTEMPTED so it can be retried later
-                    # Also decrease priority slightly.
-                    await agenda.update_task(task.id, work_status=WorkStatus.ATTEMPTED, priority_factor=self._attempt_priority_factor, new_notes={"program_path": program_path, "verification": ver.outcome.name})
+                    await agenda.update_task(
+                        task.id, work_status=WorkStatus.ATTEMPTED,
+                        priority_factor=self._attempt_priority_factor,
+                        new_notes={"program_path": program_path, "verification": ver.outcome.name},
+                    )
 
             except Exception as e:
-                logger.exception("Error processing repair task %s: %s", task.id, str(e))
+                logger.exception("Error processing repair task %s: %s", task.id, e)
                 await agenda.update_task(task.id, work_status=WorkStatus.FAILED, new_notes={"error": str(e)})
 
             fuel -= 1

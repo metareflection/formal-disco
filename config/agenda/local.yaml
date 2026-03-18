@@ -8,3 +8,4 @@ checkpoint_path: "agenda-run3.pkl"
 checkpoint_interval: 10000
 benchmark_codebase_time: 300
 sort_every: 100
+language: ${language}

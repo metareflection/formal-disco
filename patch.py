@@ -169,15 +169,14 @@ def test_apply_text_diff_basic() -> None:
 
 # Example diff that illustrates the simple format (used in prompts)
 TEXT_DIFF_EXAMPLE = """
-@@
-= a
+@@ a @@
 + inserted-after-a
-@@
+@@ b cd @@
 - line2
 = line3
 + after3
 """.strip("\n")
 
 # Example source and result texts corresponding to TEXT_DIFF_EXAMPLE
-TEXT_BEFORE_EXAMPLE = "hello\nworld\na\nline2\nline3\n"
-TEXT_AFTER_EXAMPLE = "hello\nworld\na\ninserted-after-a\nline3\nafter3\n"
+TEXT_BEFORE_EXAMPLE = "hello\nworld\na\nb cd\nline2\nline3\n"
+TEXT_AFTER_EXAMPLE = "hello\nworld\na\ninserted-after-a\nb cd\nline3\nafter3\n"

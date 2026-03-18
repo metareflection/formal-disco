@@ -1,15 +1,22 @@
-#!/usr/bin/env python3
-"""
-Worker abstraction and some example implementations.
+"""Worker abstraction.
 
-- Worker: abstract base with a single async method `work(agenda, fuel: int)`.
-- DummyIdeaGenerator: creates 'idea/{number}.txt' objects and enqueues 'implement' tasks.
-- DummyImplementer: consumes 'implement' tasks, creates Dafny programs, marks tasks DONE.
+Worker is the abstract base for all actors in the discovery system.
+_to_langchain_messages converts the language-agnostic ChatMessage list returned
+by PromptBuilder methods into LangChain BaseMessage objects.
 """
 
 from abc import ABC, abstractmethod
 
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+
 from agenda import Agenda
+from language import ChatMessage
+
+
+def _to_langchain_messages(messages: list[ChatMessage]) -> list[BaseMessage]:
+    """Convert a PromptBuilder message list to LangChain BaseMessage objects."""
+    mapping = {"system": SystemMessage, "user": HumanMessage}
+    return [mapping[m["role"]](content=m["content"]) for m in messages]
 
 
 class Worker(ABC):

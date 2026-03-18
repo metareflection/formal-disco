@@ -1,65 +1,48 @@
-#!/usr/bin/env python3
+"""Worker that implements program ideas using an LLM."""
 
-from typing import Any, Literal, Optional
-import logging
 import json
+import logging
 import os
+from typing import Any, Literal, Optional
 
 from agenda import Agenda, Object, Task, WorkStatus
-
-from . import Worker
-
-from langchain_core.prompts import ChatPromptTemplate
 from code_output_parser import CodeOutputParser
+from language import Language, Program, VerificationOutcome
 
-from prompt import system_implement, format_implement_user
-
-from dafny import DafnyProgram, VerificationOutcome
+from . import Worker, _to_langchain_messages
 
 logger = logging.getLogger(__name__)
 
 
 class LLMImplementer(Worker):
-    """
-    Worker that takes 'implement' tasks and uses an LLM (API) to generate Dafny implementations.
+    """Consumes 'implement' tasks and uses an LLM to generate programs.
 
-    Constructor:
-        llm: a LangChain Runnable/LLM (e.g., ChatOpenAI)
-        prompt_template: optional ChatPromptTemplate; if not provided a sensible default is used.
-
-    work(agenda, fuel): for each unit of fuel, claim an implement task, read the idea object,
-    prompt the LLM for a Dafny implementation, create a 'dafny-program' object and mark the
-    task DONE with {'program_path': ...} in notes.
+    For each task: reads the idea object, prompts the LLM via the language
+    backend's prompt builder, verifies the result, and enqueues a follow-up
+    'extend' (on success/goal-unproven) or 'repair' task.
     """
 
-    def __init__(self, llm: Any, prompt_template: Optional[ChatPromptTemplate] = None, attempt_priority_factor: float = 0.9,
-                 interest_success: float = 2.0, interest_goal_unproven: float = 1.5, interest_fail: float = 0.5,
-                 interest_recursion_gamma: float = 0.0, distill: Optional[Literal['success-only', 'all']] = 'success-only') -> None:
+    def __init__(
+        self,
+        llm: Any,
+        language: str = 'dafny',
+        attempt_priority_factor: float = 0.9,
+        interest_success: float = 2.0,
+        interest_goal_unproven: float = 1.5,
+        interest_fail: float = 0.5,
+        interest_recursion_gamma: float = 0.0,
+        distill: Optional[Literal['success-only', 'all']] = 'success-only',
+    ) -> None:
         self._llm = llm
+        self._backend = Language[language.upper()].get_backend()
+        self._language = language.lower()
         self._attempt_priority_factor = float(attempt_priority_factor)
         self._interest_success = float(interest_success)
         self._interest_goal_unproven = float(interest_goal_unproven)
         self._interest_fail = float(interest_fail)
         self._interest_recursion_gamma = float(interest_recursion_gamma)
         self._distill = distill
-
-        if prompt_template is None:
-            self._prompt = ChatPromptTemplate.from_messages(
-                [
-                    (
-                        "system",
-                        system_implement(),
-                    ),
-                    (
-                        "human",
-                        format_implement_user(idea="{idea}"),
-                    ),
-                ]
-            )
-        else:
-            self._prompt = prompt_template
-
-        self._chain = self._prompt | self._llm | CodeOutputParser()
+        self._chain = self._llm | CodeOutputParser()
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
         while fuel > 0:
@@ -78,35 +61,37 @@ class LLMImplementer(Worker):
 
                 idea_text = idea_obj.content.decode("utf-8").strip()
 
-                program_text = self._chain.invoke({"idea": idea_text}).strip()
-                prog_path = f"programs/{self._slugify(task.id)}.dfy"
+                msgs = _to_langchain_messages(
+                    self._backend.prompt_builder.implement(idea=idea_text)
+                )
+                program_text = self._chain.invoke(msgs).strip()
 
-                prog_obj_path = await agenda.create_object(Object(path=prog_path,
-                                                                  type="dafny-program",
-                                                                  parents=[idea_path],
-                                                                  content=program_text.encode("utf-8")))
+                prog_path = f"programs/{self._slugify(task.id)}.{self._backend.file_extension}"
+                prog_obj_path = await agenda.create_object(Object(
+                    path=prog_path,
+                    type=f"{self._language}-program",
+                    parents=[idea_path],
+                    content=program_text.encode("utf-8"),
+                ))
 
-                prog = DafnyProgram(program_text, name=prog_path)
+                prog = Program(program_text, Language[self._language.upper()], name=prog_path)
 
                 short_prog = program_text if len(program_text) < 2000 else program_text[:2000] + "..."
-                logger.info("Verifying generated Dafny program for task %s: %s", task.id, short_prog)
+                logger.info("Verifying generated program for task %s: %s", task.id, short_prog)
 
-                ver = prog.verify()
+                ver = self._backend.verify(prog)
 
-                logger.info(f"Idea: {idea_text}")
-                logger.info(f"Generated program:\n{program_text}")
-                logger.info(f"Dafny stdout: {ver.stdout}")
-                logger.info(f"Dafny stderr: {ver.stderr}")
-
+                logger.info("Idea: %s", idea_text)
+                logger.info("Generated program:\n%s", program_text)
+                logger.info("Verifier stdout: %s", ver.stdout)
+                logger.info("Verifier stderr: %s", ver.stderr)
                 logger.info("Verification outcome for task %s: %s", task.id, ver.outcome.name)
 
-                # Initialize interestingness based on outcome
                 interest_factor = {
                     VerificationOutcome.SUCCESS: self._interest_success,
                     VerificationOutcome.GOAL_UNPROVEN: self._interest_goal_unproven,
                 }.get(ver.outcome, self._interest_fail)
 
-                # Optionally dump a distillation example after the LLM call.
                 should_distill = (
                     self._distill == 'all' or
                     (self._distill == 'success-only' and ver.outcome == VerificationOutcome.SUCCESS)
@@ -118,55 +103,58 @@ class LLMImplementer(Worker):
                         "response": program_text,
                         "outcome": ver.outcome.name.lower(),
                     }
-                    await agenda.create_object(
-                        Object(
-                            path="distil/example.json",
-                            type="distill-example",
-                            parents=[idea_path],
-                            content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
-                        )
-                    )
+                    await agenda.create_object(Object(
+                        path="distil/example.json",
+                        type="distill-example",
+                        parents=[idea_path],
+                        content=json.dumps(distill_obj, ensure_ascii=False).encode("utf-8"),
+                    ))
 
-                # Save verification output into the program object's properties.
                 await agenda.update_object(
                     prog_obj_path,
                     interest_factor=interest_factor,
                     interest_recursion_gamma=self._interest_recursion_gamma,
-                    new_properties={"verification_outcome": ver.outcome.name, "verification_stdout": ver.stdout, "verification_stderr": ver.stderr})
+                    new_properties={
+                        "verification_outcome": ver.outcome.name,
+                        "verification_stdout": ver.stdout,
+                        "verification_stderr": ver.stderr,
+                    },
+                )
 
                 notes = {"program_path": prog_obj_path, "verification": ver.outcome.name}
 
-                if ver.outcome == VerificationOutcome.SUCCESS or ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
-                    # Save to dataset folder
+                if ver.outcome in (VerificationOutcome.SUCCESS, VerificationOutcome.GOAL_UNPROVEN):
                     dataset_path = f"dataset/{os.path.basename(prog_path)}"
-                    await agenda.create_object(
-                        Object(
-                            path=dataset_path,
-                            type="dafny-program",
-                            parents=[prog_obj_path],
-                            content=program_text.encode("utf-8"),
-                            properties={
-                                "verification_status": ver.outcome.name.lower(),
-                                "parent_idea": idea_path,
-                            },
-                        )
-                    )
+                    await agenda.create_object(Object(
+                        path=dataset_path,
+                        type=f"{self._language}-program",
+                        parents=[prog_obj_path],
+                        content=program_text.encode("utf-8"),
+                        properties={
+                            "verification_status": ver.outcome.name.lower(),
+                            "parent_idea": idea_path,
+                        },
+                    ))
 
                     followup_type = "extend" if ver.outcome == VerificationOutcome.SUCCESS else "repair"
-                    follow = Task(id="ext", type=followup_type, properties={"program": prog_obj_path}, interest_dependencies=[prog_obj_path])
-                    await agenda.add_task(follow)
-                    # Done with initial implementation of this idea.
-                    await agenda.update_task(task.id,
-                                             work_status=WorkStatus.DONE,
-                                             new_notes=notes)
+                    await agenda.add_task(Task(
+                        id="ext", type=followup_type,
+                        properties={"program": prog_obj_path},
+                        interest_dependencies=[prog_obj_path],
+                    ))
+                    await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes=notes)
                 else:
-                    follow = Task(id="rep", type="repair", properties={"program": prog_obj_path}, interest_dependencies=[prog_obj_path])
-                    await agenda.add_task(follow)
-                    # Leave it as ATTEMPTED so it can be retried later and reduce priority
-                    await agenda.update_task(task.id,
-                                             work_status=WorkStatus.ATTEMPTED,
-                                             priority_factor=self._attempt_priority_factor,
-                                             new_notes=notes)
+                    await agenda.add_task(Task(
+                        id="rep", type="repair",
+                        properties={"program": prog_obj_path},
+                        interest_dependencies=[prog_obj_path],
+                    ))
+                    await agenda.update_task(
+                        task.id,
+                        work_status=WorkStatus.ATTEMPTED,
+                        priority_factor=self._attempt_priority_factor,
+                        new_notes=notes,
+                    )
 
             except Exception as e:
                 await agenda.update_task(task.id, work_status=WorkStatus.FAILED, new_notes={"error": str(e)})
@@ -174,7 +162,6 @@ class LLMImplementer(Worker):
             fuel -= 1
 
     def _slugify(self, s: str) -> str:
-        # Simple slugify to produce a filesystem-friendly name
         out = []
         for ch in s:
             if ch.isalnum() or ch in ("-", "_"):

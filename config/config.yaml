@@ -1,2 +1,4 @@
 defaults:
   - llm: openai
+
+language: dafny

@@ -1,4 +1,6 @@
 hydra-core==1.3.2
+nltk
+numpy
 omegaconf==2.3.0
 langchain_core
 langchain_openai
