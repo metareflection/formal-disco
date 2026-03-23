@@ -76,6 +76,14 @@ class PromptBuilder:
     def idea(self, repo: str, readme: str) -> list[ChatMessage]:
         raise NotImplementedError
 
+    def generate(self, *, repo: str | None = None, readme: str | None = None) -> list[ChatMessage]:
+        """Prompt the model to generate a random program, optionally inspired by a README."""
+        raise NotImplementedError
+
+    def repair_full(self, *, program: str, notes: str) -> list[ChatMessage]:
+        """Prompt the model to produce a fully repaired program (not a diff)."""
+        raise NotImplementedError
+
 
 class LanguageBackend:
     """Implements language-specific operations over programs.

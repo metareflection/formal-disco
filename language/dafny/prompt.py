@@ -118,6 +118,51 @@ class DafnyPromptBuilder(PromptBuilder):
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
+    def generate(self, *, repo: str | None = None, readme: str | None = None) -> list[ChatMessage]:
+        """Prompt the model to generate a random Dafny program, optionally inspired by a README."""
+        system = (
+            "You are an expert Dafny programmer. Your task is to generate an interesting,"
+            " self-contained Dafny program that compiles and verifies.\n"
+            "The program should include meaningful specifications: preconditions, postconditions,"
+            " loop invariants, assertions, or lemmas as appropriate.\n"
+            "Aim for variety: choose an interesting algorithmic or data-structure topic.\n"
+            "Output only valid Dafny source code."
+        )
+        if repo and readme:
+            user = (
+                f"Here is a GitHub repository for inspiration:\n\n"
+                f"Repository: {repo}\n\n"
+                f"README:\n{readme}\n\n"
+                "Generate a self-contained Dafny program INSPIRED BY this repository's theme."
+                " The repository is most likely unrelated to verified programming, so freely"
+                " adapt or reinterpret its theme.\n"
+                "Output only Dafny source code."
+            )
+        else:
+            user = (
+                "Generate a self-contained Dafny program on a topic of your choice."
+                " The goal is to produce an interesting, diverse dataset of complete verified Dafny programs.\n"
+                "Output only Dafny source code."
+            )
+        return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+    def repair_full(self, *, program: str, notes: str) -> list[ChatMessage]:
+        """Prompt the model to produce a fully repaired Dafny program (not a diff)."""
+        system = (
+            "You are an expert Dafny developer. You will be given a Dafny program that has errors"
+            " reported by the Dafny verifier. These errors can be syntactic, or failures to verify"
+            " the program (i.e. prove post-conditions or verify assertions/invariants).\n"
+            "Your job is to produce a COMPLETE, CORRECTED version of the program.\n"
+            "Output the full repaired Dafny program, not a diff or partial fix.\n"
+            "The output must be valid Dafny code."
+        )
+        user = (
+            f"Program:\n{program}\n\n"
+            f"Verifier output:\n{notes}\n\n"
+            "Produce the full corrected Dafny program. Fix all errors shown above."
+        )
+        return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
     def idea(self, *, repo: str, readme: str) -> list[ChatMessage]:
         """Prompt the model to propose a Dafny program idea inspired by a GitHub README."""
         system = (
