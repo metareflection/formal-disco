@@ -129,6 +129,11 @@ class EditorWorker(Worker):
                         },
                     ))
 
+                status_notes = {
+                    "program_path": program_path,
+                    "verification": status.worker_notes.get('verification', []) + [ver.outcome.name]
+                }
+
                 if ver.outcome == VerificationOutcome.SUCCESS:
                     await agenda.update_object(
                         program_path,
@@ -142,7 +147,7 @@ class EditorWorker(Worker):
                     ))
                     await agenda.update_task(
                         task.id, work_status=WorkStatus.DONE,
-                        new_notes={"program_path": program_path, "verification": ver.outcome.name},
+                        new_notes=status_notes,
                     )
                 elif ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
                     await agenda.update_object(
@@ -157,7 +162,7 @@ class EditorWorker(Worker):
                     ))
                     await agenda.update_task(
                         task.id, work_status=WorkStatus.DONE,
-                        new_notes={"program_path": program_path, "verification": ver.outcome.name},
+                        new_notes=status_notes,
                     )
                 else:
                     await agenda.add_task(Task(
@@ -167,7 +172,7 @@ class EditorWorker(Worker):
                     ))
                     await agenda.update_task(
                         task.id, work_status=WorkStatus.FAILED,
-                        new_notes={"program_path": program_path, "verification": ver.outcome.name},
+                        new_notes=status_notes,
                     )
 
             except Exception as e:

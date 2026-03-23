@@ -159,6 +159,11 @@ class LLMFixer(Worker):
                         },
                     ))
 
+                status_notes = {
+                    "program_path": program_path,
+                    "verification": status.worker_notes.get('verification', []) + [ver.outcome.name]
+                }
+
                 if ver.outcome == VerificationOutcome.SUCCESS:
                     await agenda.update_object(
                         program_path,
@@ -172,13 +177,13 @@ class LLMFixer(Worker):
                     ))
                     await agenda.update_task(
                         task.id, work_status=WorkStatus.DONE,
-                        new_notes={"program_path": program_path, "verification": ver.outcome.name},
+                        new_notes=status_notes,
                     )
                 else:
                     await agenda.update_task(
                         task.id, work_status=WorkStatus.ATTEMPTED,
                         priority_factor=self._attempt_priority_factor,
-                        new_notes={"program_path": program_path, "verification": ver.outcome.name},
+                        new_notes=status_notes,
                     )
 
             except Exception as e:

@@ -121,7 +121,10 @@ class LLMImplementer(Worker):
                     },
                 )
 
-                notes = {"program_path": prog_obj_path, "verification": ver.outcome.name}
+                status_notes = {
+                    "program_path": prog_obj_path,
+                    "verification": status.worker_notes.get('verification', []) + [ver.outcome.name]
+                }
 
                 if ver.outcome == VerificationOutcome.SUCCESS:
                     dataset_path = f"dataset/{os.path.basename(prog_path)}"
@@ -142,7 +145,7 @@ class LLMImplementer(Worker):
                         properties={"program": prog_obj_path},
                         interest_dependencies=[prog_obj_path],
                     ))
-                    await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes=notes)
+                    await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes=status_notes)
                 else:
                     await agenda.add_task(Task(
                         id="rep", type="repair",
@@ -153,7 +156,7 @@ class LLMImplementer(Worker):
                         task.id,
                         work_status=WorkStatus.ATTEMPTED,
                         priority_factor=self._attempt_priority_factor,
-                        new_notes=notes,
+                        new_notes=status_notes,
                     )
 
             except Exception as e:
