@@ -91,6 +91,8 @@ class IterativeGenerator(Worker):
                             task_id, ver.outcome.name)
 
                 attempt = 0
+                verification_history = []
+
                 while ver.outcome != VerificationOutcome.SUCCESS and attempt < self._max_repair_attempts:
                     attempt += 1
                     notes = self._format_verifier_output(ver.stdout, ver.stderr)
@@ -106,6 +108,7 @@ class IterativeGenerator(Worker):
 
                     prog = Program(program_text, Language[self._language.upper()])
                     ver = self._backend.verify(prog)
+                    verification_history.append(ver.outcome.name)
 
                     logger.info("After repair attempt %d, outcome: %s",
                                 attempt, ver.outcome.name)
@@ -166,13 +169,13 @@ class IterativeGenerator(Worker):
                 # Update the task.
                 notes = {
                     "program_path": prog_obj_path,
-                    "verification": ver.outcome.name,
+                    "verification": verification_history,
                     "repair_attempts": attempt,
                 }
                 if ver.outcome == VerificationOutcome.SUCCESS:
                     await agenda.update_task(task_id, work_status=WorkStatus.DONE, new_notes=notes)
                 else:
-                    await agenda.update_task(task_id, work_status=WorkStatus.ATTEMPTED, new_notes=notes)
+                    await agenda.update_task(task_id, work_status=WorkStatus.FAILED, new_notes=notes)
 
             except Exception as e:
                 logger.exception("Error in IterativeGenerator for task %s", task_id)
