@@ -81,6 +81,11 @@ class WorkStatus(StrEnum):
     FAILED = "FAILED"  # Gave up on this.
 
 
+    def signals_attempt_completed(self) -> bool:
+        """Whether updating to this status indicates that a worker has completed an attempt at this task."""
+        return self in (WorkStatus.ATTEMPTED, WorkStatus.DONE, WorkStatus.FAILED)
+
+
 @dataclass(slots=True, kw_only=True)
 class TaskStatus:
     """
@@ -93,6 +98,10 @@ class TaskStatus:
 
     def is_completed(self) -> bool:
         return self.work_status in (WorkStatus.DONE, WorkStatus.FAILED)
+
+
+class StopWork(Exception):
+    """Raised when workers should stop because the experiment is finished."""
 
 
 class Agenda(Protocol):
@@ -214,6 +223,11 @@ class LocalAgenda(Agenda):
 
     Periodically checkpoints to disk if checkpoint_path is provided.
 
+    If max_attempts is provided, the agenda will raise StopWork on most
+    methods to signal that workers should stop. This is used to bound
+    experiments by number of task attempts and allow us to try to fairly
+    make comparisons between different runs of the full system.
+
     Notes on priority propagation (UPWARDS):
       - Setting recursion_gamma <= 0 disables propagation.
       - With recursion_gamma in (0, 1], we propagate to ancestors:
@@ -232,6 +246,7 @@ class LocalAgenda(Agenda):
             performance_tracker: Optional[PerformanceTracker] = None,
             sort_every: int = 100,
             language: str = 'dafny',
+            max_attempts: Optional[int] = None,
     ) -> None:
         self._lock = asyncio.Lock()
         self._tasks: dict[str, Task] = {}
@@ -239,6 +254,8 @@ class LocalAgenda(Agenda):
         self._objects: dict[str, Object] = {}
         self._language = language.lower()
         self._backend = Language[language.upper()].get_backend()
+        self._total_attempts = 0
+        self._max_attempts = max_attempts
 
         self._clock = 0
         self._checkpoint_path = checkpoint_path
@@ -277,6 +294,8 @@ class LocalAgenda(Agenda):
                 data = pickle.load(f)
                 self._tasks = data['tasks']
                 self._status = data['status']
+                self._total_attempts = data.get('total_attempts', 0)
+
                 # Reset all task statuses to 'ATTEMPTED' if they were 'DOING':
                 reset = 0
                 for k, v in self._status.items():
@@ -299,6 +318,9 @@ class LocalAgenda(Agenda):
         except Exception as e:
             logger.warning(f"Failed to load checkpoint: {e}")
 
+    def _should_stop(self) -> bool:
+        return self._max_attempts is not None and self._total_attempts >= self._max_attempts
+
     def _checkpoint(self):
         if self._checkpoint_path is None:
             return
@@ -312,6 +334,7 @@ class LocalAgenda(Agenda):
                     'clock': self._clock,
                     'objects': self._objects,
                     'task_outcomes': self._task_outcomes,
+                    'total_attempts': self._total_attempts,
                 }
                 pickle.dump(data, f)
                 f.flush()
@@ -364,6 +387,9 @@ class LocalAgenda(Agenda):
 
         if self._checkpoint_interval and self._clock % self._checkpoint_interval == 0:
             self._checkpoint()
+
+        if self._should_stop():
+            raise StopWork("Max task attempts reached in the agenda")
 
 
     def _all_ancestors(self, root_id: str) -> Iterable[tuple[str, int]]:
@@ -553,6 +579,14 @@ class LocalAgenda(Agenda):
             if work_status is not None:
                 if work_status in (WorkStatus.ATTEMPTED, WorkStatus.DOING):
                     status.attempts += 1
+
+                if work_status.signals_attempt_completed():
+                    self._total_attempts += 1
+
+                    # If we've hit the max attempts, signal workers to stop.
+                    if self._should_stop():
+                        logger.info(f"Max attempts {self._max_attempts} reached; signaling workers to stop.")
+                        self._checkpoint()
 
                 # Log status changes
                 task = self._tasks[task_id]

@@ -14,7 +14,7 @@ from hydra import main
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
-from agenda import Agenda
+from agenda import Agenda, StopWork
 from worker import Worker
 
 logger = logging.getLogger(__name__)
@@ -36,12 +36,15 @@ class RoundRobinScheduler:
 
     async def run(self, agenda: Agenda) -> None:
         idx = 0
-        while True:
-            worker = self.workers[idx]
-            logger.info(f"Scheduling {type(worker).__name__} to work.")
-            await worker.work(agenda, self.turn_fuel)
-            logger.info(f"Worker {type(worker).__name__} finished a turn.")
-            idx = (idx + 1) % len(self.workers)
+        try:
+            while True:
+                worker = self.workers[idx]
+                logger.info(f"Scheduling {type(worker).__name__} to work.")
+                await worker.work(agenda, self.turn_fuel)
+                logger.info(f"Worker {type(worker).__name__} finished a turn.")
+                idx = (idx + 1) % len(self.workers)
+        except StopWork:
+            logger.info("Agenda requested to stop work. Shutting down scheduler.")
 
 
 @main(config_path="config", config_name="config", version_base=None)
