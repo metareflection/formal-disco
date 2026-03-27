@@ -76,6 +76,10 @@ class PromptBuilder:
     def idea(self, repo: str, readme: str) -> list[ChatMessage]:
         raise NotImplementedError
 
+    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
+        """Prompt the model to come up with an idea and implement it in one shot."""
+        raise NotImplementedError
+
     def generate(self, *, repo: str | None = None, readme: str | None = None) -> list[ChatMessage]:
         """Prompt the model to generate a random program, optionally inspired by a README."""
         raise NotImplementedError

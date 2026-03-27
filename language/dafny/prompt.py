@@ -118,6 +118,33 @@ class DafnyPromptBuilder(PromptBuilder):
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
+    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
+        """Prompt the model to propose an idea and implement it as Dafny code in one shot."""
+        system = (
+            "You are an expert Dafny programmer. You will receive a GitHub repository name and"
+            " its README. Your task is to:\n"
+            "1. Come up with a concise idea for a Dafny program inspired by the repository's theme."
+            " The repository is most likely unrelated to verified programming, so freely adapt or"
+            " reinterpret its theme.\n"
+            "2. Immediately implement that idea as a self-contained Dafny program.\n\n"
+            "Your program should NOT try to implement the entire idea, which is likely to be"
+            " overly ambitious to write in one go.\n"
+            "Start with e.g. a few functions at most, or a very basic class with only a couple of"
+            " core methods, or prove a basic lemma, etc. You can also add comments on ideas to"
+            " extend the program later.\n"
+            "The output must be valid Dafny code and compile/verify when possible."
+            " Keep this initial program concise.\n\n"
+            "Output ONLY Dafny source code. Include a brief comment at the top of the program"
+            " describing the idea."
+        )
+        user = (
+            f"Repository: {repo}\n\n"
+            f"README:\n{readme}\n\n"
+            "Come up with an idea for a Dafny program inspired by this repository and implement it."
+            " Output only Dafny source code."
+        )
+        return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
     def generate(self, *, repo: str | None = None, readme: str | None = None) -> list[ChatMessage]:
         """Prompt the model to generate a random Dafny program, optionally inspired by a README."""
         system = (
