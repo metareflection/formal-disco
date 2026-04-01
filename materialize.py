@@ -100,14 +100,18 @@ def materialize(checkpoint: Path, out_dir: Path, overwrite: bool) -> None:
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Materialize agenda objects to files.")
     ap.add_argument("checkpoint", type=Path, help="Path to an agenda checkpoint pickle file")
-    ap.add_argument("output_dir", type=Path, help="Directory where files will be written")
+    ap.add_argument("output_dir", type=Path, nargs="?", default=None,
+                     help="Directory where files will be written (default: agendas/materialized/<checkpoint stem>/)")
     ap.add_argument("--overwrite", action="store_true", help="Overwrite existing files")
     return ap.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    materialize(args.checkpoint, args.output_dir, args.overwrite)
+    out_dir = args.output_dir
+    if out_dir is None:
+        out_dir = Path("agendas/materialized") / args.checkpoint.stem
+    materialize(args.checkpoint, out_dir, args.overwrite)
 
 
 if __name__ == "__main__":
