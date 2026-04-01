@@ -174,6 +174,8 @@ def build_sft_records(
                               example_after=example_after)
         elif kind == "idea":
             return _pb.idea(repo=args.get("repo", ""), readme=args.get("readme", ""))
+        elif kind == "initiate":
+            return _pb.initiate(repo=args.get("repo", ""), readme=args.get("readme", ""))
         else:
             return []
 
