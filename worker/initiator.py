@@ -89,7 +89,7 @@ class Initiator(Worker):
                     type=f"{self._language}-program",
                     parents=[],
                     content=program_text.encode("utf-8"),
-                    properties={"repo": repo},
+                    properties={"repo": repo, "parent_idea": f"initiated/{slug}"},
                 ))
 
                 # Verify.
@@ -158,6 +158,7 @@ class Initiator(Worker):
                         properties={
                             "verification_status": ver.outcome.name.lower(),
                             "repo": repo,
+                            "parent_idea": f"initiated/{slug}",
                         },
                     ))
 
