@@ -346,6 +346,12 @@ class LocalAgenda(Agenda):
             # Run global stats (slower) logging every time we checkpoint.
             s = self._compute_codebase_statistics()
             self._logger.log_code_base_statistics(s)
+
+            progress_metrics = {'tasks/total_attempts': self._total_attempts}
+            if self._max_attempts is not None:
+                progress_metrics['tasks/max_attempts'] = self._max_attempts
+                progress_metrics['tasks/progress'] = self._total_attempts / self._max_attempts
+            self._logger.log_metrics(progress_metrics)
             logger.info(f"Codebase statistics: {s}")
 
             d = self._compute_diversity_metrics()
