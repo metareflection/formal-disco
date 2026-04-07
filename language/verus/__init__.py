@@ -344,8 +344,13 @@ class VerusBackend(LanguageBackend):
         tmp_file = os.path.join(work_dir, "ex.rs")
 
         try:
+            source = str(program)
+            # Allow legacy benchmarks that lack decreases clauses to verify
+            # on post-April-2025 Verus (PR #1545 made them mandatory).
+            if "#![verifier::exec_allows_no_decreases_clause]" not in source:
+                source = "#![verifier::exec_allows_no_decreases_clause]\n" + source
             with open(tmp_file, "w", encoding="utf-8") as f:
-                f.write(str(program))
+                f.write(source)
 
             env = os.environ.copy()
             if self._verus_root:

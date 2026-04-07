@@ -159,6 +159,8 @@ def build_sft_records(
     """
     from language import Language
     from patch import TEXT_BEFORE_EXAMPLE, TEXT_DIFF_EXAMPLE, TEXT_AFTER_EXAMPLE
+
+    # TODO: should be generalized for Verus
     _pb = Language.DAFNY.get_backend().prompt_builder
 
     def reconstruct_chat_messages(kind, args, example_before, example_diff, example_after):
