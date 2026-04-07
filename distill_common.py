@@ -168,7 +168,7 @@ def remove_hints(program: str, min_hints: int = 1, lam: float = 2) -> tuple[str,
 # Text diff
 # ---------------------------------------------------------------------------
 
-def compute_text_diff(before: str, after: str) -> str:
+def compute_text_diff(before: str, after: str, max_context: int = 10) -> str:
     """
     Compute a text diff in the format expected by the repair prompt.
 
@@ -177,6 +177,10 @@ def compute_text_diff(before: str, after: str) -> str:
     - = line: keep line (find forward, advance cursor)
     - - line: delete line (find forward, delete)
     - + line: add line (insert at cursor)
+
+    Emits up to *max_context* '=' lines before each change block so
+    that apply_text_diff can match the anchor + context as a contiguous
+    block, disambiguating files with many duplicate lines.
     """
     before_lines = before.splitlines(keepends=False)
     after_lines = after.splitlines(keepends=False)
@@ -184,17 +188,84 @@ def compute_text_diff(before: str, after: str) -> str:
     matcher = difflib.SequenceMatcher(None, before_lines, after_lines)
 
     diff_parts = []
+    cursor = 0  # tracks how far previous blocks have consumed
+
+    def _pick_context(change_start: int) -> list[str]:
+        """Return context lines from before_lines[cursor:change_start].
+
+        Starts with up to ``max_context`` lines immediately before the
+        change.  If the resulting block would be ambiguous (i.e. it
+        appears more than once between ``cursor`` and the end of the
+        file), we extend backwards to include a unique anchor line.
+        """
+        window = before_lines[cursor:change_start]
+        if not window:
+            return []
+
+        # Start with the last max_context lines
+        ctx = window[-max_context:]
+
+        # Check whether this block appears more than once in the search
+        # region (cursor .. end-of-file).  If so, walk backwards to
+        # find a unique-enough anchor.
+        search_region = before_lines[cursor:]
+        n = len(ctx)
+
+        def _count_block(blk: list[str]) -> int:
+            """Count how many times blk appears contiguously in search_region."""
+            count = 0
+            for i in range(len(search_region) - len(blk) + 1):
+                if search_region[i:i + len(blk)] == blk:
+                    count += 1
+            return count
+
+        if _count_block(ctx) > 1:
+            # Extend backwards through the equal window looking for a
+            # line that makes the block unique.
+            for extra in range(1, len(window) - len(ctx) + 1):
+                candidate = window[-(n + extra):]
+                if _count_block(candidate) == 1:
+                    ctx = candidate
+                    break
+            else:
+                # Use the full available window
+                ctx = window
+
+        return ctx
 
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == 'equal':
             continue
 
-        # Add anchor with the line just before the change (if exists)
-        if i1 > 0:
-            anchor_line = before_lines[i1 - 1]
-            diff_parts.append(f"@@{anchor_line}@@")
-        else:
+        ctx_lines = _pick_context(i1)
+
+        if ctx_lines:
+            # Emit the first non-blank context line as anchor, all
+            # others (including blanks) as '=' lines.  A blank first
+            # line would produce "@@@@" (empty-anchor syntax) so we
+            # skip it for the anchor role and emit it as '='.
+            anchor_idx = None
+            for ci, cl in enumerate(ctx_lines):
+                if cl.strip():
+                    anchor_idx = ci
+                    break
+
+            if anchor_idx is not None:
+                # Emit lines before the anchor as '=' context
+                for cl in ctx_lines[:anchor_idx]:
+                    diff_parts.append(f"= {cl}")
+                diff_parts.append(f"@@{ctx_lines[anchor_idx]}@@")
+                for cl in ctx_lines[anchor_idx + 1:]:
+                    diff_parts.append(f"= {cl}")
+            else:
+                # All context lines are blank — emit as @@@@  + '=' lines
+                diff_parts.append("@@@@")
+                for cl in ctx_lines:
+                    diff_parts.append(f"= {cl}")
+        elif i1 == 0:
             diff_parts.append("@@@@")
+        else:
+            diff_parts.append(f"@@{before_lines[i1 - 1]}@@")
 
         if tag == 'replace':
             for line in before_lines[i1:i2]:
@@ -207,6 +278,8 @@ def compute_text_diff(before: str, after: str) -> str:
         elif tag == 'insert':
             for line in after_lines[j1:j2]:
                 diff_parts.append(f"+ {line}")
+
+        cursor = i2
 
     return "\n".join(diff_parts)
 
