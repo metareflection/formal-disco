@@ -174,6 +174,8 @@ def build_sft_records(
                               example_after=example_after)
         elif kind == "idea":
             return _pb.idea(repo=args.get("repo", ""), readme=args.get("readme", ""))
+        elif kind == "initiate":
+            return _pb.initiate(repo=args.get("repo", ""), readme=args.get("readme", ""))
         else:
             return []
 
@@ -370,7 +372,6 @@ def _train_with_trl(
         save_steps=int(save_steps),
         save_total_limit=2,
 #        use_liger_kernel=True,
-        resume_from_checkpoint=True,
         seed=int(seed),
         report_to=report_to,
         remove_unused_columns=False,
@@ -385,7 +386,9 @@ def _train_with_trl(
         args=training_args,
     )
 
-    trainer.train()
+    trainer.train(
+        resume_from_checkpoint=True,
+    )
 
     # Save adapter + tokenizer
     trainer.save_model(output_dir)

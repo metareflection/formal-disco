@@ -162,6 +162,7 @@ class IterativeGenerator(Worker):
                         content=program_text.encode("utf-8"),
                         properties={
                             "verification_status": ver.outcome.name.lower(),
+                            "parent_idea": task_id,
                             "repo": repo or "",
                         },
                     ))
