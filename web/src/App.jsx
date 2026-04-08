@@ -3,6 +3,7 @@ import Home from './pages/Home';
 import FixerReport from './pages/FixerReport';
 import LemmaReport from './pages/LemmaReport';
 import DiversityReport from './pages/DiversityReport';
+import DatasetStatsReport from './pages/DatasetStatsReport';
 
 export default function App() {
   return (
@@ -19,6 +20,9 @@ export default function App() {
           <NavLink to="/diversity-report" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
             Diversity Report
           </NavLink>
+          <NavLink to="/dataset-stats" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+            Dataset Stats
+          </NavLink>
         </div>
       </nav>
       <main className="main-content">
@@ -27,6 +31,7 @@ export default function App() {
           <Route path="/fixer-report" element={<FixerReport />} />
           <Route path="/lemma-report" element={<LemmaReport />} />
           <Route path="/diversity-report" element={<DiversityReport />} />
+          <Route path="/dataset-stats" element={<DatasetStatsReport />} />
         </Routes>
       </main>
     </BrowserRouter>

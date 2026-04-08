@@ -17,6 +17,10 @@ export default function Home() {
           <h2>Diversity Report</h2>
           <p>Compare structural diversity and complexity across Dafny program corpora.</p>
         </Link>
+        <Link to="/dataset-stats" className="card">
+          <h2>Dafny Dataset Statistics</h2>
+          <p>Analyze assertion and invariant distributions across Dafny training datasets.</p>
+        </Link>
       </div>
     </div>
   );
