@@ -227,6 +227,34 @@ def test_delete_multiple_lines():
     assert apply_text_diff(before, diff) == after
 
 
+def test_blank_line_as_context():
+    """A blank line before the change should not produce an empty @@@@ anchor."""
+    before = (
+        "method Foo() {\n"
+        "  var x := compute();\n"
+        "\n"
+        "}\n"
+    )
+    after = (
+        "method Foo() {\n"
+        "  var x := compute();\n"
+        "\n"
+        "  assert x > 0;\n"
+        "}\n"
+    )
+    diff = compute_text_diff(before, after)
+    assert "@@@@" not in diff  # blank line context must not become empty anchor
+    assert apply_text_diff(before, diff) == after
+
+
+def test_no_trailing_newline():
+    """Files without trailing newline should round-trip correctly."""
+    before = "a\nb\n}"
+    after = "a\nb\n  assert true;\n}"
+    diff = compute_text_diff(before, after)
+    assert apply_text_diff(before, diff) == after
+
+
 def test_identical_files():
     """No changes should produce an empty diff."""
     text = "a\nb\nc\n"

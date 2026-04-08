@@ -197,7 +197,10 @@ def compute_text_diff(before: str, after: str) -> str:
     before_lines = before.splitlines(keepends=False)
     after_lines = after.splitlines(keepends=False)
 
-    matcher = SequenceMatcher(None, before_lines, after_lines)
+    # autojunk=False prevents SequenceMatcher from treating frequent lines
+    # like '}' as junk, which would cause replace ops instead of insert+equal
+    # and break round-tripping when the last line has no trailing newline.
+    matcher = SequenceMatcher(None, before_lines, after_lines, autojunk=False)
     opcodes = matcher.get_opcodes()
 
     # Build index: stripped content -> list of line indices in before_lines.
@@ -245,7 +248,13 @@ def compute_text_diff(before: str, after: str) -> str:
             n_context = min(n_context, max_context)
             ctx_start = i1 - n_context
             for k in range(n_context):
-                diff_parts.append(f"@@{before_lines[ctx_start + k]}@@")
+                line = before_lines[ctx_start + k]
+                # A blank line would produce @@@@ which is the empty (no-op)
+                # anchor.  Use a single space instead, so .strip() matching
+                # in apply_text_diff will still match blank lines.
+                if not line.strip():
+                    line = ' '
+                diff_parts.append(f"@@{line}@@")
 
         if tag == 'replace':
             for line in before_lines[i1:i2]:
