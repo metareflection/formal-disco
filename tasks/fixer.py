@@ -174,7 +174,7 @@ class FixerTask(EvaluationTask):
 
     def _extract_from_verified(self, source: dict) -> list[dict]:
         """Generate fixer examples by removing hints from verified programs."""
-        N_THREADS = 2
+        N_THREADS = 64
 
         pickle_path = Path(source["path"])
         min_hints = source.get("min_hints", 1)
@@ -190,7 +190,7 @@ class FixerTask(EvaluationTask):
         with ThreadPoolExecutor(max_workers=N_THREADS) as executor:
             futures = {
                 executor.submit(self.extract_one, path, obj, min_hints, verify_stripped): path
-                for path, obj in verified_programs[:10]
+                for path, obj in verified_programs
             }
             with tqdm(total=len(futures), desc="Generating fixer examples") as pbar:
                 for future in as_completed(futures):
