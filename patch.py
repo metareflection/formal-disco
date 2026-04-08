@@ -101,8 +101,9 @@ def apply_text_diff(text: str, diff: str) -> str:
     Apply a simple, line-based diff to `text`.
 
     Directives (one per line in `diff`):
-      - Lines starting and ending with "@@" are anchors. We search forward from the
-        current cursor for a line equal to the anchor body and set the cursor to just after it.
+      - Lines starting and ending with "@@" are anchors. Consecutive anchors form a
+        *sequence*: we search forward from the current cursor for consecutive lines
+        matching all anchors, then set the cursor to just after the last matched line.
         An empty anchor ("@@@@") is a no-op synchronization point.
       - Lines starting with '=' are "keep" directives: search forward for that line
         and move cursor just after it.
@@ -111,9 +112,9 @@ def apply_text_diff(text: str, diff: str) -> str:
       - Lines starting with '+' are "add" directives: insert that line at the current
         cursor position and advance cursor past the inserted line.
 
-    Matching uses exact text of the line (without trailing newlines). Inserted lines end with a newline.
+    Matching uses stripped text of the line (without trailing whitespace/newlines).
+    Inserted lines end with a newline.
     """
-    # Keep original line endings
     lines = text.splitlines(keepends=True)
     cursor = 0
 
@@ -126,16 +127,39 @@ def apply_text_diff(text: str, diff: str) -> str:
                 return idx
         return None
 
-    for raw in diff.splitlines():
+    def find_sequence(anchors: list[str], start: int) -> int | None:
+        """Find first position >= start where all anchors match consecutive lines."""
+        for idx in range(start, len(lines) - len(anchors) + 1):
+            if all(line_content(idx + j).strip() == anchors[j].strip()
+                   for j in range(len(anchors))):
+                return idx
+        return None
+
+    # Parse diff lines, grouping consecutive anchors into sequences.
+    diff_lines = diff.splitlines()
+    pending_anchors: list[str] = []
+
+    def flush_anchors():
+        nonlocal cursor, pending_anchors
+        if not pending_anchors:
+            return
+        j = find_sequence(pending_anchors, cursor)
+        if j is not None:
+            cursor = j + len(pending_anchors)
+        pending_anchors = []
+
+    for raw in diff_lines:
         if not raw:
             continue
         if raw.startswith("@@") and raw.endswith("@@"):
             anchor = raw[2:-2]
             if anchor:
-                j = find_forward(anchor, cursor)
-                if j is not None:
-                    cursor = j + 1
+                pending_anchors.append(anchor)
+            # else: empty anchor = no-op
             continue
+
+        # Non-anchor line: flush any pending anchor sequence first.
+        flush_anchors()
 
         op = raw[0]
         payload = raw[1:]
@@ -154,10 +178,88 @@ def apply_text_diff(text: str, diff: str) -> str:
         elif op == '+':
             lines.insert(cursor, payload + "\n")
             cursor += 1
-        else:
-            pass # raise ValueError(f"Invalid diff line start character: {raw}")
 
     return "".join(lines)
+
+
+def compute_text_diff(before: str, after: str) -> str:
+    """Compute a text diff in the format expected by apply_text_diff.
+
+    Returns a diff string that, when applied to ``before``, produces ``after``.
+
+    For each change block, emits anchor lines (``@@...@@``) with enough
+    preceding context to disambiguate the position, followed by ``-``/``+``
+    directives for deleted/inserted lines.
+
+    Context lines are drawn only from the immediately preceding equal region
+    so that earlier insertions/deletions don't invalidate the anchor sequence.
+    """
+    before_lines = before.splitlines(keepends=False)
+    after_lines = after.splitlines(keepends=False)
+
+    matcher = SequenceMatcher(None, before_lines, after_lines)
+    opcodes = matcher.get_opcodes()
+
+    # Build index: stripped content -> list of line indices in before_lines.
+    line_index: dict[str, list[int]] = {}
+    for i, line in enumerate(before_lines):
+        line_index.setdefault(line.strip(), []).append(i)
+
+    # Track the start of the immediately preceding equal region for each opcode.
+    prev_equal_start = 0  # start of the equal region just before the current change
+
+    diff_parts: list[str] = []
+
+    for op_idx, (tag, i1, i2, j1, j2) in enumerate(opcodes):
+        if tag == 'equal':
+            prev_equal_start = i1
+            continue
+
+        if i1 == 0:
+            diff_parts.append("@@@@")
+        else:
+            # Context lines come only from the immediately preceding equal
+            # region [prev_equal_start, i1).  This ensures they are still
+            # consecutive in the file even after earlier changes are applied.
+            max_context = i1 - prev_equal_start
+
+            n_context = 1
+            while n_context <= max_context:
+                ctx_start = i1 - n_context
+                ctx = [before_lines[ctx_start + k].strip()
+                       for k in range(n_context)]
+                first_key = ctx[0]
+                candidates = line_index.get(first_key, [])
+                n_matches = sum(
+                    1 for c in candidates
+                    if c + n_context <= len(before_lines)
+                    and all(before_lines[c + k].strip() == ctx[k]
+                            for k in range(n_context))
+                )
+                if n_matches <= 1:
+                    break
+                n_context += 1
+
+            # Clamp to available context (may still be ambiguous, but
+            # apply_text_diff searches forward from cursor which resolves it).
+            n_context = min(n_context, max_context)
+            ctx_start = i1 - n_context
+            for k in range(n_context):
+                diff_parts.append(f"@@{before_lines[ctx_start + k]}@@")
+
+        if tag == 'replace':
+            for line in before_lines[i1:i2]:
+                diff_parts.append(f"- {line}")
+            for line in after_lines[j1:j2]:
+                diff_parts.append(f"+ {line}")
+        elif tag == 'delete':
+            for line in before_lines[i1:i2]:
+                diff_parts.append(f"- {line}")
+        elif tag == 'insert':
+            for line in after_lines[j1:j2]:
+                diff_parts.append(f"+ {line}")
+
+    return "\n".join(diff_parts)
 
 
 def test_apply_text_diff_basic() -> None:

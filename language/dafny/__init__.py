@@ -142,6 +142,68 @@ def _is_spec_line(line: str) -> bool:
     return any(stripped.startswith(kw) for kw in _SPEC_PREFIXES)
 
 
+# See https://dafny.org/dafny/DafnyRef/DafnyRef.html#sec-method-specification
+# Reads appears in functions, and modifies appears in methods.
+_SPEC_CLAUSE_KEYWORDS = ('requires', 'ensures', 'decreases', 'reads', 'modifies')
+
+_SPEC_CLAUSE_SPLIT_RE = re.compile(
+    r'(?<!\w)\b(' + '|'.join(_SPEC_CLAUSE_KEYWORDS) + r')\b(?!\w)'
+)
+
+
+def _extract_spec_clauses(header: str) -> dict[str, list[str]]:
+    """Extract full (possibly multiline) spec clauses from a declaration header.
+
+    Walks the header lines, accumulating continuation lines that don't start
+    with a spec keyword or opening brace into the current clause.
+    Returns a dict with keys for each spec keyword mapped to lists of clause strings.
+    """
+    # Normalize: ensure each spec keyword starts on its own line, so that
+    # mid-line specs (e.g. "method Foo() requires x > 0") are handled.
+    header = _SPEC_CLAUSE_SPLIT_RE.sub(r'\n\1', header)
+
+    result: dict[str, list[str]] = {kw: [] for kw in _SPEC_CLAUSE_KEYWORDS}
+    current_kind = None
+    current_parts: list[str] = []
+
+    for line in header.split('\n'):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Check if this line starts a new spec clause.
+        started_new = False
+        for kw in _SPEC_CLAUSE_KEYWORDS:
+            if stripped.startswith(kw) and (
+                len(stripped) == len(kw) or not stripped[len(kw)].isalpha()
+            ):
+                # Flush previous clause.
+                if current_kind is not None and current_parts:
+                    result[current_kind].append(' '.join(current_parts))
+                current_kind = kw
+                rest = stripped[len(kw):].strip()
+                current_parts = [rest] if rest else []
+                started_new = True
+                break
+        if started_new:
+            continue
+        # If a different spec keyword (e.g. 'returns') or brace, flush and reset.
+        if any(stripped.startswith(kw) for kw in _SPEC_PREFIXES) or stripped.startswith('{'):
+            if current_kind is not None and current_parts:
+                result[current_kind].append(' '.join(current_parts))
+            current_kind = None
+            current_parts = []
+            continue
+        # Continuation of current clause.
+        if current_kind is not None:
+            current_parts.append(stripped)
+
+    # Flush last clause.
+    if current_kind is not None and current_parts:
+        result[current_kind].append(' '.join(current_parts))
+
+    return result
+
+
 def _find_matching_brace(s: str, open_pos: int) -> int:
     depth = 0
     for i in range(open_pos, len(s)):
@@ -232,6 +294,83 @@ def _extract_method_loop_features(source: str) -> list[dict]:
         else:
             i += 1
     return results
+
+
+def _extract_methods(source: str) -> list[dict]:
+    """Extract per-method/function/lemma stats: name, assertion count, invariant count."""
+    clean = _remove_comments(source)
+    lines = clean.split('\n')
+    methods = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not _DECL_LINE_RE.match(line):
+            i += 1
+            continue
+
+        name_match = _DECL_NAME_RE.search(line)
+        name = name_match.group(1) if name_match else '<anonymous>'
+
+        brace_line = brace_col = None
+        if line.rstrip().endswith('{'):
+            brace_line, brace_col = i, line.rindex('{')
+        else:
+            j = i + 1
+            while j < len(lines):
+                ln = lines[j]
+                if not ln.strip():
+                    j += 1
+                    continue
+                if _is_spec_line(ln):
+                    j += 1
+                    continue
+                if '{' in ln:
+                    brace_col = ln.index('{')
+                    brace_line = j
+                    break
+                # A new declaration means we never found a body.
+                if _DECL_LINE_RE.match(ln):
+                    break
+                # Otherwise assume it's a continuation line of a multiline spec.
+                j += 1
+
+        if brace_line is None:
+            i += 1
+            continue
+
+        # Extract header text (declaration + spec clauses before body).
+        # Normalize by inserting newlines before spec keywords so mid-line
+        # specs (e.g. "method Foo() requires x > 0") are parsed correctly.
+        if brace_line == i:
+            header = line[:brace_col]
+        else:
+            header_lines = lines[i:brace_line]
+            header_lines.append(lines[brace_line][:brace_col])
+            header = '\n'.join(header_lines)
+
+        spec_clauses = _extract_spec_clauses(header)
+
+        full = '\n'.join(lines[brace_line:])
+        close = _find_matching_brace(full, brace_col)
+        body = full[brace_col + 1:close]
+
+        n_assertions = len(_ASSERT_RE.findall(body))
+        n_invariants = len(_INV_RE.findall(body))
+
+        close_line = brace_line + full[:close].count('\n')
+
+        methods.append({
+            'name': name,
+            'assertions': n_assertions,
+            'invariants': n_invariants,
+            **{kw: spec_clauses[kw] for kw in _SPEC_CLAUSE_KEYWORDS},
+            'body_begin': i,
+            'body_end': close_line,
+        })
+
+        i = brace_line + body.count('\n') + 1
+
+    return methods
 
 
 def _extract_body_sizes(source: str) -> list[int]:
@@ -351,6 +490,10 @@ class DafnyBackend(LanguageBackend):
                         outcome=VerificationOutcome.FAIL, status=-1, stdout="", stderr=str(e)
                     )
         return results
+
+    def extract_methods(self, program: 'Program') -> list[dict]:
+        """Extract per-method stats: name, assertion count, invariant count."""
+        return _extract_methods(str(program))
 
     def complexity(self, program: 'Program') -> dict[str, Any]:
         source = str(program)
