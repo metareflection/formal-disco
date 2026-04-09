@@ -142,6 +142,7 @@ def build_sft_records(
     pickle_paths: list[str | Path],
     success_only: bool,
     outcome_success_values: tuple[str, ...] = ("success",),
+    language: str = "dafny",
 ) -> tuple[list[dict[str, str]], Counter[str]]:
     """Build TRL/HF records for chat-style SFT.
 
@@ -160,8 +161,7 @@ def build_sft_records(
     from language import Language
     from patch import TEXT_BEFORE_EXAMPLE, TEXT_DIFF_EXAMPLE, TEXT_AFTER_EXAMPLE
 
-    # TODO: should be generalized for Verus
-    _pb = Language.DAFNY.get_backend().prompt_builder
+    _pb = Language[language.upper()].get_backend().prompt_builder
 
     def reconstruct_chat_messages(kind, args, example_before, example_diff, example_after):
         if kind == "implement":
@@ -419,6 +419,8 @@ def _main_sft() -> None:
         data: str | list[str] = "local-agenda.pkl"
         model_id: str = DEFAULT_HF_MODEL_ID
         output_dir: str = "sft-out"
+        # Formal language (dafny, verus)
+        language: str = "dafny"
         success_only: bool = True
         # Treat GOAL_UNPROVEN as success? (optional)
         treat_goal_unproven_as_success: bool = False
@@ -471,6 +473,7 @@ def _main_sft() -> None:
         pickle_paths=pickle_paths,
         success_only=bool(c.success_only),
         outcome_success_values=success_values,
+        language=c.language,
     )
 
     # Print training data statistics
