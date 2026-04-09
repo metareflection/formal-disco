@@ -111,36 +111,91 @@ def apply_text_diff(text: str, diff: str) -> str:
       - Lines starting with '+' are "add" directives: insert that line at the current
         cursor position and advance cursor past the inserted line.
 
-    Matching uses exact text of the line (without trailing newlines). Inserted lines end with a newline.
+    When an anchor is immediately followed by '=' lines, the anchor and
+    '=' lines are matched as a contiguous block.  This disambiguates
+    positions in files with many duplicate lines (e.g. ``}`` in Rust).
     """
-    # Keep original line endings
     lines = text.splitlines(keepends=True)
     cursor = 0
 
     def line_content(i: int) -> str:
         return lines[i].rstrip("\n")
 
+    def _line_eq(idx: int, target: str) -> bool:
+        """Does line at *idx* match *target*?  Exact first, stripped fallback."""
+        if idx >= len(lines):
+            return False
+        c = line_content(idx)
+        return c == target or c.strip() == target.strip()
+
     def find_forward(target: str, start: int) -> int | None:
+        """Find first line matching *target* at or after *start*."""
         for idx in range(start, len(lines)):
-            if line_content(idx).strip() == target.strip():
+            if _line_eq(idx, target):
                 return idx
         return None
 
+    def find_block_forward(block: list[str], start: int) -> int | None:
+        """Find first position where *all* block lines match contiguously."""
+        for idx in range(start, len(lines) - len(block) + 1):
+            if all(_line_eq(idx + k, block[k]) for k in range(len(block))):
+                return idx
+        return None
+
+    # -- parse diff into directives so we can look-ahead -----------------
+    directives: list[tuple[str, str]] = []
     for raw in diff.splitlines():
         if not raw:
             continue
         if raw.startswith("@@") and raw.endswith("@@"):
-            anchor = raw[2:-2]
-            if anchor:
-                j = find_forward(anchor, cursor)
-                if j is not None:
-                    cursor = j + 1
+            directives.append(("@@", raw[2:-2]))
             continue
-
         op = raw[0]
+        if op not in ('=', '-', '+'):
+            continue
         payload = raw[1:]
         if payload.startswith(" "):
             payload = payload[1:]
+        directives.append((op, payload))
+
+    # -- apply directives ------------------------------------------------
+    di = 0
+    while di < len(directives):
+        op, payload = directives[di]
+
+        if op == "@@":
+            # Collect following '=' lines to form a contiguous block
+            eq_payloads: list[str] = []
+            peek = di + 1
+            while peek < len(directives) and directives[peek][0] == '=':
+                eq_payloads.append(directives[peek][1])
+                peek += 1
+
+            if not payload:          # empty anchor "@@@@"
+                if eq_payloads:
+                    # Match the '=' lines as a block from cursor
+                    pos = find_block_forward(eq_payloads, cursor)
+                    if pos is not None:
+                        cursor = pos + len(eq_payloads)
+                        di = peek
+                    else:
+                        di += 1
+                else:
+                    di += 1
+                continue
+
+            block = [payload] + eq_payloads
+            pos = find_block_forward(block, cursor)
+            if pos is not None:
+                cursor = pos + len(block)
+                di = peek          # skip anchor + consumed '=' lines
+            else:
+                # Fallback: match anchor alone (LLM-generated diffs)
+                j = find_forward(payload, cursor)
+                if j is not None:
+                    cursor = j + 1
+                di += 1
+            continue
 
         if op == '=':
             j = find_forward(payload, cursor)
@@ -154,8 +209,8 @@ def apply_text_diff(text: str, diff: str) -> str:
         elif op == '+':
             lines.insert(cursor, payload + "\n")
             cursor += 1
-        else:
-            pass # raise ValueError(f"Invalid diff line start character: {raw}")
+
+        di += 1
 
     return "".join(lines)
 
