@@ -163,6 +163,32 @@ class VerusPromptBuilder(PromptBuilder):
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
+    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
+        """Prompt the model to propose an idea and implement it as Verus code in one shot."""
+        system = (
+            "You are an expert Verus programmer. You will receive a GitHub repository name and"
+            " its README. Your task is to:\n"
+            "1. Come up with a concise idea for a Verus program inspired by the repository's theme."
+            " The repository is most likely unrelated to verified programming, so freely adapt or"
+            " reinterpret its theme.\n"
+            "2. Immediately implement that idea as a self-contained Verus program.\n\n"
+            "Your program should NOT try to implement the entire idea, which is likely to be"
+            " overly ambitious to write in one go.\n"
+            "Start with e.g. a few functions at most, or prove a basic lemma, etc. You can also"
+            " add comments on ideas to extend the program later.\n"
+            "The output must be valid Verus code (Rust with Verus verification annotations) and"
+            " compile/verify when possible. Keep this initial program concise.\n\n"
+            "Output ONLY Verus source code. Include a brief comment at the top of the program"
+            " describing the idea."
+        )
+        user = (
+            f"Repository: {repo}\n\n"
+            f"README:\n{readme}\n\n"
+            "Come up with an idea for a Verus program inspired by this repository and implement it."
+            " Output only Verus source code."
+        )
+        return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
     def idea(self, *, repo: str, readme: str) -> list[ChatMessage]:
         """Prompt the model to propose a Verus program idea inspired by a GitHub README."""
         system = (

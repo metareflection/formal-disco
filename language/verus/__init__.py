@@ -6,14 +6,13 @@ Metrics are computed with regex-based analyses adapted for Verus (Rust with
 verification annotations), after stripping comments.
 """
 
-import hashlib
 import os
 import re
-import subprocess
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional
 
+from execute import execute
 from .. import LanguageBackend, VerificationOutcome, VerificationOutput
 from .prompt import VerusPromptBuilder
 
@@ -335,57 +334,35 @@ class VerusBackend(LanguageBackend):
         return Program('\n'.join(lines), program.language, program.name)
 
     def verify(self, program: 'Program', timeout: float = 120) -> VerificationOutput:
-        home = os.environ.get("HOME", "/tmp")
-        tmp_dir = os.path.join(home, "tmp", "formal-disco", "verus")
-        key = hashlib.md5(str(program).encode("utf-8")).hexdigest()
-        work_dir = os.path.join(tmp_dir, key)
-        os.makedirs(work_dir, exist_ok=True)
-
-        tmp_file = os.path.join(work_dir, "ex.rs")
-
+        cmd = f"{self._verus_binary} --crate-type lib"
         try:
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                f.write(str(program))
-
-            env = os.environ.copy()
-            if self._verus_root:
-                env["VERUS_ROOT"] = self._verus_root
-
-            result = subprocess.run(
-                [self._verus_binary, "--crate-type", "lib", tmp_file],
-                cwd=work_dir,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                env=env,
-            )
-
-            stdout = result.stdout
-            stderr = result.stderr
-            status = result.returncode
-            combined = stdout + stderr
-
-            if status == 0 and "0 errors" in combined:
-                outcome = VerificationOutcome.SUCCESS
-            elif "postcondition" in combined or "precondition" in combined:
-                outcome = VerificationOutcome.GOAL_UNPROVEN
-            else:
-                outcome = VerificationOutcome.FAIL
-
-            return VerificationOutput(
-                outcome=outcome,
-                status=status,
-                stdout=stdout,
-                stderr=stderr,
-            )
-
-        except subprocess.TimeoutExpired:
+            result = execute(cmd, "rs", str(program), timeout=timeout)
+        except RuntimeError as e:
             return VerificationOutput(
                 outcome=VerificationOutcome.FAIL,
                 status=-1,
                 stdout="",
-                stderr="timeout",
+                stderr=str(e),
             )
+
+        out = result.get('out', '')
+        log = result.get('log', '')
+        combined = out + log
+        status = result.get('status', -1)
+
+        if status == 0 and "0 errors" in combined:
+            outcome = VerificationOutcome.SUCCESS
+        elif "postcondition" in combined or "precondition" in combined:
+            outcome = VerificationOutcome.GOAL_UNPROVEN
+        else:
+            outcome = VerificationOutcome.FAIL
+
+        return VerificationOutput(
+            outcome=outcome,
+            status=status,
+            stdout=out,
+            stderr=log,
+        )
 
     def verify_batch(self, programs: list, timeout: float = 120, max_procs: int = 16) -> list[VerificationOutput]:
         results = [None] * len(programs)
