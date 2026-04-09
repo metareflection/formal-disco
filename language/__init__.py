@@ -200,6 +200,9 @@ class Language(Enum):
         if self == Language.DAFNY:
             from .dafny import DafnyBackend
             return DafnyBackend()
+        if self == Language.VERUS:
+            from .verus import VerusBackend
+            return VerusBackend()
         raise NotImplementedError(f"Unsupported language: {self}")
 
 
