@@ -1,0 +1,13 @@
+_target_: agenda.LocalAgenda
+
+defaults:
+  - _self_
+  - logger: wandb # noop
+
+checkpoint_path: "agenda-verus-discovery.pkl"
+checkpoint_interval: 10
+benchmark_codebase_time: 300
+sort_every: 100
+language: verus
+
+max_attempts: 10000
