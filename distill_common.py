@@ -6,7 +6,7 @@ Provides:
 - create_agenda_pickle: Write examples to the standard pickle format
 - remove_hints: Strip invariants/assertions/decreases from Dafny programs
 - compute_text_diff: Compute diffs in the repair-prompt format
-- load_verified_programs: Load dafny-program objects filtered by verification status
+- load_verified_programs: Load program objects filtered by verification status
 - get_dafny_errors: Run Dafny and capture verification errors
 - DistillExample: TypedDict formalizing the example schema
 """
@@ -88,17 +88,21 @@ def create_agenda_pickle(
 def load_verified_programs(
     pickle_path: Path,
     include_goal_unproven: bool = False,
+    language: str = "dafny",
 ) -> list[tuple[str, Object]]:
     """
-    Load dafny-program objects filtered by verification status.
+    Load verified program objects filtered by verification status.
 
     Args:
         pickle_path: Path to agenda pickle
         include_goal_unproven: If True, include goal_unproven programs (not just success)
+        language: Formal language (dafny, verus) — used to match object type
 
     Returns:
         List of (path, object) tuples for verified programs
     """
+    program_type = f"{language.lower()}-program"
+
     print(f"Loading {pickle_path}...", flush=True)
     with open(pickle_path, 'rb') as f:
         data = pickle.load(f)
@@ -112,7 +116,7 @@ def load_verified_programs(
 
     verified = []
     for path, obj in data.get('dataset', {}).items():
-        if obj.type != 'dafny-program':
+        if obj.type != program_type:
             continue
         ver_status = obj.properties.get('verification_status')
         if ver_status in valid_statuses:
