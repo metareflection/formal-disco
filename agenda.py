@@ -267,6 +267,7 @@ class LocalAgenda(Agenda):
         self._sort_every = sort_every
         self._sorted_task_ids: list[str] = []
         self._sort_calls: int = 0
+        self._sort_dirty: bool = True
 
         # Cumulative outcome counts: task_type -> {WorkStatus value -> count}.
         # Persisted in checkpoints so rates accumulate across restarts.
@@ -453,8 +454,9 @@ class LocalAgenda(Agenda):
             self._tasks[task.id] = task
             self._status[task.id] = TaskStatus()
 
-            # Append to cached ordering (O(1)); full re-sort happens periodically.
+            # Append to cached ordering and mark dirty so next read rebuilds.
             self._sorted_task_ids.append(task.id)
+            self._sort_dirty = True
 
             # This task is created in the NEW state.
             self._logger.log_task_state(task.type, task.id, WorkStatus.NEW.value)
@@ -506,8 +508,9 @@ class LocalAgenda(Agenda):
         This method is NOT thread-safe and should only be called while holding self._lock.
         """
         self._sort_calls += 1
-        if self._sort_calls >= self._sort_every:
+        if self._sort_dirty or self._sort_calls >= self._sort_every:
             self._rebuild_sorted_task_ids()
+            self._sort_dirty = False
 
         for tid in self._sorted_task_ids:
             t = self._tasks.get(tid)
@@ -571,6 +574,7 @@ class LocalAgenda(Agenda):
 
             if priority_factor is not None:
                 status.priority *= priority_factor
+                self._sort_dirty = True
 
                 # Propagate priority update.
                 if recursion_gamma is not None and recursion_gamma > 0:
