@@ -239,12 +239,23 @@ def _entropy(counter: Counter) -> float:
     return max(0.0, -float(np.sum(probs * np.log2(probs))))
 
 
+def _detect_language(agenda: dict) -> Language:
+    """Infer the language from object types in the agenda (e.g. 'verus-program' -> VERUS)."""
+    for o in agenda.get("objects", {}).values():
+        if hasattr(o, "type") and o.type.endswith("-program"):
+            lang_name = o.type.removesuffix("-program").upper()
+            try:
+                return Language[lang_name]
+            except KeyError:
+                pass
+    return Language.DAFNY  # fallback
+
+
 def diversity_complexity_table(agendas: dict[str, dict]) -> None:
     print("=" * 80)
     print("DIVERSITY & COMPLEXITY (dataset/ programs only)")
     print("=" * 80)
 
-    backend = Language.DAFNY.get_backend()
     labels = list(agendas.keys())
     col_w = max(20, *(len(l) for l in labels)) + 2
 
@@ -258,13 +269,16 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
             per_agenda[label] = None
             continue
 
+        lang = _detect_language(a)
+        backend = lang.get_backend()
+
         all_complexity = []
         all_features = []
         n_parseable = 0
 
         for k, o in dataset_objs.items():
             text = o.content.decode("utf-8") if isinstance(o.content, bytes) else o.content
-            prog = Program(text, Language.DAFNY)
+            prog = Program(text, lang)
             try:
                 cx = backend.complexity(prog)
                 ft = backend.feature_sets(prog)
@@ -294,8 +308,19 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
         row_vals.append(str(d["n_total"]) if d else "0")
     rows.append(("Programs in dataset/", row_vals))
 
+    # Collect complexity/feature keys from all agendas (language-dependent)
+    complexity_keys = sorted({
+        ck for label in labels
+        if (d := per_agenda[label]) and d["complexity"]
+        for ck in d["complexity"][0]
+    })
+    feature_keys = sorted({
+        fk for label in labels
+        if (d := per_agenda[label]) and d["features"]
+        for fk in d["features"][0]
+    })
+
     # Complexity metrics: aggregate across all programs
-    complexity_keys = ["body_sizes", "n_loops_per_method", "n_idents_in_asserts", "n_idents_in_invs"]
     rows.append(("", [""] * len(labels)))
     rows.append(("COMPLEXITY (mean of per-program means)", [""] * len(labels)))
 
@@ -306,15 +331,11 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
             if not d or not d["complexity"]:
                 row_vals.append("-")
                 continue
-            per_prog_means = [_safe_mean(cx[ck]) for cx in d["complexity"]]
+            per_prog_means = [_safe_mean(cx[ck]) for cx in d["complexity"] if ck in cx]
             row_vals.append(f"{_safe_mean(per_prog_means):.2f}")
         rows.append((f"  {ck}", row_vals))
 
     # Diversity metrics: entropy of pooled feature counters
-    feature_keys = [
-        "subject_words", "invariant_templates", "assert_templates",
-        "ensures_templates", "requires_templates", "loop_skeletons",
-    ]
     rows.append(("", [""] * len(labels)))
     rows.append(("DIVERSITY (entropy in bits, pooled)", [""] * len(labels)))
 
@@ -368,6 +389,7 @@ def load_dafnybench(directory: str) -> dict:
         key = f"dataset/{dfy_file.stem}"
         objects[key] = SimpleNamespace(
             content=dfy_file.read_text(),
+            type="dafny-program",
             properties={},
         )
     return {"objects": objects, "tasks": {}, "status": {}}
