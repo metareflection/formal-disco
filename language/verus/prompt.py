@@ -7,6 +7,17 @@ standard tasks: implement, repair, extend, and idea generation.
 from .. import ChatMessage, PromptBuilder
 
 
+_VERUS_RULES = (
+    "IMPORTANT Verus rules:\n"
+    "- Always start with `use vstd::prelude::*;`. Never use `use builtin::*;` or"
+    " `use builtin_macros::*;`.\n"
+    "- `nat` and `int` are ghost types — they can ONLY be used in `spec` and `proof`"
+    " functions, not in `exec` functions. Use `u64`, `usize`, etc. in exec code.\n"
+    "- Wrap all Verus code in a `verus! { ... }` macro invocation.\n"
+    "- Do not call nonexistent methods on vstd types. Consult the actual vstd API."
+)
+
+
 class VerusPromptBuilder(PromptBuilder):
     """Builds chat prompts for Verus-specific LLM tasks.
 
@@ -26,7 +37,8 @@ class VerusPromptBuilder(PromptBuilder):
             "Start with e.g. a few functions at most, or prove a basic lemma, etc. You can also"
             " add comments on ideas to extend the program later, too.\n"
             "The output must be valid Verus code (Rust with Verus verification annotations) and"
-            " compile/verify when possible. Keep this initial program concise."
+            " compile/verify when possible. Keep this initial program concise.\n\n"
+            f"{_VERUS_RULES}\n"
         )
         user = (
             f"Idea/specification:\n{idea}\n\n"
@@ -73,7 +85,8 @@ class VerusPromptBuilder(PromptBuilder):
             " these errors might require various kinds of changes, such as fixing the syntax,"
             " fixing the implementation of a function, adding new proof annotations (e.g."
             " assert, invariant, decreases clauses, proof blocks, etc), introducing new proof"
-            " functions that help prove existing assertions, or other changes.\n"
+            " functions that help prove existing assertions, or other changes.\n\n"
+            f"{_VERUS_RULES}\n"
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -125,7 +138,8 @@ class VerusPromptBuilder(PromptBuilder):
             "The program should include meaningful specifications: preconditions, postconditions,"
             " loop invariants, assertions, or proof functions as appropriate.\n"
             "Aim for variety: choose an interesting algorithmic or data-structure topic.\n"
-            "Output only valid Verus source code (Rust with Verus verification annotations)."
+            f"Output only valid Verus source code (Rust with Verus verification annotations).\n\n"
+            f"{_VERUS_RULES}"
         )
         if repo and readme:
             user = (
@@ -154,7 +168,8 @@ class VerusPromptBuilder(PromptBuilder):
             " verify the program (i.e. prove post-conditions or verify assertions/invariants).\n"
             "Your job is to produce a COMPLETE, CORRECTED version of the program.\n"
             "Output the full repaired Verus program, not a diff or partial fix.\n"
-            "The output must be valid Verus code."
+            f"The output must be valid Verus code.\n\n"
+            f"{_VERUS_RULES}"
         )
         user = (
             f"Program:\n{program}\n\n"
