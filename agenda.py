@@ -267,6 +267,7 @@ class LocalAgenda(Agenda):
         self._sort_every = sort_every
         self._sorted_task_ids: list[str] = []
         self._sort_calls: int = 0
+        self._complexity_scores: dict[str, float] = {}  # object path -> mean percentile rank
 
         # Cumulative outcome counts: task_type -> {WorkStatus value -> count}.
         # Persisted in checkpoints so rates accumulate across restarts.
@@ -463,8 +464,8 @@ class LocalAgenda(Agenda):
 
     def _effective_priority(self, task: Task, status: TaskStatus) -> float:
         """
-        Compute effective priority: base priority multiplied by the product
-        of interestingness of all dependency objects.
+        Compute effective priority: base priority multiplied by interestingness
+        and complexity score of dependency objects.
 
         This method is NOT thread-safe and should only be called while holding self._lock.
         """
@@ -477,13 +478,60 @@ class LocalAgenda(Agenda):
                 eff *= float(getattr(obj, 'interestingness', 1.0))
             except Exception:
                 pass
+            score = self._complexity_scores.get(obj_path)
+            if score is not None:
+                eff *= 1.0 + score
         return eff
+
+    def _recompute_complexity_scores(self) -> None:
+        """Recompute mean-percentile-rank complexity scores for dependency objects.
+
+        For each program object referenced by any task, computes all complexity
+        metrics, converts each to a percentile rank across programs, and averages
+        the percentile ranks into a single score in (0, 1].
+        """
+        from language import Program, Language as Lang
+
+        # Collect unique program object paths referenced by tasks.
+        obj_paths = {
+            p for t in self._tasks.values()
+            for p in (t.interest_dependencies or [])
+            if p in self._objects and self._objects[p].content is not None
+        }
+
+        # Per-program median of each complexity metric.
+        summaries: dict[str, dict[str, float]] = {}
+        lang = Lang[self._language.upper()]
+        for path in obj_paths:
+            try:
+                text = self._objects[path].content.decode('utf-8')
+                cx = self._backend.complexity(Program(text, lang, name=path))
+            except Exception:
+                continue
+            row = {m: float(np.median(v)) for m, v in cx.items() if isinstance(v, list) and v}
+            if row:
+                summaries[path] = row
+
+        if not summaries:
+            self._complexity_scores = {}
+            return
+
+        paths = list(summaries.keys())
+        all_metrics = {m for row in summaries.values() for m in row}
+        pct_sums = np.zeros(len(paths))
+        for metric in all_metrics:
+            vals = np.array([summaries[p].get(metric, 0.0) for p in paths])
+            pct_sums += np.searchsorted(np.sort(vals), vals, side='right') / len(vals)
+        self._complexity_scores = {
+            p: pct_sums[i] / len(all_metrics) for i, p in enumerate(paths)
+        }
 
     def _rebuild_sorted_task_ids(self) -> None:
         """
         Full sort of all task IDs by effective priority (descending).
         NOT thread-safe — call only while holding self._lock or during init.
         """
+        self._recompute_complexity_scores()
         pairs = []
         for tid, t in self._tasks.items():
             s = self._status[tid]
