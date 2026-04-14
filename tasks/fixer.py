@@ -346,6 +346,10 @@ class FixerTask(EvaluationTask):
                     "interaction_log": interaction_log,
                 }
 
+            # If GOAL_UNPROVEN, we can safely apply the diff and keep iterating.
+            if ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
+                current_text = repaired_text
+
         return {
             "success": False,
             "program_name": program_name,
