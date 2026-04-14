@@ -20,7 +20,7 @@ import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Optional
 
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
@@ -301,6 +301,7 @@ def _train_with_trl(
     model_id: str,
     output_dir: str,
     max_seq_length: int,
+    max_steps: int,
     per_device_train_batch_size: int,
     gradient_accumulation_steps: int,
     learning_rate: float,
@@ -327,6 +328,10 @@ def _train_with_trl(
     """
     import os
 
+    checkpoint_exists = any(p.startswith('checkpoint-')
+                            for p in ((os.path.exists(output_dir) and os.listdir(output_dir)) or []))
+    print(f'Checkpoint in {output_dir} exists?', checkpoint_exists)
+
     if use_wandb:
         os.environ.setdefault("WANDB_PROJECT", wandb_project or "formal-disco")
         if wandb_run_name:
@@ -347,7 +352,8 @@ def _train_with_trl(
         model_id,
         torch_dtype=torch.bfloat16,
         attn_implementation="kernels-community/flash-attn2",
-        device_map="auto")
+        device_map="auto"
+    )
 
     peft_config = LoraConfig(
         r=int(lora_r),
@@ -364,6 +370,7 @@ def _train_with_trl(
 
     training_args = SFTConfig(
         output_dir=output_dir,
+        max_steps=max_steps,
         per_device_train_batch_size=int(per_device_train_batch_size),
         gradient_accumulation_steps=int(gradient_accumulation_steps),
         learning_rate=float(learning_rate),
@@ -373,7 +380,6 @@ def _train_with_trl(
         logging_steps=int(logging_steps),
         save_steps=int(save_steps),
         save_total_limit=2,
-#        use_liger_kernel=True,
         seed=int(seed),
         report_to=report_to,
         remove_unused_columns=False,
@@ -389,7 +395,12 @@ def _train_with_trl(
     )
 
     trainer.train(
-        resume_from_checkpoint=True,
+        # Resume from checkpoint if any checkpoint directory exists.
+        # Setting this to True when there's no checkpoint raises an exception,
+        # so we need to check first.
+        # Also note that, confusingly, SFTConfig has a resume_from_checkpoint property
+        # that train() ignores since it has its own argument too.
+        resume_from_checkpoint=checkpoint_exists,
     )
 
     # Save adapter + tokenizer
@@ -426,6 +437,7 @@ def _main_sft() -> None:
         treat_goal_unproven_as_success: bool = False
 
         # Training
+        max_steps: Optional[int] = None
         max_seq_length: int = 4096
         per_device_train_batch_size: int = 1
         gradient_accumulation_steps: int = 4
@@ -500,6 +512,7 @@ def _main_sft() -> None:
         model_id=c.model_id or DEFAULT_HF_MODEL_ID,
         output_dir=out_dir,
         max_seq_length=c.max_seq_length,
+        max_steps=c.max_steps,
         per_device_train_batch_size=c.per_device_train_batch_size,
         gradient_accumulation_steps=c.gradient_accumulation_steps,
         learning_rate=c.learning_rate,
