@@ -12,6 +12,7 @@ import pickle
 import random
 import re
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -203,8 +204,69 @@ class LemmaSynthTask(EvaluationTask):
 
         return examples
 
+    def extract_one(
+        self,
+        path: str,
+        obj: Any,
+        content: str,
+        verify_hollowed: bool = True,
+    ) -> tuple[list[dict], Counter]:
+        """Extract lemma synthesis examples from a single verified program.
+
+        Returns (examples, stats).
+        """
+        examples = []
+        stats = Counter()
+
+        lemmas = find_lemmas(content)
+        stats['total_lemmas'] += len(lemmas)
+
+        for lemma in lemmas:
+            if lemma['body_is_trivial']:
+                stats['skip_trivial_body'] += 1
+                continue
+
+            hollowed = hollow_lemma(content, lemma)
+
+            if verify_hollowed:
+                try:
+                    prog = Program(hollowed, Language.DAFNY, name="hollowed")
+                    ver = prog.verify()
+                    if ver.outcome == VerificationOutcome.SUCCESS:
+                        stats['skip_still_verifies'] += 1
+                        continue
+                    notes = ver.stdout
+                    if ver.stderr:
+                        notes = f"{notes}\n\nstderr:\n{ver.stderr}"
+                except Exception:
+                    stats['skip_verification_error'] += 1
+                    continue
+            else:
+                notes = "(verification not run)"
+
+            examples.append({
+                "prompt": "lemma_synth",
+                "arguments": {
+                    "program": hollowed,
+                    "lemma_name": lemma['name'],
+                    "notes": notes,
+                },
+                "response": lemma['body'],
+                "outcome": "success",
+                "metadata": {
+                    "source": "lemma_distill",
+                    "program_path": path,
+                    "lemma_name": lemma['name'],
+                },
+            })
+            stats['examples_created'] += 1
+
+        return examples, stats
+
     def _extract_from_verified(self, source: dict) -> list[dict]:
         """Generate lemma examples by hollowing bodies from verified programs."""
+        N_THREADS = 64
+
         pickle_path = Path(source["path"])
         verify_hollowed = source.get("verify_hollowed", True)
 
@@ -224,55 +286,25 @@ class LemmaSynthTask(EvaluationTask):
             if content and 'lemma ' in content:
                 verified.append((path, obj, content))
 
-        examples = []
-        stats = Counter()
+        all_examples = []
+        total_stats = Counter()
 
-        for path, obj, content in tqdm(verified, desc="Extracting lemmas"):
-            lemmas = find_lemmas(content)
-            stats['total_lemmas'] += len(lemmas)
+        with ThreadPoolExecutor(max_workers=N_THREADS) as executor:
+            futures = {
+                executor.submit(
+                    self.extract_one, path, obj, content, verify_hollowed,
+                ): path
+                for path, obj, content in verified
+            }
+            with tqdm(total=len(futures), desc="Extracting lemmas") as pbar:
+                for future in as_completed(futures):
+                    examples, stats = future.result()
+                    all_examples.extend(examples)
+                    total_stats.update(stats)
+                    pbar.update(1)
 
-            for lemma in lemmas:
-                if lemma['body_is_trivial']:
-                    stats['skip_trivial_body'] += 1
-                    continue
-
-                hollowed = hollow_lemma(content, lemma)
-
-                if verify_hollowed:
-                    try:
-                        prog = Program(hollowed, Language.DAFNY, name="hollowed")
-                        ver = prog.verify()
-                        if ver.outcome == VerificationOutcome.SUCCESS:
-                            stats['skip_still_verifies'] += 1
-                            continue
-                        notes = ver.stdout
-                        if ver.stderr:
-                            notes = f"{notes}\n\nstderr:\n{ver.stderr}"
-                    except Exception:
-                        stats['skip_verification_error'] += 1
-                        continue
-                else:
-                    notes = "(verification not run)"
-
-                examples.append({
-                    "prompt": "lemma_synth",
-                    "arguments": {
-                        "program": hollowed,
-                        "lemma_name": lemma['name'],
-                        "notes": notes,
-                    },
-                    "response": lemma['body'],
-                    "outcome": "success",
-                    "metadata": {
-                        "source": "lemma_distill",
-                        "program_path": path,
-                        "lemma_name": lemma['name'],
-                    },
-                })
-                stats['examples_created'] += 1
-
-        logger.info(f"Lemma extraction stats: {dict(stats)}")
-        return examples
+        logger.info(f"Lemma extraction stats: {dict(total_stats)}")
+        return all_examples
 
     # ------------------------------------------------------------------
     # (b) Evaluation
