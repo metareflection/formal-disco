@@ -8,7 +8,6 @@ Migrated from: eval_lemma.py, lemma_distill.py
 """
 
 import logging
-import pickle
 import random
 import re
 from collections import Counter
@@ -20,7 +19,7 @@ from tqdm import tqdm
 
 from code_output_parser import CodeOutputParser
 from language import Language, Program, VerificationOutcome
-from distill_common import get_content, create_agenda_pickle
+from distill_common import get_content, load_verified_programs, create_agenda_pickle
 from tasks import EvaluationTask, load_pickle_source
 
 logger = logging.getLogger(__name__)
@@ -270,18 +269,12 @@ class LemmaSynthTask(EvaluationTask):
         pickle_path = Path(source["path"])
         verify_hollowed = source.get("verify_hollowed", True)
 
-        print(f"Loading {pickle_path}...", flush=True)
-        with open(pickle_path, 'rb') as f:
-            data = pickle.load(f)
-
-        objects = data['objects']
+        programs = load_verified_programs(
+            pickle_path, source.get("include_goal_unproven", False),
+        )
 
         verified = []
-        for path, obj in objects.items():
-            if obj.type != 'dafny-program':
-                continue
-            if obj.properties.get('verification_status') != 'success':
-                continue
+        for path, obj in programs:
             content = get_content(obj)
             if content and 'lemma ' in content:
                 verified.append((path, obj, content))
