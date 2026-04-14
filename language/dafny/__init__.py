@@ -289,7 +289,8 @@ def _extract_method_loop_features(source: str) -> list[dict]:
             body = full[brace_col + 1:close]
             skeleton = _build_skeleton(body, 0, len(body)) or None
             n_loops, max_depth = _skeleton_stats(skeleton)
-            results.append({'loop_skeleton': skeleton, 'n_loops': n_loops, 'max_loop_depth': max_depth})
+            n_invariants = len(_INV_RE.findall(body))
+            results.append({'loop_skeleton': skeleton, 'n_loops': n_loops, 'max_loop_depth': max_depth, 'n_invariants': n_invariants})
             i = brace_line + body.count('\n') + 1
         else:
             i += 1
@@ -373,6 +374,18 @@ def _extract_methods(source: str) -> list[dict]:
     return methods
 
 
+def _max_paren_depth(s: str) -> int:
+    """Return the maximum nesting depth of parentheses in a string."""
+    depth = max_depth = 0
+    for ch in s:
+        if ch == '(':
+            depth += 1
+            max_depth = max(max_depth, depth)
+        elif ch == ')':
+            depth -= 1
+    return max_depth
+
+
 def _extract_body_sizes(source: str) -> list[int]:
     """Return non-blank line counts for each method/function/lemma body."""
     clean = _remove_comments(source)
@@ -412,6 +425,45 @@ def _extract_body_sizes(source: str) -> list[int]:
     return sizes
 
 
+def _extract_expression_nesting_depths(source: str) -> list[int]:
+    """Return max parenthesis nesting depth for each method/function/lemma body."""
+    clean = _remove_comments(source)
+    lines = clean.split('\n')
+    depths = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _DECL_LINE_RE.match(line):
+            brace_line = brace_col = None
+            if line.rstrip().endswith('{'):
+                brace_line, brace_col = i, line.rindex('{')
+            else:
+                j = i + 1
+                while j < len(lines):
+                    ln = lines[j]
+                    if not ln.strip():
+                        j += 1
+                        continue
+                    if _is_spec_line(ln):
+                        j += 1
+                        continue
+                    if '{' in ln:
+                        brace_col = ln.index('{')
+                        brace_line = j
+                    break
+            if brace_line is None:
+                i += 1
+                continue
+            full = '\n'.join(lines[brace_line:])
+            close = _find_matching_brace(full, brace_col)
+            body = full[brace_col + 1:close]
+            depths.append(_max_paren_depth(body))
+            i = brace_line + body.count('\n') + 1
+        else:
+            i += 1
+    return depths
+
+
 class DafnyBackend(LanguageBackend):
     """Language backend for Dafny programs.
 
@@ -421,6 +473,7 @@ class DafnyBackend(LanguageBackend):
 
     _COMPLEXITY_METRICS = frozenset({
         'body_sizes', 'n_loops_per_method', 'n_idents_in_asserts', 'n_idents_in_invs',
+        'n_invs_per_method', 'highest_nesting_depth_expressions',
     })
 
     _FEATURE_METRICS = frozenset({
@@ -507,8 +560,10 @@ class DafnyBackend(LanguageBackend):
         return {
             'body_sizes': _extract_body_sizes(source),
             'n_loops_per_method': [f['n_loops'] for f in method_loop_features],
+            'n_invs_per_method': [f['n_invariants'] for f in method_loop_features],
             'n_idents_in_asserts': [len(_IDENT_RE.findall(a)) for a in asserts],
             'n_idents_in_invs': [len(_IDENT_RE.findall(inv)) for inv in invariants],
+            'highest_nesting_depth_expressions': _extract_expression_nesting_depths(source),
         }
 
     def feature_sets(self, program: 'Program') -> dict[str, Counter]:
