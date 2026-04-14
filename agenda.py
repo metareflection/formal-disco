@@ -196,6 +196,10 @@ class Agenda(Protocol):
     ) -> None:
         await self.update_task(task_id, new_notes=new_notes)
 
+    async def get_most_complex_programs(self, n: int = 3) -> list[str]:
+        """Return up to `n` program source texts, ordered by descending complexity score."""
+        return []
+
     async def claim_next_tasks(
         self,
         type: Optional[str] = None,
@@ -877,6 +881,23 @@ class LocalAgenda(Agenda):
             stats[f"complexity/{metric}-p90"] = float(np.percentile(arr, 90))
 
         return stats
+
+    async def get_most_complex_programs(self, n: int = 3) -> list[str]:
+        """Return up to `n` program source texts, ordered by descending complexity score."""
+        async with self._lock:
+            if not self._complexity_scores:
+                return []
+            ranked = sorted(self._complexity_scores, key=self._complexity_scores.get, reverse=True)
+            results = []
+            for path in ranked[:n]:
+                obj = self._objects.get(path)
+                if obj is None or obj.content is None:
+                    continue
+                try:
+                    results.append(obj.content.decode('utf-8'))
+                except Exception:
+                    continue
+            return results
 
     async def claim_next_tasks(
         self,

@@ -76,8 +76,9 @@ class Initiator(Worker):
             try:
                 # Single LLM call combining ideation and implementation.
                 # This is a simplification of the IdeaGenerator and Implementer workers.
+                complex_examples = await agenda.get_most_complex_programs(3)
                 msgs = _to_langchain_messages(
-                    self._backend.prompt_builder.initiate(repo=repo, readme=readme)
+                    self._backend.prompt_builder.initiate(repo=repo, readme=readme, complex_examples=complex_examples)
                 )
                 program_text = self._chain.invoke(msgs).strip()
 

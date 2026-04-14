@@ -61,8 +61,9 @@ class LLMImplementer(Worker):
 
                 idea_text = idea_obj.content.decode("utf-8").strip()
 
+                complex_examples = await agenda.get_most_complex_programs(3)
                 msgs = _to_langchain_messages(
-                    self._backend.prompt_builder.implement(idea=idea_text)
+                    self._backend.prompt_builder.implement(idea=idea_text, complex_examples=complex_examples)
                 )
                 program_text = self._chain.invoke(msgs).strip()
 

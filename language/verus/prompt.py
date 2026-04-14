@@ -14,7 +14,7 @@ class VerusPromptBuilder(PromptBuilder):
     passed to a chat model.
     """
 
-    def implement(self, *, idea: str) -> list[ChatMessage]:
+    def implement(self, *, idea: str, complex_examples: list[str] = ()) -> list[ChatMessage]:
         """Prompt the model to write a Verus program from a natural-language idea."""
         system = (
             "You are an expert Verus programmer. Given a short idea or specification, output a"
@@ -27,6 +27,7 @@ class VerusPromptBuilder(PromptBuilder):
             " add comments on ideas to extend the program later, too.\n"
             "The output must be valid Verus code (Rust with Verus verification annotations) and"
             " compile/verify when possible. Keep this initial program concise."
+            + self._format_complex_examples(complex_examples)
         )
         user = (
             f"Idea/specification:\n{idea}\n\n"
@@ -84,6 +85,7 @@ class VerusPromptBuilder(PromptBuilder):
         example_before: str,
         example_diff: str,
         example_after: str,
+        complex_examples: list[str] = (),
     ) -> list[ChatMessage]:
         """Prompt the model to expand or improve a Verus program using a diff."""
         system = (
@@ -103,6 +105,7 @@ class VerusPromptBuilder(PromptBuilder):
             f"Text before:\n{example_before}\n\n"
             f"Example of model output (diff in the format you must follow):\n{example_diff}\n\n"
             f"Text after:\n{example_after}"
+            + self._format_complex_examples(complex_examples)
         )
         user = (
             f"Current program:\n{program}\n\n"
@@ -117,7 +120,7 @@ class VerusPromptBuilder(PromptBuilder):
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
-    def generate(self, *, repo: str | None = None, readme: str | None = None) -> list[ChatMessage]:
+    def generate(self, *, repo: str | None = None, readme: str | None = None, complex_examples: list[str] = ()) -> list[ChatMessage]:
         """Prompt the model to generate a random Verus program, optionally inspired by a README."""
         system = (
             "You are an expert Verus programmer. Your task is to generate an interesting,"
@@ -126,6 +129,7 @@ class VerusPromptBuilder(PromptBuilder):
             " loop invariants, assertions, or proof functions as appropriate.\n"
             "Aim for variety: choose an interesting algorithmic or data-structure topic.\n"
             "Output only valid Verus source code (Rust with Verus verification annotations)."
+            + self._format_complex_examples(complex_examples)
         )
         if repo and readme:
             user = (
@@ -163,7 +167,7 @@ class VerusPromptBuilder(PromptBuilder):
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
-    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
+    def initiate(self, *, repo: str, readme: str, complex_examples: list[str] = ()) -> list[ChatMessage]:
         """Prompt the model to propose an idea and implement it as Verus code in one shot."""
         system = (
             "You are an expert Verus programmer. You will receive a GitHub repository name and"
@@ -180,6 +184,7 @@ class VerusPromptBuilder(PromptBuilder):
             " compile/verify when possible. Keep this initial program concise.\n\n"
             "Output ONLY Verus source code. Include a brief comment at the top of the program"
             " describing the idea."
+            + self._format_complex_examples(complex_examples)
         )
         user = (
             f"Repository: {repo}\n\n"

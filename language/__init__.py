@@ -51,7 +51,21 @@ class PromptBuilder:
       - extend: expand or improve a working program.
     """
 
-    def implement(self, idea: str) -> list[ChatMessage]:
+    def _format_complex_examples(self, examples: list[str]) -> str:
+        """Format complex program examples into a prompt section."""
+        if not examples:
+            return ""
+        parts = []
+        for i, ex in enumerate(examples, 1):
+            parts.append(f"--- Example {i} ---\n{ex}\n")
+        return (
+            "\n\nHere are examples of high-complexity programs from the current corpus."
+            " Use them as inspiration for the level of complexity to aim for — rich"
+            " specifications, loop invariants, nested expressions, and non-trivial"
+            " proof structure:\n\n" + "\n".join(parts)
+        )
+
+    def implement(self, idea: str, complex_examples: list[str] = ()) -> list[ChatMessage]:
         raise NotImplementedError
 
     def repair(
@@ -70,17 +84,18 @@ class PromptBuilder:
         example_before: str,
         example_diff: str,
         example_after: str,
+        complex_examples: list[str] = (),
     ) -> list[ChatMessage]:
         raise NotImplementedError
 
     def idea(self, repo: str, readme: str) -> list[ChatMessage]:
         raise NotImplementedError
 
-    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
+    def initiate(self, *, repo: str, readme: str, complex_examples: list[str] = ()) -> list[ChatMessage]:
         """Prompt the model to come up with an idea and implement it in one shot."""
         raise NotImplementedError
 
-    def generate(self, *, repo: str | None = None, readme: str | None = None) -> list[ChatMessage]:
+    def generate(self, *, repo: str | None = None, readme: str | None = None, complex_examples: list[str] = ()) -> list[ChatMessage]:
         """Prompt the model to generate a random program, optionally inspired by a README."""
         raise NotImplementedError
 

@@ -55,12 +55,14 @@ class EditorWorker(Worker):
 
                 prog_text = prog_obj.content.decode("utf-8")
 
+                complex_examples = await agenda.get_most_complex_programs(3)
                 msgs = _to_langchain_messages(
                     self._backend.prompt_builder.extend(
                         program=prog_text,
                         example_before=TEXT_BEFORE_EXAMPLE,
                         example_diff=TEXT_DIFF_EXAMPLE,
                         example_after=TEXT_AFTER_EXAMPLE,
+                        complex_examples=complex_examples,
                     )
                 )
                 diff_text = self._chain.invoke(msgs).strip()
