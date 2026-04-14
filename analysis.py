@@ -2,6 +2,7 @@
 """Compare multiple agenda runs: success rates and diversity/complexity metrics."""
 
 import argparse
+import json
 import pickle
 import sys
 from collections import Counter
@@ -10,6 +11,9 @@ from pathlib import Path
 import numpy as np
 
 from language import Language, Program
+
+PLOTS_CONFIG_PATH = Path(__file__).parent / "plots.config.json"
+PLOTS_DIR = Path(__file__).parent / "plots"
 
 
 def load_agenda(path: str) -> dict:
@@ -375,10 +379,6 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
     print()
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def load_dafnybench(directory: str) -> dict:
     """Load .dfy files from a directory into a fake agenda dict for metrics."""
     from types import SimpleNamespace
@@ -395,23 +395,329 @@ def load_dafnybench(directory: str) -> dict:
     return {"objects": objects, "tasks": {}, "status": {}}
 
 
+def load_plots_config() -> dict:
+    if PLOTS_CONFIG_PATH.exists():
+        with open(PLOTS_CONFIG_PATH) as f:
+            return json.load(f)
+    return {}
+
+
+def get_run_name(config: dict, path: str) -> str:
+    """Get user-readable name for an agenda file, falling back to run_label."""
+    name_map = config.get("run_name", {})
+    basename = Path(path).name
+    if basename in name_map:
+        return name_map[basename]
+    stem = Path(path).stem
+    if stem in name_map:
+        return name_map[stem]
+    return run_label(path)
+
+
+def save_chart(chart, name: str) -> None:
+    """Save an Altair chart as both .svg and .png in the plots directory."""
+    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    svg_path = PLOTS_DIR / f"{name}.svg"
+    png_path = PLOTS_DIR / f"{name}.png"
+    chart.save(str(svg_path), format="svg")
+    chart.save(str(png_path), format="png", scale_factor=2)
+    print(f"Saved {svg_path}")
+    print(f"Saved {png_path}")
+
+
+# ---------------------------------------------------------------------------
+# Plot: Task Success Rates
+# ---------------------------------------------------------------------------
+
+def plot_task_success_rates(agenda_paths: list[str]) -> None:
+    import altair as alt
+
+    config = load_plots_config()
+    rows = []
+
+    for path in agenda_paths:
+        label = get_run_name(config, path)
+        agenda = load_agenda(path)
+        task_outcomes = agenda.get("task_outcomes", {})
+
+        for task_type, outcomes in task_outcomes.items():
+            done = outcomes.get("DONE", 0)
+            failed = outcomes.get("FAILED", 0)
+            attempted = outcomes.get("ATTEMPTED", 0)
+            total = done + failed + attempted
+            if total == 0:
+                continue
+            rate = done / total
+            # 95% CI using Wilson score interval
+            z = 1.96
+            denom = 1 + z**2 / total
+            center = (rate + z**2 / (2 * total)) / denom
+            margin = z * np.sqrt((rate * (1 - rate) + z**2 / (4 * total)) / total) / denom
+            ci_lo = max(0, center - margin)
+            ci_hi = min(1, center + margin)
+            rows.append({
+                "Task Type": task_type,
+                "Run": label,
+                "Success Rate": rate,
+                "CI Low": ci_lo,
+                "CI High": ci_hi,
+                "n": total,
+            })
+
+    if not rows:
+        print("No task outcome data found in the provided agendas.")
+        return
+
+    df = alt.Data(values=rows)
+
+    base = alt.Chart(df).properties(width=120)
+
+    bars = base.mark_bar().encode(
+        x=alt.X("Run:N", axis=None),
+        y=alt.Y("Success Rate:Q", scale=alt.Scale(domain=[0, 1])),
+        color=alt.Color("Run:N", title="Run"),
+    )
+
+    error_bars = base.mark_errorbar(color="black").encode(
+        x=alt.X("Run:N", axis=None),
+        y=alt.Y("CI Low:Q", title="Success Rate"),
+        y2=alt.Y2("CI High:Q"),
+    )
+
+    chart = (bars + error_bars).facet(
+        column=alt.Column("Task Type:N", title="Task Type"),
+        spacing=10,
+    ).properties(
+        title="Task Success Rates by Run",
+    )
+
+    save_chart(chart, "task-success-rate")
+
+
+# ---------------------------------------------------------------------------
+# Helpers: extract verified programs (longest per source idea)
+# ---------------------------------------------------------------------------
+
+def _extract_verified_programs(agenda: dict, language: Language) -> list[Program]:
+    """Extract verified programs from an agenda, keeping the longest per source idea.
+
+    Each dataset/ object traces back to a programs/ parent (the original init-prog).
+    When multiple dataset entries share the same root parent, keep the longest.
+    Only includes programs with verification_outcome == 'SUCCESS'.
+    """
+    objs = agenda["objects"]
+
+    # Group dataset/ objects by their root parent (the init-prog)
+    by_root: dict[str, list] = {}
+    for key, obj in objs.items():
+        if not key.startswith("dataset/"):
+            continue
+        vo = obj.properties.get("verification_outcome", obj.properties.get("verification_status", ""))
+        if str(vo).upper() != "SUCCESS" and vo != "success":
+            continue
+        root = obj.parents[0] if obj.parents else key
+        text = obj.content.decode("utf-8") if isinstance(obj.content, bytes) else obj.content
+        by_root.setdefault(root, []).append(text)
+
+    # Keep the longest per root
+    programs = []
+    for root, texts in by_root.items():
+        longest = max(texts, key=len)
+        programs.append(Program(longest, language))
+    return programs
+
+
+# ---------------------------------------------------------------------------
+# Plot: Program Complexity
+# ---------------------------------------------------------------------------
+
+def plot_program_complexity(agenda_paths: list[str], language: Language) -> None:
+    import altair as alt
+
+    config = load_plots_config()
+    backend = language.get_backend()
+    rows = []
+
+    for path in agenda_paths:
+        label = get_run_name(config, path)
+        agenda = load_agenda(path)
+        programs = _extract_verified_programs(agenda, language)
+        print(f"  {label}: {len(programs)} verified programs")
+
+        for prog in programs:
+            try:
+                cx = backend.complexity(prog)
+            except Exception:
+                continue
+            for metric, values in cx.items():
+                if not values:
+                    continue
+                rows.append({
+                    "Run": label,
+                    "Metric": metric,
+                    "Value": float(np.mean(values)),
+                })
+
+    if not rows:
+        print("No complexity data found.")
+        return
+
+    df = alt.Data(values=rows)
+
+    chart = alt.Chart(df).mark_boxplot(extent="min-max").encode(
+        x=alt.X("Run:N", axis=None),
+        y=alt.Y("Value:Q"),
+        color=alt.Color("Run:N", title="Run"),
+    ).properties(
+        width=120,
+    ).facet(
+        column=alt.Column("Metric:N", title="Complexity Metric"),
+        spacing=10,
+    ).resolve_scale(
+        y="independent",
+    ).properties(
+        title="Program Complexity (per-program mean, verified programs)",
+    )
+
+    save_chart(chart, "program-complexity")
+
+
+# ---------------------------------------------------------------------------
+# Plot: Program Diversity
+# ---------------------------------------------------------------------------
+
+def plot_program_diversity(agenda_paths: list[str], language: Language) -> None:
+    import altair as alt
+
+    config = load_plots_config()
+    backend = language.get_backend()
+
+    # For diversity we compute corpus-level entropy and unique-count per feature type.
+    # We'll show two sub-plots: entropy (bits) and unique feature count.
+    entropy_rows = []
+    unique_rows = []
+
+    for path in agenda_paths:
+        label = get_run_name(config, path)
+        agenda = load_agenda(path)
+        programs = _extract_verified_programs(agenda, language)
+        print(f"  {label}: {len(programs)} verified programs")
+
+        pooled: dict[str, Counter] = {}
+        for prog in programs:
+            try:
+                ft = backend.feature_sets(prog)
+            except Exception:
+                continue
+            for metric, counter in ft.items():
+                pooled.setdefault(metric, Counter()).update(counter)
+
+        for metric, counter in pooled.items():
+            entropy_rows.append({
+                "Run": label,
+                "Feature": metric,
+                "Entropy (bits)": _entropy(counter),
+            })
+            unique_rows.append({
+                "Run": label,
+                "Feature": metric,
+                "Unique Features": len(counter),
+            })
+
+    if not entropy_rows:
+        print("No diversity data found.")
+        return
+
+    # Entropy chart
+    df_ent = alt.Data(values=entropy_rows)
+    chart_ent = alt.Chart(df_ent).mark_bar().encode(
+        x=alt.X("Run:N", axis=None),
+        y=alt.Y("Entropy (bits):Q"),
+        color=alt.Color("Run:N", title="Run"),
+    ).properties(width=120).facet(
+        column=alt.Column("Feature:N", title="Feature"),
+        spacing=10,
+    ).resolve_scale(y="independent").properties(
+        title="Program Diversity: Entropy (verified programs, longest per idea)",
+    )
+    save_chart(chart_ent, "program-diversity-entropy")
+
+    # Unique count chart
+    df_uniq = alt.Data(values=unique_rows)
+    chart_uniq = alt.Chart(df_uniq).mark_bar().encode(
+        x=alt.X("Run:N", axis=None),
+        y=alt.Y("Unique Features:Q"),
+        color=alt.Color("Run:N", title="Run"),
+    ).properties(width=120).facet(
+        column=alt.Column("Feature:N", title="Feature"),
+        spacing=10,
+    ).resolve_scale(y="independent").properties(
+        title="Program Diversity: Unique Features (verified programs, longest per idea)",
+    )
+    save_chart(chart_uniq, "program-diversity-unique")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
 def main():
     parser = argparse.ArgumentParser(description="Compare agenda runs.")
-    parser.add_argument("agendas", nargs="*", help="Paths to agenda .pkl files")
-    parser.add_argument(
+    subparsers = parser.add_subparsers(dest="command")
+
+    # tables (default / legacy mode)
+    p_tables = subparsers.add_parser("tables", help="Print comparison tables (default)")
+    p_tables.add_argument("agendas", nargs="*", help="Paths to agenda .pkl files")
+    p_tables.add_argument(
         "--dafnybench",
         metavar="DIR",
         default=None,
-        help="Path to DafnyBench ground_truth directory (e.g. data/DafnyBench/DafnyBench/dataset/ground_truth/)",
+        help="Path to DafnyBench ground_truth directory",
     )
+
+    # plot-task-success-rates
+    p_tsr = subparsers.add_parser("plot-task-success-rates",
+                                  help="Bar chart of success rates per task type")
+    p_tsr.add_argument("agendas", nargs="+", help="Paths to agenda .pkl files")
+
+    # plot-program-complexity
+    p_cx = subparsers.add_parser("plot-program-complexity",
+                                 help="Box plot of complexity metrics per run")
+    p_cx.add_argument("agendas", nargs="+", help="Paths to agenda .pkl files")
+    p_cx.add_argument("--language", default="dafny", help="Language (default: dafny)")
+
+    # plot-program-diversity
+    p_div = subparsers.add_parser("plot-program-diversity",
+                                  help="Bar charts of diversity metrics per run")
+    p_div.add_argument("agendas", nargs="+", help="Paths to agenda .pkl files")
+    p_div.add_argument("--language", default="dafny", help="Language (default: dafny)")
+
     args = parser.parse_args()
 
-    if not args.agendas and not args.dafnybench:
+    # Default to "tables" when no subcommand given (legacy behavior)
+    if args.command is None:
+        args = p_tables.parse_args(sys.argv[1:])
+        args.command = "tables"
+
+    if args.command == "plot-task-success-rates":
+        plot_task_success_rates(args.agendas)
+        return
+
+    if args.command in ("plot-program-complexity", "plot-program-diversity"):
+        lang = Language[args.language.upper()]
+        if args.command == "plot-program-complexity":
+            plot_program_complexity(args.agendas, lang)
+        else:
+            plot_program_diversity(args.agendas, lang)
+        return
+
+    # tables mode
+    if not args.agendas and not getattr(args, "dafnybench", None):
         parser.error("Provide at least one agenda .pkl file or --dafnybench DIR")
 
     agendas: dict[str, dict] = {}
 
-    if args.dafnybench:
+    if getattr(args, "dafnybench", None):
         agendas["DafnyBench"] = load_dafnybench(args.dafnybench)
         n = len([k for k in agendas["DafnyBench"]["objects"] if k.startswith("dataset/")])
         print(f"Loaded {n} programs from DafnyBench ({args.dafnybench})")

@@ -115,9 +115,13 @@ def load_verified_programs(
     print(f"Including verification statuses: {valid_statuses}", flush=True)
 
     verified = []
-    for path, obj in data.get('dataset', {}).items():
+    for path, obj in data.get('objects', {}).items():
+        if not path.startswith('dataset/'):
+            continue
+
         if obj.type != program_type:
             continue
+
         ver_status = obj.properties.get('verification_status')
         if ver_status in valid_statuses:
             verified.append((path, obj))
@@ -145,8 +149,6 @@ def remove_hints(program: str, min_hints: int = 1, lam: float = 2) -> tuple[str,
     lines = program.splitlines(keepends=True)
     result_lines = []
     hint_lines = []
-
-    hints_removed = 0
 
     for i, line in enumerate(lines):
         stripped = line.strip()

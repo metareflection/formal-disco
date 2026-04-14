@@ -7,17 +7,6 @@ standard tasks: implement, repair, extend, and idea generation.
 from .. import ChatMessage, PromptBuilder
 
 
-_VERUS_RULES = (
-    "IMPORTANT Verus rules:\n"
-    "- Always start with `use vstd::prelude::*;`. Never use `use builtin::*;` or"
-    " `use builtin_macros::*;`.\n"
-    "- `nat` and `int` are ghost types — they can ONLY be used in `spec` and `proof`"
-    " functions, not in `exec` functions. Use `u64`, `usize`, etc. in exec code.\n"
-    "- Wrap all Verus code in a `verus! { ... }` macro invocation.\n"
-    "- Do not call nonexistent methods on vstd types. Consult the actual vstd API."
-)
-
-
 class VerusPromptBuilder(PromptBuilder):
     """Builds chat prompts for Verus-specific LLM tasks.
 
@@ -37,8 +26,7 @@ class VerusPromptBuilder(PromptBuilder):
             "Start with e.g. a few functions at most, or prove a basic lemma, etc. You can also"
             " add comments on ideas to extend the program later, too.\n"
             "The output must be valid Verus code (Rust with Verus verification annotations) and"
-            " compile/verify when possible. Keep this initial program concise.\n\n"
-            f"{_VERUS_RULES}\n"
+            " compile/verify when possible. Keep this initial program concise."
         )
         user = (
             f"Idea/specification:\n{idea}\n\n"
@@ -85,8 +73,7 @@ class VerusPromptBuilder(PromptBuilder):
             " these errors might require various kinds of changes, such as fixing the syntax,"
             " fixing the implementation of a function, adding new proof annotations (e.g."
             " assert, invariant, decreases clauses, proof blocks, etc), introducing new proof"
-            " functions that help prove existing assertions, or other changes.\n\n"
-            f"{_VERUS_RULES}\n"
+            " functions that help prove existing assertions, or other changes.\n"
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -138,8 +125,7 @@ class VerusPromptBuilder(PromptBuilder):
             "The program should include meaningful specifications: preconditions, postconditions,"
             " loop invariants, assertions, or proof functions as appropriate.\n"
             "Aim for variety: choose an interesting algorithmic or data-structure topic.\n"
-            f"Output only valid Verus source code (Rust with Verus verification annotations).\n\n"
-            f"{_VERUS_RULES}"
+            "Output only valid Verus source code (Rust with Verus verification annotations)."
         )
         if repo and readme:
             user = (
@@ -168,13 +154,38 @@ class VerusPromptBuilder(PromptBuilder):
             " verify the program (i.e. prove post-conditions or verify assertions/invariants).\n"
             "Your job is to produce a COMPLETE, CORRECTED version of the program.\n"
             "Output the full repaired Verus program, not a diff or partial fix.\n"
-            f"The output must be valid Verus code.\n\n"
-            f"{_VERUS_RULES}"
+            "The output must be valid Verus code."
         )
         user = (
             f"Program:\n{program}\n\n"
             f"Verifier output:\n{notes}\n\n"
             "Produce the full corrected Verus program. Fix all errors shown above."
+        )
+        return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
+        """Prompt the model to propose an idea and implement it as Verus code in one shot."""
+        system = (
+            "You are an expert Verus programmer. You will receive a GitHub repository name and"
+            " its README. Your task is to:\n"
+            "1. Come up with a concise idea for a Verus program inspired by the repository's theme."
+            " The repository is most likely unrelated to verified programming, so freely adapt or"
+            " reinterpret its theme.\n"
+            "2. Immediately implement that idea as a self-contained Verus program.\n\n"
+            "Your program should NOT try to implement the entire idea, which is likely to be"
+            " overly ambitious to write in one go.\n"
+            "Start with e.g. a few functions at most, or prove a basic lemma, etc. You can also"
+            " add comments on ideas to extend the program later.\n"
+            "The output must be valid Verus code (Rust with Verus verification annotations) and"
+            " compile/verify when possible. Keep this initial program concise.\n\n"
+            "Output ONLY Verus source code. Include a brief comment at the top of the program"
+            " describing the idea."
+        )
+        user = (
+            f"Repository: {repo}\n\n"
+            f"README:\n{readme}\n\n"
+            "Come up with an idea for a Verus program inspired by this repository and implement it."
+            " Output only Verus source code."
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 

@@ -4,7 +4,8 @@ Fixer task: repair broken Dafny programs via iterative LLM-guided diff applicati
 
 Supports two data sources:
   - dfy glob: load .dfy files, filter to those that don't verify, get errors
-  - pickle: load repair examples from distillation pickles
+  - pickle: (1) load repair examples from distillation pickles,
+        and (2) extract new examples by stripping hints from complete verified programs
 
 Migrated from: eval_fixer.py, eval_fixer_indist.py, fixer_distill.py
 """
@@ -13,6 +14,7 @@ import json
 import logging
 import os
 import random
+import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -22,13 +24,15 @@ from tqdm import tqdm
 
 from code_output_parser import CodeOutputParser
 from language import Language, Program, VerificationOutcome
-from patch import apply_text_diff, TEXT_DIFF_EXAMPLE, TEXT_BEFORE_EXAMPLE, TEXT_AFTER_EXAMPLE
+from patch import apply_text_diff, compute_text_diff, TEXT_DIFF_EXAMPLE, TEXT_BEFORE_EXAMPLE, TEXT_AFTER_EXAMPLE
 from distill_common import (
-    remove_hints, compute_text_diff, get_dafny_errors,
+    remove_hints, get_dafny_errors,
     load_verified_programs, get_content, create_agenda_pickle,
 )
 from tasks import EvaluationTask, load_pickle_source, load_dfy_source, _to_langchain_messages
 
+# FIXME: For now this file only supports Dafny.
+# For Verus, we'll have to either generalize it or have separate fixer_dafny and fixer_verus.
 _backend = Language.DAFNY.get_backend()
 
 logger = logging.getLogger(__name__)
@@ -119,7 +123,7 @@ class FixerTask(EvaluationTask):
         original_program, trivial_diff = True, False
 
         while True:
-            stripped_program, num_hints = remove_hints(program_content)
+            stripped_program, num_hints = _remove_hints(program_content)
 
             if num_hints < min_hints:
                 if original_program:
@@ -131,9 +135,7 @@ class FixerTask(EvaluationTask):
                     prog = Program(stripped_program, Language.DAFNY, name="stripped")
                     ver = prog.verify()
                     trivial_diff = (ver.outcome == VerificationOutcome.SUCCESS)
-                    notes = ver.stdout
-                    if ver.stderr:
-                        notes = f"{notes}\n\nstderr:\n{ver.stderr}"
+                    notes = f"Verifier stdout:\n{ver.stdout}\n\nVerifier stderr:\n{ver.stderr}\n"
                 except Exception:
                     stats['skip_verification_error'] += 1
                     continue
@@ -143,6 +145,12 @@ class FixerTask(EvaluationTask):
             if not trivial_diff:
                 assert stripped_program != program_content
                 diff = compute_text_diff(stripped_program, program_content)
+
+                print("Stripped program:", stripped_program)
+                print("Diff:", diff)
+                reconstructed = apply_text_diff(stripped_program, diff)
+                print("Diff to original program:", compute_text_diff(reconstructed, program_content))
+
                 assert apply_text_diff(stripped_program, diff) == program_content
 
                 ver_status = obj.properties.get('verification_status', 'success')
@@ -153,7 +161,7 @@ class FixerTask(EvaluationTask):
                     "response": diff,
                     "outcome": ver_status,
                     "metadata": {
-                        "source": "fixer_distill",
+                        "source": "fixer_extract",
                         "program_path": path,
                         "hints_removed": num_hints,
                     },
@@ -166,7 +174,7 @@ class FixerTask(EvaluationTask):
 
     def _extract_from_verified(self, source: dict) -> list[dict]:
         """Generate fixer examples by removing hints from verified programs."""
-        N_THREADS = 32
+        N_THREADS = 64
 
         pickle_path = Path(source["path"])
         min_hints = source.get("min_hints", 1)
@@ -365,3 +373,58 @@ class FixerTask(EvaluationTask):
             example_after=TEXT_AFTER_EXAMPLE,
         )
         return {"messages": messages, "completion": str(response)}
+
+
+_HINT_LINE_RE = re.compile(
+    r'^\s*(?:invariant\b|assert[\s(]|decreases\b)'
+)
+
+
+def _find_hint_lines(lines: list[str], body_begin: int, body_end: int) -> list[int]:
+    """Return line indices of hint lines (assert, invariant, decreases) within a method body."""
+    # Scan lines strictly inside the body (between the opening and closing braces).
+    # body_begin is the declaration line and body_end is the closing brace line.
+    return [
+        i for i in range(body_begin + 1, body_end)
+        if _HINT_LINE_RE.match(lines[i])
+    ]
+
+
+def _remove_hints(program: str, lam: float = 1/2) -> tuple[str, int]:
+    """Remove hints (invariants, assertions, decreases) from a Dafny program.
+
+    Targets the last method that has both a non-empty specification (ensures clauses)
+    and hints in its body. Removes K hints from the end of that method's
+    hint list, where K = min(n_hints, 1 + Exp(lam)).
+
+    Returns (stripped_program, num_hints_removed). If no suitable method is
+    found, returns the original program unchanged with 0 hints removed.
+    """
+    lines = program.splitlines(keepends=True)
+    methods = _backend.extract_methods(program)
+
+    # 1- Find last method that (a) has a non-empty specification (> 0 ensures clauses),
+    #    and (b) has hints in the body (assertions, invariants, decreases).
+    target_hints = None
+
+    for method in reversed(methods):
+        if not method['ensures']:
+            continue
+        hint_lines = _find_hint_lines(lines, method['body_begin'], method['body_end'])
+        if hint_lines:
+            target_hints = hint_lines
+            break
+
+    if not target_hints:
+        return program, 0
+
+    # 2- Decide number of last K hints to remove.
+    # At least 1, plus an exponentially-distributed number, capped at total hints.
+    n_remove = min(len(target_hints), 1 + int(random.expovariate(lam)))
+
+    # Remove from the end so that we strip the deepest/latest hints first.
+    removed = set(target_hints[-n_remove:])
+
+    # 3- Remove hints and return new program text and number of hints removed.
+    result_lines = [line for i, line in enumerate(lines) if i not in removed]
+    return ''.join(result_lines), n_remove

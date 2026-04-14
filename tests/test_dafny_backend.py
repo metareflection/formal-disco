@@ -371,6 +371,197 @@ class TestStrip:
         assert b.feature_sets(prog) == b.feature_sets(stripped)
 
 
+class TestExtractMethods:
+    """Tests for extract_methods — spec clauses and line numbers."""
+
+    def test_basic_requires_ensures(self):
+        source = (
+            "method Foo(x: int) returns (r: int)\n"
+            "  requires x > 0\n"
+            "  ensures r > x\n"
+            "{\n"
+            "  r := x + 1;\n"
+            "}\n"
+        )
+        methods = backend().extract_methods(Program(source, Language.DAFNY))
+        assert len(methods) == 1
+        m = methods[0]
+        assert m['name'] == 'Foo'
+        assert m['requires'] == ['x > 0']
+        assert m['ensures'] == ['r > x']
+
+    def test_multiple_requires(self):
+        source = (
+            "method Bar(a: int, b: int) returns (r: int)\n"
+            "  requires a > 0\n"
+            "  requires b > 0\n"
+            "  ensures r == a + b\n"
+            "{\n"
+            "  r := a + b;\n"
+            "}\n"
+        )
+        methods = backend().extract_methods(Program(source, Language.DAFNY))
+        m = methods[0]
+        assert m['requires'] == ['a > 0', 'b > 0']
+        assert m['ensures'] == ['r == a + b']
+
+    def test_multiline_requires(self):
+        source = (
+            "method Search(a: array<int>, target: int) returns (idx: int)\n"
+            "  requires forall i :: 0 <= i < a.Length\n"
+            "             ==> a[i] >= 0\n"
+            "  ensures idx >= 0 ==> a[idx] == target\n"
+            "{\n"
+            "  idx := -1;\n"
+            "}\n"
+        )
+        methods = backend().extract_methods(Program(source, Language.DAFNY))
+        m = methods[0]
+        assert len(m['requires']) == 1
+        assert '==>' in m['requires'][0]
+        assert 'a[i] >= 0' in m['requires'][0]
+        assert len(m['ensures']) == 1
+
+    def test_no_specs(self):
+        source = "method NoSpec() {\n  var x := 1;\n}\n"
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        assert m['requires'] == []
+        assert m['ensures'] == []
+
+    def test_body_begin_end_simple(self):
+        source = (
+            "method Foo() {\n"   # line 0
+            "  var x := 1;\n"    # line 1
+            "}\n"                # line 2
+        )
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        assert m['body_begin'] == 0
+        assert m['body_end'] == 2
+
+    def test_body_begin_end_with_specs(self):
+        source = (
+            "// comment\n"                           # line 0
+            "method Sum(n: int) returns (s: int)\n"  # line 1
+            "  requires n >= 0\n"                     # line 2
+            "  ensures s >= 0\n"                      # line 3
+            "{\n"                                     # line 4
+            "  s := 0;\n"                             # line 5
+            "}\n"                                     # line 6
+        )
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        assert m['body_begin'] == 1
+        assert m['body_end'] == 6
+
+    def test_body_begin_end_multiple_methods(self):
+        source = (
+            "method A() {\n"              # line 0
+            "  var x := 1;\n"             # line 1
+            "  assert x == 1;\n"          # line 2
+            "  assert x > 0;\n"           # line 3
+            "}\n"                         # line 4
+            "\n"                          # line 5
+            "method B(n: int)\n"          # line 6
+            "  requires n > 0\n"          # line 7
+            "  ensures true\n"            # line 8
+            "{\n"                         # line 9
+            "  var y := 2;\n"             # line 10
+            "}\n"                         # line 11
+        )
+        methods = backend().extract_methods(Program(source, Language.DAFNY))
+        assert len(methods) == 2
+        # A: no specs, two assertions
+        assert methods[0]['body_begin'] == 0
+        assert methods[0]['body_end'] == 4
+        assert methods[0]['requires'] == []
+        assert methods[0]['ensures'] == []
+        assert methods[0]['assertions'] == 2
+        # B: has specs, no assertions
+        assert methods[1]['body_begin'] == 6
+        assert methods[1]['body_end'] == 11
+        assert methods[1]['requires'] == ['n > 0']
+        assert methods[1]['ensures'] == ['true']
+        assert methods[1]['assertions'] == 0
+
+    def test_lemma_has_specs(self):
+        source = (
+            "lemma AddCommutes(a: int, b: int)\n"
+            "  ensures a + b == b + a\n"
+            "{\n"
+            "}\n"
+        )
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        assert m['name'] == 'AddCommutes'
+        assert m['ensures'] == ['a + b == b + a']
+        assert m['requires'] == []
+
+    def test_brace_on_same_line(self):
+        source = "method Inline(x: int) requires x > 0 {\n  var y := x;\n}\n"
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        assert m['requires'] == ['x > 0']
+        assert m['body_begin'] == 0
+        assert m['body_end'] == 2
+
+    def test_multiline_ensures(self):
+        source = (
+            "function Interp(e: Expr): int\n"
+            "  ensures Interp(e) >= 0\n"
+            "         && Interp(e) < 100\n"
+            "{\n"
+            "  0\n"
+            "}\n"
+        )
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        assert len(m['ensures']) == 1
+        assert '&& Interp(e) < 100' in m['ensures'][0]
+
+    def test_decreases_clause(self):
+        source = (
+            "method CountDown(n: nat)\n"
+            "  requires n >= 0\n"
+            "  decreases n\n"
+            "{\n"
+            "}\n"
+        )
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        assert m['decreases'] == ['n']
+        assert m['requires'] == ['n >= 0']
+
+    def test_reads_clause(self):
+        source = (
+            "function ReadArr(a: array<int>): int\n"
+            "  reads a\n"
+            "  requires a.Length > 0\n"
+            "{\n"
+            "  a[0]\n"
+            "}\n"
+        )
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        assert m['reads'] == ['a']
+        assert m['requires'] == ['a.Length > 0']
+
+    def test_modifies_clause(self):
+        source = (
+            "method Mutate(a: array<int>)\n"
+            "  requires a.Length > 0\n"
+            "  modifies a\n"
+            "  ensures a[0] == 42\n"
+            "{\n"
+            "  a[0] := 42;\n"
+            "}\n"
+        )
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        assert m['modifies'] == ['a']
+        assert m['requires'] == ['a.Length > 0']
+        assert m['ensures'] == ['a[0] == 42']
+
+    def test_all_spec_clauses_present_in_output(self):
+        source = "method X() {\n}\n"
+        m = backend().extract_methods(Program(source, Language.DAFNY))[0]
+        for kw in ('requires', 'ensures', 'decreases', 'reads', 'modifies'):
+            assert kw in m, f"missing key: {kw}"
+            assert m[kw] == []
+
+
 class TestBackendMetadata:
     """Backend registration and metric-set membership."""
 
