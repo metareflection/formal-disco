@@ -262,43 +262,36 @@ class FixerTask(EvaluationTask):
 
         args = example.get("arguments", example)
         program = args.get("program", "")
-        notes = args.get("notes", "")
         name = (
             example.get("metadata", {}).get("program_name")
             or example.get("metadata", {}).get("program_path", "program")
         )
 
-        return self._fix(
-            llm, program, name,
-            initial_notes=notes,
-        )
+        return self._fix(llm, program, name)
 
     def _fix(
         self,
         llm: Any,
         prog_text: str,
         program_name: str,
-        initial_notes: str = "",
     ) -> dict:
         """Iterative repair loop."""
         current_text = prog_text
         interaction_log = []
-        ver_notes = initial_notes
         ver = None
 
-        # Get initial verification if no notes provided
-        if not ver_notes:
-            prog = Program(current_text, Language.DAFNY, name=program_name)
-            ver = prog.verify()
-            if ver.outcome == VerificationOutcome.SUCCESS:
-                return {
-                    "success": True,
-                    "program_name": program_name,
-                    "num_attempts": 0,
-                    "verification_outcome": "SUCCESS",
-                    "final_program": current_text,
-                }
-            ver_notes = f"Output of dafny verify on this program:\nstdout:\n{ver.stdout}\n\nstderr:\n{ver.stderr}\n"
+        # Always run verify() to get fresh output, matching extract_one behavior.
+        prog = Program(current_text, Language.DAFNY, name=program_name)
+        ver = prog.verify()
+        if ver.outcome == VerificationOutcome.SUCCESS:
+            return {
+                "success": True,
+                "program_name": program_name,
+                "num_attempts": 0,
+                "verification_outcome": "SUCCESS",
+                "final_program": current_text,
+            }
+        ver_notes = f"Verifier stdout:\n{ver.stdout}\n\nVerifier stderr:\n{ver.stderr}\n"
 
         for attempt in range(self.max_attempts):
             if self.verbose:
@@ -331,10 +324,8 @@ class FixerTask(EvaluationTask):
             repaired_prog = Program(repaired_text, Language.DAFNY, name=program_name)
             ver = repaired_prog.verify()
 
-            current_text = repaired_text
-            ver_notes = f"Output of dafny verify on this program:\nstdout:\n{ver.stdout}\n\nstderr:\n{ver.stderr}\n"
-
-            interaction_log.append({**interaction, 'result': repaired_text, 'result_notes': ver_notes})
+            result_notes = f"Verifier stdout:\n{ver.stdout}\n\nVerifier stderr:\n{ver.stderr}\n"
+            interaction_log.append({**interaction, 'result': repaired_text, 'result_notes': result_notes})
 
             if ver.outcome == VerificationOutcome.SUCCESS:
                 return {
@@ -342,13 +333,16 @@ class FixerTask(EvaluationTask):
                     "program_name": program_name,
                     "num_attempts": attempt + 1,
                     "verification_outcome": "SUCCESS",
-                    "final_program": current_text,
+                    "final_program": repaired_text,
                     "interaction_log": interaction_log,
                 }
 
-            # If GOAL_UNPROVEN, we can safely apply the diff and keep iterating.
+            # Only keep the diff if GOAL_UNPROVEN (valid program, just missing
+            # annotations). Discard if FAIL (syntax error, etc.) so we don't
+            # compound errors on the next attempt.
             if ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
                 current_text = repaired_text
+                ver_notes = result_notes
 
         return {
             "success": False,
