@@ -178,6 +178,15 @@ def build_sft_records(
             return _pb.idea(repo=args.get("repo", ""), readme=args.get("readme", ""))
         elif kind == "initiate":
             return _pb.initiate(repo=args.get("repo", ""), readme=args.get("readme", ""))
+        elif kind == "lemma_synth":
+            return [
+                {"role": "system", "content": LEMMA_SYNTH_SYSTEM_PROMPT},
+                {"role": "user", "content": format_lemma_synth_user_prompt(
+                    program=args["program"],
+                    lemma_name=args["lemma_name"],
+                    notes=args["notes"],
+                )},
+            ]
         else:
             return []
 
