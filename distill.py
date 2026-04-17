@@ -20,7 +20,7 @@ import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Optional
 
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
@@ -142,6 +142,7 @@ def build_sft_records(
     pickle_paths: list[str | Path],
     success_only: bool,
     outcome_success_values: tuple[str, ...] = ("success",),
+    language: str = "dafny",
 ) -> tuple[list[dict[str, str]], Counter[str]]:
     """Build TRL/HF records for chat-style SFT.
 
@@ -159,9 +160,8 @@ def build_sft_records(
     """
     from language import Language
     from patch import TEXT_BEFORE_EXAMPLE, TEXT_DIFF_EXAMPLE, TEXT_AFTER_EXAMPLE
-    from tasks.lemma_synth import SYSTEM_PROMPT as LEMMA_SYNTH_SYSTEM_PROMPT
-    from tasks.lemma_synth import format_user_prompt as format_lemma_synth_user_prompt
-    _pb = Language.DAFNY.get_backend().prompt_builder
+
+    _pb = Language[language.upper()].get_backend().prompt_builder
 
     def reconstruct_chat_messages(kind, args, example_before, example_diff, example_after):
         if kind == "implement":
@@ -310,6 +310,7 @@ def _train_with_trl(
     model_id: str,
     output_dir: str,
     max_seq_length: int,
+    max_steps: int,
     per_device_train_batch_size: int,
     gradient_accumulation_steps: int,
     learning_rate: float,
@@ -336,6 +337,10 @@ def _train_with_trl(
     """
     import os
 
+    checkpoint_exists = any(p.startswith('checkpoint-')
+                            for p in ((os.path.exists(output_dir) and os.listdir(output_dir)) or []))
+    print(f'Checkpoint in {output_dir} exists?', checkpoint_exists)
+
     if use_wandb:
         os.environ.setdefault("WANDB_PROJECT", wandb_project or "formal-disco")
         if wandb_run_name:
@@ -356,7 +361,8 @@ def _train_with_trl(
         model_id,
         torch_dtype=torch.bfloat16,
         attn_implementation="kernels-community/flash-attn2",
-        device_map="auto")
+        device_map="auto"
+    )
 
     peft_config = LoraConfig(
         r=int(lora_r),
@@ -382,7 +388,6 @@ def _train_with_trl(
         logging_steps=int(logging_steps),
         save_steps=int(save_steps),
         save_total_limit=2,
-#        use_liger_kernel=True,
         seed=int(seed),
         report_to=report_to,
         remove_unused_columns=False,
@@ -391,6 +396,9 @@ def _train_with_trl(
         packing=True,
     )
 
+    if max_steps:
+        training_args.max_steps = max_steps
+
     trainer = SFTTrainer(
         model=model,
         train_dataset=ds,
@@ -398,7 +406,12 @@ def _train_with_trl(
     )
 
     trainer.train(
-        resume_from_checkpoint=True,
+        # Resume from checkpoint if any checkpoint directory exists.
+        # Setting this to True when there's no checkpoint raises an exception,
+        # so we need to check first.
+        # Also note that, confusingly, SFTConfig has a resume_from_checkpoint property
+        # that train() ignores since it has its own argument too.
+        resume_from_checkpoint=checkpoint_exists,
     )
 
     # Save adapter + tokenizer
@@ -428,11 +441,14 @@ def _main_sft() -> None:
         data: str | list[str] = "local-agenda.pkl"
         model_id: str = DEFAULT_HF_MODEL_ID
         output_dir: str = "sft-out"
+        # Formal language (dafny, verus)
+        language: str = "dafny"
         success_only: bool = True
         # Treat GOAL_UNPROVEN as success? (optional)
         treat_goal_unproven_as_success: bool = False
 
         # Training
+        max_steps: Optional[int] = None
         max_seq_length: int = 4096
         per_device_train_batch_size: int = 1
         gradient_accumulation_steps: int = 4
@@ -480,6 +496,7 @@ def _main_sft() -> None:
         pickle_paths=pickle_paths,
         success_only=bool(c.success_only),
         outcome_success_values=success_values,
+        language=c.language,
     )
 
     # Print training data statistics
@@ -506,6 +523,7 @@ def _main_sft() -> None:
         model_id=c.model_id or DEFAULT_HF_MODEL_ID,
         output_dir=out_dir,
         max_seq_length=c.max_seq_length,
+        max_steps=c.max_steps,
         per_device_train_batch_size=c.per_device_train_batch_size,
         gradient_accumulation_steps=c.gradient_accumulation_steps,
         learning_rate=c.learning_rate,

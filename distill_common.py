@@ -5,13 +5,11 @@ Shared utilities for distillation and data extraction scripts.
 Provides:
 - create_agenda_pickle: Write examples to the standard pickle format
 - remove_hints: Strip invariants/assertions/decreases from Dafny programs
-- compute_text_diff: Compute diffs in the repair-prompt format
-- load_verified_programs: Load dafny-program objects filtered by verification status
+- load_verified_programs: Load program objects filtered by verification status
 - get_dafny_errors: Run Dafny and capture verification errors
 - DistillExample: TypedDict formalizing the example schema
 """
 
-import difflib
 import json
 import pickle
 import re
@@ -88,17 +86,21 @@ def create_agenda_pickle(
 def load_verified_programs(
     pickle_path: Path,
     include_goal_unproven: bool = False,
+    language: str = "dafny",
 ) -> list[tuple[str, Object]]:
     """
-    Load dafny-program objects filtered by verification status.
+    Load verified program objects filtered by verification status.
 
     Args:
         pickle_path: Path to agenda pickle
         include_goal_unproven: If True, include goal_unproven programs (not just success)
+        language: Formal language (dafny, verus) — used to match object type
 
     Returns:
         List of (path, object) tuples for verified programs
     """
+    program_type = f"{language.lower()}-program"
+
     print(f"Loading {pickle_path}...", flush=True)
     with open(pickle_path, 'rb') as f:
         data = pickle.load(f)
@@ -115,7 +117,7 @@ def load_verified_programs(
         if not path.startswith('dataset/'):
             continue
 
-        if obj.type != 'dafny-program':
+        if obj.type != program_type:
             continue
 
         ver_status = obj.properties.get('verification_status')
@@ -165,51 +167,5 @@ def remove_hints(program: str, min_hints: int = 1, lam: float = 2) -> tuple[str,
 
     return ''.join(result_lines), n_removed
 
-
-# ---------------------------------------------------------------------------
-# Text diff
-# ---------------------------------------------------------------------------
-
-def compute_text_diff(before: str, after: str) -> str:
-    """
-    Compute a text diff in the format expected by the repair prompt.
-
-    Format (from patch.py apply_text_diff):
-    - @@content@@ anchor (search-forward marker)
-    - = line: keep line (find forward, advance cursor)
-    - - line: delete line (find forward, delete)
-    - + line: add line (insert at cursor)
-    """
-    before_lines = before.splitlines(keepends=False)
-    after_lines = after.splitlines(keepends=False)
-
-    matcher = difflib.SequenceMatcher(None, before_lines, after_lines)
-
-    diff_parts = []
-
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == 'equal':
-            continue
-
-        # Add anchor with the line just before the change (if exists)
-        if i1 > 0:
-            anchor_line = before_lines[i1 - 1]
-            diff_parts.append(f"@@{anchor_line}@@")
-        else:
-            diff_parts.append("@@@@")
-
-        if tag == 'replace':
-            for line in before_lines[i1:i2]:
-                diff_parts.append(f"- {line}")
-            for line in after_lines[j1:j2]:
-                diff_parts.append(f"+ {line}")
-        elif tag == 'delete':
-            for line in before_lines[i1:i2]:
-                diff_parts.append(f"- {line}")
-        elif tag == 'insert':
-            for line in after_lines[j1:j2]:
-                diff_parts.append(f"+ {line}")
-
-    return "\n".join(diff_parts)
 
 
