@@ -370,7 +370,6 @@ def _train_with_trl(
 
     training_args = SFTConfig(
         output_dir=output_dir,
-        max_steps=max_steps,
         per_device_train_batch_size=int(per_device_train_batch_size),
         gradient_accumulation_steps=int(gradient_accumulation_steps),
         learning_rate=float(learning_rate),
@@ -387,6 +386,9 @@ def _train_with_trl(
         bf16=True,
         packing=True,
     )
+
+    if max_steps:
+        training_args.max_steps = max_steps
 
     trainer = SFTTrainer(
         model=model,
