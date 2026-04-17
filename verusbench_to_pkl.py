@@ -24,8 +24,8 @@ import logging
 import random
 from pathlib import Path
 
-from distill_common import create_agenda_pickle, compute_text_diff
-from patch import apply_text_diff
+from distill_common import create_agenda_pickle
+from patch import apply_text_diff, compute_text_diff
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
