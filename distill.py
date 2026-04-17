@@ -160,8 +160,17 @@ def build_sft_records(
     """
     from language import Language
     from patch import TEXT_BEFORE_EXAMPLE, TEXT_DIFF_EXAMPLE, TEXT_AFTER_EXAMPLE
+    from tasks import discover_tasks
 
     _pb = Language[language.upper()].get_backend().prompt_builder
+
+    # Task-dispatch fallback for prompt types not handled by the language
+    # prompt builder (e.g. lemma_synth, which owns its own message format).
+    task_instances: dict[str, Any] = {}
+    for _name, cls in discover_tasks().items():
+        pt = getattr(cls, 'prompt_type', None)
+        if pt and pt not in task_instances:
+            task_instances[pt] = cls()
 
     def reconstruct_chat_messages(kind, args, example_before, example_diff, example_after):
         if kind == "implement":
@@ -178,15 +187,6 @@ def build_sft_records(
             return _pb.idea(repo=args.get("repo", ""), readme=args.get("readme", ""))
         elif kind == "initiate":
             return _pb.initiate(repo=args.get("repo", ""), readme=args.get("readme", ""))
-        elif kind == "lemma_synth":
-            return [
-                {"role": "system", "content": LEMMA_SYNTH_SYSTEM_PROMPT},
-                {"role": "user", "content": format_lemma_synth_user_prompt(
-                    program=args["program"],
-                    lemma_name=args["lemma_name"],
-                    notes=args["notes"],
-                )},
-            ]
         else:
             return []
 
@@ -244,6 +244,17 @@ def build_sft_records(
                 example_diff=TEXT_DIFF_EXAMPLE,
                 example_after=TEXT_AFTER_EXAMPLE,
             )
+
+            # Fall back to task dispatch for language-specific prompts.
+            if not messages:
+                task = task_instances.get(kind)
+                if task is not None:
+                    rec = task.to_training_record(ex)
+                    if rec:
+                        messages = rec["messages"]
+
+            if not messages:
+                continue
 
             records.append({"prompt": messages, "completion": [{"role": "assistant", "content": response_s}]})
             counts[kind] += 1
