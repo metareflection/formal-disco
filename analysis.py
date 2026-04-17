@@ -248,7 +248,10 @@ def _detect_language(agenda: dict) -> Language:
     for o in agenda.get("objects", {}).values():
         if hasattr(o, "type") and o.type.endswith("-program"):
             lang_name = o.type.removesuffix("-program").upper()
-            return Language[lang_name]
+            try:
+                return Language[lang_name]
+            except KeyError as exc:
+                raise ValueError(f"Unknown language in agenda object type: {o.type}") from exc
     raise ValueError("Could not detect language from agenda objects")
 
 
