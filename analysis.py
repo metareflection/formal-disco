@@ -248,11 +248,8 @@ def _detect_language(agenda: dict) -> Language:
     for o in agenda.get("objects", {}).values():
         if hasattr(o, "type") and o.type.endswith("-program"):
             lang_name = o.type.removesuffix("-program").upper()
-            try:
-                return Language[lang_name]
-            except KeyError:
-                pass
-    return Language.DAFNY  # fallback
+            return Language[lang_name]
+    raise ValueError("Could not detect language from agenda objects")
 
 
 def diversity_complexity_table(agendas: dict[str, dict]) -> None:
