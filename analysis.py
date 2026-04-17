@@ -251,7 +251,7 @@ def _detect_language(agenda: dict) -> Language:
             try:
                 return Language[lang_name]
             except KeyError as exc:
-                obj_path = getattr(o, "path", "no path attribute")
+                obj_path = getattr(o, "path", "<path attribute not available>")
                 raise ValueError(
                     f"Unknown language in agenda object type: {o.type} (object path: {obj_path})"
                 ) from exc
