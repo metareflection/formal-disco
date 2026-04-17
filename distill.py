@@ -159,6 +159,8 @@ def build_sft_records(
     """
     from language import Language
     from patch import TEXT_BEFORE_EXAMPLE, TEXT_DIFF_EXAMPLE, TEXT_AFTER_EXAMPLE
+    from tasks.lemma_synth import SYSTEM_PROMPT as LEMMA_SYNTH_SYSTEM_PROMPT
+    from tasks.lemma_synth import format_user_prompt as format_lemma_synth_user_prompt
     _pb = Language.DAFNY.get_backend().prompt_builder
 
     def reconstruct_chat_messages(kind, args, example_before, example_diff, example_after):
@@ -176,6 +178,15 @@ def build_sft_records(
             return _pb.idea(repo=args.get("repo", ""), readme=args.get("readme", ""))
         elif kind == "initiate":
             return _pb.initiate(repo=args.get("repo", ""), readme=args.get("readme", ""))
+        elif kind == "lemma_synth":
+            return [
+                {"role": "system", "content": LEMMA_SYNTH_SYSTEM_PROMPT},
+                {"role": "user", "content": format_lemma_synth_user_prompt(
+                    program=args["program"],
+                    lemma_name=args["lemma_name"],
+                    notes=args["notes"],
+                )},
+            ]
         else:
             return []
 
