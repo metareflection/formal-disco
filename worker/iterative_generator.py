@@ -78,9 +78,8 @@ class IterativeGenerator(Worker):
 
             try:
                 # Step 1: Generate initial program.
-                complex_examples = await agenda.get_most_complex_programs(3)
                 msgs = _to_langchain_messages(
-                    self._backend.prompt_builder.generate(repo=repo, readme=readme, complex_examples=complex_examples)
+                    self._backend.prompt_builder.generate(repo=repo, readme=readme)
                 )
                 program_text = self._chain.invoke(msgs).strip()
 
