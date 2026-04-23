@@ -7,9 +7,12 @@ Iterative evaluation: hollowed program -> LLM generates body -> insert -> verify
 Migrated from: eval_lemma.py, lemma_distill.py
 """
 
+import json
 import logging
+import os
 import random
 import re
+import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -20,7 +23,7 @@ from tqdm import tqdm
 from code_output_parser import CodeOutputParser
 from language import Language, Program, VerificationOutcome
 from distill_common import get_content, load_verified_programs, create_agenda_pickle
-from tasks import EvaluationTask, load_pickle_source
+from tasks import EvaluationTask, load_dfy_source, load_pickle_source
 
 logger = logging.getLogger(__name__)
 
@@ -170,9 +173,13 @@ class LemmaSynthTask(EvaluationTask):
     def __init__(
         self,
         max_attempts: int = 3,
+        filter_trivial: bool = True,
+        cache_path: str = ".lemma_synth_outcome_cache.json",
         verbose: bool = False,
     ):
         self.max_attempts = max_attempts
+        self.filter_trivial = filter_trivial
+        self.cache_path = cache_path
         self.verbose = verbose
 
     # ------------------------------------------------------------------
@@ -184,6 +191,9 @@ class LemmaSynthTask(EvaluationTask):
 
         Pickle sources with prompt_types: loads pre-made examples.
         Pickle sources with extract_from_verified: generates by hollowing lemma bodies.
+        Dfy sources: loads .dfy files, hollows each lemma body separately,
+            filters trivial lemmas (whose hollowed program still verifies),
+            and produces one example per remaining lemma.
         """
         examples = []
 
@@ -200,6 +210,10 @@ class LemmaSynthTask(EvaluationTask):
                         **source,
                         "prompt_types": ["lemma_synth"],
                     }))
+
+            elif src_type == "dfy":
+                programs = load_dfy_source(source)
+                examples.extend(self._build_dfy_examples(programs))
 
         return examples
 
@@ -299,6 +313,122 @@ class LemmaSynthTask(EvaluationTask):
         logger.info(f"Lemma extraction stats: {dict(total_stats)}")
         return all_examples
 
+    def _build_dfy_examples(
+        self,
+        programs: list[tuple[str, str]],
+    ) -> list[dict]:
+        """Turn raw .dfy files into one evaluation example per non-trivial lemma.
+
+        For each file, enumerate lemmas; for each lemma with a non-empty body,
+        hollow the body and verify the resulting program. A lemma is "trivial"
+        (and skipped if filter_trivial) when the hollowed program still
+        verifies — Dafny proves it without any proof. Verification results are
+        cached on disk keyed by "<program_name>::<lemma_name>".
+        """
+        N_THREADS = 64
+
+        cache: dict = {}
+        if self.cache_path and os.path.exists(self.cache_path):
+            with open(self.cache_path) as f:
+                cache = json.load(f)
+
+        cache_lock = threading.Lock()
+
+        def _save_cache() -> None:
+            if not self.cache_path:
+                return
+            with cache_lock:
+                snapshot = dict(cache)
+            tmp = f"{self.cache_path}.tmp"
+            with open(tmp, 'w') as f:
+                json.dump(snapshot, f, indent=2)
+            os.replace(tmp, self.cache_path)
+
+        # First, gather the work: (program_name, program_text, lemma, cache_key).
+        work = []
+        stats = Counter()
+        for name, text in programs:
+            lemmas = find_lemmas(text)
+            stats['total_lemmas'] += len(lemmas)
+            for lemma in lemmas:
+                if lemma['body_is_trivial']:
+                    stats['skip_trivial_body'] += 1
+                    continue
+                cache_key = f"{name}::{lemma['name']}"
+                work.append((name, text, lemma, cache_key))
+
+        # Verify hollowed programs (in parallel) for anything not in the cache.
+        def _verify_entry(item):
+            name, text, lemma, cache_key = item
+            if cache_key in cache:
+                return cache_key, cache[cache_key]
+            hollowed = hollow_lemma(text, lemma)
+            try:
+                prog = Program(hollowed, Language.DAFNY, name=cache_key)
+                ver = prog.verify()
+                entry = {
+                    "outcome": ver.outcome.name,
+                    "stdout": ver.stdout,
+                    "stderr": ver.stderr,
+                }
+            except Exception as e:
+                entry = {"outcome": "ERROR", "stdout": "", "stderr": str(e)}
+            return cache_key, entry
+
+        to_verify = [w for w in work if w[3] not in cache]
+        if to_verify:
+            with ThreadPoolExecutor(max_workers=N_THREADS) as executor:
+                futures = [executor.submit(_verify_entry, w) for w in to_verify]
+                completed_since_save = 0
+                with tqdm(total=len(futures), desc="Verifying hollowed lemmas") as pbar:
+                    for future in as_completed(futures):
+                        cache_key, entry = future.result()
+                        with cache_lock:
+                            cache[cache_key] = entry
+                        completed_since_save += 1
+                        if completed_since_save >= 32:
+                            _save_cache()
+                            completed_since_save = 0
+                        pbar.update(1)
+            _save_cache()
+
+        # Build examples using the populated cache.
+        examples: list[dict] = []
+        for name, text, lemma, cache_key in work:
+            entry = cache.get(cache_key)
+            if entry is None or entry["outcome"] == "ERROR":
+                stats['skip_verification_error'] += 1
+                continue
+            if self.filter_trivial and entry["outcome"] == "SUCCESS":
+                stats['skip_still_verifies'] += 1
+                continue
+
+            hollowed = hollow_lemma(text, lemma)
+            notes = entry.get("stdout", "")
+            if entry.get("stderr"):
+                notes = f"{notes}\n\nstderr:\n{entry['stderr']}"
+
+            examples.append({
+                "prompt": "lemma_synth",
+                "arguments": {
+                    "program": hollowed,
+                    "lemma_name": lemma['name'],
+                    "notes": notes,
+                },
+                "response": lemma['body'],
+                "outcome": "success",
+                "metadata": {
+                    "source": "dfy",
+                    "program_name": name,
+                    "program_path": name,
+                    "lemma_name": lemma['name'],
+                },
+            })
+            stats['examples_created'] += 1
+
+        logger.info(f"Lemma dfy extraction stats: {dict(stats)}")
+        return examples
+
     # ------------------------------------------------------------------
     # (b) Evaluation
     # ------------------------------------------------------------------
@@ -326,10 +456,11 @@ class LemmaSynthTask(EvaluationTask):
         notes: str,
         example_name: str,
     ) -> dict:
-        """Iterative lemma body synthesis."""
+        """pass@k lemma body synthesis: each attempt re-prompts from the
+        original hollowed program + verifier notes (no compounding)."""
         from langchain_core.messages import SystemMessage, HumanMessage
 
-        current_notes = notes
+        interaction_log = []
         ver = None
         body = ""
 
@@ -337,7 +468,8 @@ class LemmaSynthTask(EvaluationTask):
             if self.verbose:
                 logger.info(f"Attempt {attempt + 1}/{self.max_attempts} for {example_name}")
 
-            user_msg = format_user_prompt(program, lemma_name, current_notes)
+            user_msg = format_user_prompt(program, lemma_name, notes)
+            interaction = {'program': program, 'notes': notes}
 
             try:
                 response = llm.invoke([
@@ -347,16 +479,23 @@ class LemmaSynthTask(EvaluationTask):
                 body = extract_body_from_response(response.content)
             except Exception as e:
                 logger.warning(f"LLM call failed for {example_name}: {e}")
+                interaction_log.append({**interaction, 'result': f'Error: {e}'})
                 continue
+
+            interaction['body'] = body
 
             try:
                 filled = insert_lemma_body(program, lemma_name, body)
             except Exception as e:
                 logger.warning(f"Failed to insert body for {example_name}: {e}")
+                interaction_log.append({**interaction, 'result': f'Error: {e}'})
                 continue
 
             prog = Program(filled, Language.DAFNY, name=example_name)
             ver = prog.verify()
+
+            result_notes = f"stdout:\n{ver.stdout}\n\nstderr:\n{ver.stderr}"
+            interaction_log.append({**interaction, 'result': filled, 'result_notes': result_notes})
 
             if ver.outcome == VerificationOutcome.SUCCESS:
                 return {
@@ -366,9 +505,8 @@ class LemmaSynthTask(EvaluationTask):
                     "num_attempts": attempt + 1,
                     "verification_outcome": "SUCCESS",
                     "generated_body": body,
+                    "interaction_log": interaction_log,
                 }
-
-            current_notes = f"stdout:\n{ver.stdout}\n\nstderr:\n{ver.stderr}"
 
         return {
             "success": False,
@@ -377,6 +515,7 @@ class LemmaSynthTask(EvaluationTask):
             "num_attempts": self.max_attempts,
             "verification_outcome": ver.outcome.name if ver else "UNKNOWN",
             "generated_body": body,
+            "interaction_log": interaction_log,
         }
 
     # ------------------------------------------------------------------
