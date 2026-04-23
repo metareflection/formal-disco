@@ -338,6 +338,7 @@ def _train_with_trl(
     lora_alpha: int,
     lora_dropout: float,
     lora_target_modules: list[str] | None,
+    max_grad_norm: float = 1.0,
 ) -> None:
     """Train an SFT model with TRL SFTTrainer + PEFT LoRA.
 
@@ -359,14 +360,25 @@ def _train_with_trl(
         os.environ.setdefault("WANDB_LOG_MODEL", "false")
         os.environ.setdefault("WANDB_WATCH", "false")
 
-    if not records:
-        raise ValueError("No records to train on (after filtering).")
-
-    ds = Dataset.from_list(records)
-
     tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    # Drop records whose prompt+completion don't fit in max_seq_length.
+    # (TRL would otherwise right-truncate past the ask and zero out the loss.)
+    def _fits(record) -> bool:
+        ids = tokenizer.apply_chat_template(
+            list(record["prompt"]) + list(record["completion"]),
+            tokenize=True, add_generation_prompt=False,
+        )
+        return len(ids) <= max_seq_length
+
+    n_before = len(records)
+    records = [r for r in records if _fits(r)]
+    print(f"[filter] kept {len(records)}/{n_before} records with prompt+completion <= {max_seq_length}")
+    if not records:
+        raise ValueError("No records to train on (after filtering).")
+    ds = Dataset.from_list(records)
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
@@ -405,15 +417,41 @@ def _train_with_trl(
         fp16=False,
         bf16=True,
         packing=True,
+        max_length=int(max_seq_length),
+        max_grad_norm=float(max_grad_norm),
     )
 
     if max_steps:
         training_args.max_steps = max_steps
 
+    # Temporary: log per-step loss to <output_dir>/train_loss.json for offline inspection.
+    from transformers import TrainerCallback
+
+    class JSONLossLogger(TrainerCallback):
+        def __init__(self, path: str):
+            self.path = path
+            self.history: list[dict[str, float]] = []
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if not logs or "loss" not in logs:
+                return
+            entry = {"step": int(state.global_step)}
+            for k in ("loss", "learning_rate", "grad_norm", "epoch"):
+                if k in logs:
+                    try:
+                        entry[k] = float(logs[k])
+                    except Exception:
+                        pass
+            self.history.append(entry)
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+            with open(self.path, "w") as f:
+                json.dump(self.history, f, indent=2)
+
     trainer = SFTTrainer(
         model=model,
         train_dataset=ds,
         args=training_args,
+        callbacks=[JSONLossLogger(os.path.join(output_dir, "train_loss.json"))],
     )
 
     trainer.train(
@@ -503,6 +541,8 @@ def _main_sft() -> None:
     else:
         pickle_paths = [str(p) for p in c.data]
 
+    print('Input data files:', c.data)
+
     records, counts = build_sft_records(
         pickle_paths=pickle_paths,
         success_only=bool(c.success_only),
@@ -551,6 +591,7 @@ def _main_sft() -> None:
         lora_alpha=c.lora_alpha,
         lora_dropout=c.lora_dropout,
         lora_target_modules=c.lora_target_modules,
+        max_grad_norm=c.max_grad_norm,
     )
 
 
