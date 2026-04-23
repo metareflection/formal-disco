@@ -149,10 +149,10 @@ class FixerTask(EvaluationTask):
                 assert stripped_program != program_content
                 diff = compute_text_diff(stripped_program, program_content)
 
-                print("Stripped program:", stripped_program)
-                print("Diff:", diff)
+                # print("Stripped program:", stripped_program)
+                # print("Diff:", diff)
                 reconstructed = apply_text_diff(stripped_program, diff)
-                print("Diff to original program:", compute_text_diff(reconstructed, program_content))
+                # print("Diff to original program:", compute_text_diff(reconstructed, program_content))
 
                 assert apply_text_diff(stripped_program, diff) == program_content
 
@@ -183,6 +183,7 @@ class FixerTask(EvaluationTask):
         min_hints = source.get("min_hints", 1)
         verify_stripped = source.get("verify_stripped", True)
         partial = source.get("partial", True)
+        print('Partial?', partial)
 
         verified_programs = load_verified_programs(
             pickle_path, source.get("include_goal_unproven", False),
@@ -281,7 +282,9 @@ class FixerTask(EvaluationTask):
         prog_text: str,
         program_name: str,
     ) -> dict:
-        """Iterative repair loop."""
+        """Attempts to fix the program with k independent samples from the LLM.
+        Here, k = self.max_attempts, and we effectively try pass@k."""
+
         current_text = prog_text
         interaction_log = []
         ver = None
@@ -342,13 +345,6 @@ class FixerTask(EvaluationTask):
                     "final_program": repaired_text,
                     "interaction_log": interaction_log,
                 }
-
-            # Only keep the diff if GOAL_UNPROVEN (valid program, just missing
-            # annotations). Discard if FAIL (syntax error, etc.) so we don't
-            # compound errors on the next attempt.
-            if ver.outcome == VerificationOutcome.GOAL_UNPROVEN:
-                current_text = repaired_text
-                ver_notes = result_notes
 
         return {
             "success": False,
