@@ -172,40 +172,81 @@ def remove_hints_verus(program: str, min_hints: int = 1, lam: float = 2) -> tupl
     """
     Remove hints (invariants, assertions, decreases) from a Verus program.
 
-    Verus-specific: handles multi-line `assert(...) by { proof }` and
-    `assert forall |...| ... by { proof }` blocks by extending the span to
-    cover the matching closing brace.
+    Verus-specific:
+    - Multi-line `assert(...) by { proof }` / `assert forall |...| ... by { proof }`
+      blocks are handled by brace-balancing.
+    - A bare `invariant`/`decreases` keyword line introduces a block of
+      comma-terminated clauses that continue until a line at the same or
+      lesser indentation. The entire block (keyword + clauses) is removed
+      as one span, so we never leave dangling clauses behind.
 
-    Same semantics as remove_hints: removes at least min_hints (or all if
-    min_hints <= 0), plus an exponentially-sampled extra.
+    Same overall semantics as remove_hints: removes at least min_hints (or all
+    if min_hints <= 0), plus an exponentially-sampled extra.
 
     Returns:
         (stripped_program, num_hints_removed)
     """
     lines = program.splitlines(keepends=True)
+
+    def _indent(line: str) -> int:
+        # Number of leading whitespace chars (tab counted as 1, matching the
+        # textual indent used by the program). We just need a consistent order.
+        return len(line) - len(line.lstrip())
+
     spans: list[tuple[int, int]] = []
 
     i = 0
     while i < len(lines):
-        stripped = lines[i].strip()
-        is_hint = (
-            re.match(r'^invariant\b', stripped)
-            or re.match(r'^assert[\s(]', stripped)
-            or re.match(r'^decreases\b', stripped)
-        )
-        if not is_hint:
+        line = lines[i]
+        stripped = line.strip()
+        is_invariant = re.match(r'^invariant\b', stripped)
+        is_decreases = re.match(r'^decreases\b', stripped)
+        is_assert = re.match(r'^assert[\s(]', stripped)
+
+        if not (is_invariant or is_decreases or is_assert):
             i += 1
             continue
 
-        # Extend span across a multi-line `... by { proof }` tail by brace balancing.
         start = i
         end = i
-        open_braces = lines[i].count('{') - lines[i].count('}')
+
+        # `assert(...) by { ... }` / `assert forall |...| ... by { ... }`:
+        # extend across braces.
+        open_braces = line.count('{') - line.count('}')
         j = i + 1
         while open_braces > 0 and j < len(lines):
             open_braces += lines[j].count('{') - lines[j].count('}')
             end = j
             j += 1
+
+        # Bare `invariant` / `decreases` keyword on its own line introduces a
+        # block of clauses on subsequent, more-indented lines. Extend the span
+        # to cover them, so removing the keyword doesn't leave orphan clauses.
+        is_block_header = (
+            (is_invariant and stripped == 'invariant')
+            or (is_decreases and stripped == 'decreases')
+        )
+        if is_block_header:
+            header_indent = _indent(line)
+            k = end + 1
+            while k < len(lines):
+                nxt = lines[k]
+                if not nxt.strip():
+                    # Blank line: keep scanning but don't include unless
+                    # followed by a clause line at deeper indent.
+                    k += 1
+                    continue
+                if _indent(nxt) <= header_indent:
+                    break
+                # Stop if we hit another clause-block keyword at deeper indent
+                # (e.g. an `ensures`/`requires` block) — those aren't hints
+                # and shouldn't be lumped in.
+                nxt_stripped = nxt.strip()
+                if re.match(r'^(ensures|requires|invariant|decreases)\b', nxt_stripped):
+                    break
+                end = k
+                k += 1
+
         spans.append((start, end))
         i = end + 1
 

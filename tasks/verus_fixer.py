@@ -207,6 +207,13 @@ class VerusFixerTask(EvaluationTask):
         When `extract_training: true`, run each ground_truth through the same
         strip-hints -> diff pipeline as `_extract_from_verified` to produce
         training examples (with a `response` diff) instead of eval tasks.
+
+        When `strip_ground_truth: true`, the eval input is produced by
+        running `remove_hints_verus(ground_truth)` instead of using the
+        benchmark's `task` field. This matches the training-time distribution
+        (same extraction pipeline) so eval measures repair-from-hint-stripping
+        rather than bridging whatever arbitrary differences exist between
+        VerusBench's `task` and `ground_truth`.
         """
         jsonl_path = source.get("path", source.get("jsonl_path", ""))
         if not jsonl_path or not Path(jsonl_path).exists():
@@ -214,6 +221,7 @@ class VerusFixerTask(EvaluationTask):
             return []
 
         extract_training = source.get("extract_training", False)
+        strip_ground_truth = source.get("strip_ground_truth", True)
 
         with open(jsonl_path, "r") as f:
             tasks = [json.loads(line) for line in f if line.strip()]
@@ -221,12 +229,25 @@ class VerusFixerTask(EvaluationTask):
         if extract_training:
             return self._extract_training_from_verusbench(tasks, source, jsonl_path)
 
+        min_hints = source.get("min_hints", 1)
+
         examples = []
         for task in tasks:
-            unverified = task.get("task")
             ground_truth = task.get("ground_truth")
-            if not unverified:
-                continue
+
+            if strip_ground_truth:
+                if not ground_truth:
+                    continue
+                stripped, n_hints = remove_hints_verus(
+                    ground_truth, min_hints=min_hints,
+                )
+                if n_hints < min_hints:
+                    continue
+                unverified = stripped
+            else:
+                unverified = task.get("task")
+                if not unverified:
+                    continue
 
             # Get verification errors for the unverified program
             prog = Program(unverified, Language.VERUS, name=task.get("task_id", ""))
@@ -241,6 +262,7 @@ class VerusFixerTask(EvaluationTask):
                     "task_id": task.get("task_id", ""),
                     "bench_source": task.get("source", ""),
                     "task_path": task.get("task_path", ""),
+                    "strip_ground_truth": strip_ground_truth,
                 },
             }
 
@@ -249,7 +271,8 @@ class VerusFixerTask(EvaluationTask):
 
             examples.append(example)
 
-        logger.info(f"Loaded {len(examples)} tasks from Verus-Bench: {jsonl_path}")
+        logger.info(f"Loaded {len(examples)} tasks from Verus-Bench: {jsonl_path} "
+                    f"(strip_ground_truth={strip_ground_truth})")
         return examples
 
     def _extract_training_from_verusbench(
