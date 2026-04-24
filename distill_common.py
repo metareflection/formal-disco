@@ -168,4 +168,60 @@ def remove_hints(program: str, min_hints: int = 1, lam: float = 2) -> tuple[str,
     return ''.join(result_lines), n_removed
 
 
+def remove_hints_verus(program: str, min_hints: int = 1, lam: float = 2) -> tuple[str, int]:
+    """
+    Remove hints (invariants, assertions, decreases) from a Verus program.
+
+    Verus-specific: handles multi-line `assert(...) by { proof }` and
+    `assert forall |...| ... by { proof }` blocks by extending the span to
+    cover the matching closing brace.
+
+    Same semantics as remove_hints: removes at least min_hints (or all if
+    min_hints <= 0), plus an exponentially-sampled extra.
+
+    Returns:
+        (stripped_program, num_hints_removed)
+    """
+    lines = program.splitlines(keepends=True)
+    spans: list[tuple[int, int]] = []
+
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        is_hint = (
+            re.match(r'^invariant\b', stripped)
+            or re.match(r'^assert[\s(]', stripped)
+            or re.match(r'^decreases\b', stripped)
+        )
+        if not is_hint:
+            i += 1
+            continue
+
+        # Extend span across a multi-line `... by { proof }` tail by brace balancing.
+        start = i
+        end = i
+        open_braces = lines[i].count('{') - lines[i].count('}')
+        j = i + 1
+        while open_braces > 0 and j < len(lines):
+            open_braces += lines[j].count('{') - lines[j].count('}')
+            end = j
+            j += 1
+        spans.append((start, end))
+        i = end + 1
+
+    if min_hints <= 0:
+        min_hints = len(spans)
+
+    lo = min(min_hints, len(spans))
+    n_removed = min(len(spans), lo + int(random.expovariate(lam)))
+
+    removed_span_idxs = set(random.sample(range(len(spans)), k=n_removed))
+    removed_lines: set[int] = set()
+    for idx in removed_span_idxs:
+        s, e = spans[idx]
+        removed_lines.update(range(s, e + 1))
+
+    result_lines = [l for i, l in enumerate(lines) if i not in removed_lines]
+    return ''.join(result_lines), n_removed
+
 
