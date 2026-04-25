@@ -76,6 +76,36 @@ def load_verusbench(jsonl_path: str, min_hints: int = 0) -> list[dict]:
     return examples
 
 
+def _extract_spec_lines(program: str) -> list[str]:
+    """Extract requires/ensures blocks as stripped lines from a Verus program."""
+    lines = program.splitlines()
+    spec_lines = []
+    in_spec = False
+    spec_indent = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("requires") or stripped.startswith("ensures"):
+            in_spec = True
+            spec_indent = len(line) - len(line.lstrip())
+            spec_lines.append(stripped)
+        elif in_spec:
+            if not stripped or len(line) - len(line.lstrip()) > spec_indent:
+                if stripped:
+                    spec_lines.append(stripped)
+            else:
+                in_spec = False
+
+    return spec_lines
+
+
+def _specs_preserved(ground_truth: str, repaired: str) -> tuple[bool, list[str]]:
+    gt_specs = _extract_spec_lines(ground_truth)
+    repaired_lines = {line.strip() for line in repaired.splitlines()}
+    missing = [s for s in gt_specs if s not in repaired_lines]
+    return len(missing) == 0, missing
+
+
 def _verify(program_text: str) -> dict:
     prog = Program(program_text, Language.VERUS, name="repaired")
     ver = prog.verify()
@@ -121,6 +151,13 @@ def run_one_iteration(
             "success": False,
         }
 
+    success = ver["success"]
+    specs_preserved, missing_specs = _specs_preserved(program, response)
+
+    if success and not specs_preserved:
+        logger.warning(f"Specs dropped: {missing_specs}")
+        success = False
+
     return {
         "program": program,
         "verification_outcome": verification_outcome,
@@ -128,7 +165,9 @@ def run_one_iteration(
         "response": response,
         "new_notes": ver["notes"],
         "new_verification_outcome": ver["outcome"],
-        "success": ver["success"],
+        "success": success,
+        "specs_preserved": specs_preserved,
+        "missing_specs": missing_specs,
     }
 
 
