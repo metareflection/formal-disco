@@ -1,0 +1,6 @@
+sources:
+  - type: pickle
+    path: ${pickle}
+    extract_from_verified: true
+    verify_stripped: false
+    verify_hollowed: false

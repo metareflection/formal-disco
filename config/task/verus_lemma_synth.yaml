@@ -1,0 +1,2 @@
+_target_: tasks.verus_lemma_synth.VerusLemmaSynthTask
+max_attempts: 3

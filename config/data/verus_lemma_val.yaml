@@ -1,0 +1,4 @@
+sources:
+  - type: pickle
+    path: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/verus_lemma_val.pkl
+    prompt_types: [lemma_synth]

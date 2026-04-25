@@ -35,7 +35,6 @@ def main():
     parser = argparse.ArgumentParser(description="Convert Verus benchmark JSONL to training pickle")
     parser.add_argument("--jsonl", default="../verus-proof-synthesis/benchmarks/Verus-Bench/tasks.jsonl")
     parser.add_argument("--output", default=None, help="Output prefix (default: derived from jsonl parent dir name)")
-    parser.add_argument("--verify", action="store_true", help="Run Verus to get real error messages")
     parser.add_argument("--val-fraction", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -46,7 +45,8 @@ def main():
     source_name = Path(args.jsonl).parent.name
 
     verifier_backend = None
-    if args.verify:
+    verify = True
+    if verify:
         from language import Language, Program
         verifier_backend = Language.VERUS.get_backend()
 

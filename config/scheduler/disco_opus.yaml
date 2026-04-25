@@ -6,6 +6,7 @@ workers:
   - _target_: worker.initiator.Initiator
     jsonl_path: data/gh-readmes-100k.jsonl
     distill: all
+    language: verus
     llm:
       _target_: langchain_aws.ChatBedrock
       model_id: global.anthropic.claude-opus-4-5-20251101-v1:0
@@ -14,6 +15,7 @@ workers:
 
   - _target_: worker.llm_fixer.LLMFixer
     distill: all
+    language: verus
     attempt_priority_factor: 0.9
     interest_success_boost: 1.2
     interest_recursion_gamma: 0.0
@@ -25,6 +27,7 @@ workers:
 
   - _target_: worker.editor_worker.EditorWorker
     distill: all
+    language: verus
     interest_success_boost: 1.05
     interest_recursion_gamma: 0.0
     llm:

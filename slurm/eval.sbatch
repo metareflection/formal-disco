@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eval_formal_disco
+#SBATCH --job-name=eval_formal_disco-verus
 #SBATCH --account=kempner_poesia_lab
 #SBATCH --partition=kempner_h100
 #SBATCH --gres=gpu:2
@@ -18,11 +18,16 @@ export VLLM_BASE_URL="http://localhost:${PORT}/v1"
 export VLLM_LOGGING_LEVEL=debug
 
 # MODEL=/n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen3-coder-nontrivial-fixer+lemma-v1/merged
-MODEL_NAME=qwen3-coder-nontrivial-fixer-v1
+# MODEL_NAME=qwen2.5-32B_opus-distilled_si1-fixer-full # qwen2.5-32B_opus-distilled_si1-fixer
+# MODEL_NAME=qwen2.5-32B_opus-distilled_si1-lemma
+MODEL_NAME=qwen2.5-32B_opus-verus-distilled_si1-fixer # qwen2.5-32B_verus-fixer
 MODEL=/n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/${MODEL_NAME}/merged
 # MODEL=/n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen3-coder-nontrivial-fixer-v2/merged
 # MODEL=Qwen/Qwen2.5-Coder-14B-Instruct
 # MODEL=/n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen3-coder-nontrivial-fixer-v3/merged
+
+#MODEL_NAME=qwen2.5-coder-32B
+#MODEL=Qwen/Qwen2.5-Coder-32B-Instruct
 
 # 1. Start vllm in the background
 vllm serve $MODEL \
@@ -55,7 +60,9 @@ done
 source venv/bin/activate
 
 # 3. Run evals in parallel (each in the background)
-python eval.py task=fixer llm=vllm output=results/fixer-eval-${MODEL_NAME}.json &
+# python eval.py task=fixer llm=vllm output=results/fixer-eval-${MODEL_NAME}.json &
+# python eval.py task=lemma_synth llm=vllm data=dafnybench_lemma_pkl output=results/lemma-eval-${MODEL_NAME}.json &
+python eval.py task=verus_fixer llm=vllm data=verusbench output=results/verus-fixer-eval-${MODEL_NAME}.json &
 EVAL_PIDS=($!)
 
 # Example of a second eval running at the same time:

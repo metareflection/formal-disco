@@ -229,7 +229,7 @@ class VerusFixerTask(EvaluationTask):
         if extract_training:
             return self._extract_training_from_verusbench(tasks, source, jsonl_path)
 
-        min_hints = source.get("min_hints", 1)
+        min_hints = source.get("min_hints", 0)
 
         examples = []
         for task in tasks:

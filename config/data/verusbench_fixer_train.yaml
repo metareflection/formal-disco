@@ -1,3 +1,7 @@
 sources:
   - type: verusbench
     path: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/verus-proof-synthesis/benchmarks/Verus-Bench/tasks.jsonl
+    extract_training: true
+    min_hints: 1
+    verify_stripped: true
+    partial: false
