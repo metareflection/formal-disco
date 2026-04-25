@@ -1,0 +1,2 @@
+_target_: tasks.verus_fixer.VerusFixerTask
+max_attempts: 3

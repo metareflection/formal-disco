@@ -1,0 +1,3 @@
+sources:
+  - type: verusbench
+    path: ../verus-proof-synthesis/benchmarks/Verus-Bench/tasks.jsonl

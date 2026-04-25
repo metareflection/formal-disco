@@ -373,7 +373,13 @@ class VerusBackend(LanguageBackend):
     def verify(self, program: 'Program', timeout: float = 120) -> VerificationOutput:
         cmd = f"{self._verus_binary} --crate-type lib"
         try:
-            result = execute(cmd, "rs", str(program), timeout=timeout)
+            source = str(program)
+            # Allow legacy benchmarks that lack decreases clauses to verify
+            # on post-April-2025 Verus (PR #1545 made them mandatory).
+            if "#![verifier::exec_allows_no_decreases_clause]" not in source:
+                source = "#![verifier::exec_allows_no_decreases_clause]\n" + source
+
+            result = execute(cmd, "rs", source, timeout=timeout)
         except RuntimeError as e:
             return VerificationOutput(
                 outcome=VerificationOutcome.FAIL,

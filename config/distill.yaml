@@ -27,6 +27,9 @@ model_id: Qwen/Qwen2.5-Coder-32B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-I
 # output_dir:  /n/holylabs/kempner_poesia_lab/Lab/kempner-accelerator/qwen3-coder-claude+self-v7
 output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-distilled_si1
 
+# Formal language (dafny, verus)
+language: dafny
+
 # Whether to filter to success only examples
 success_only: true
 

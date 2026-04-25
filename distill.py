@@ -20,7 +20,7 @@ import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Optional
 
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
@@ -142,6 +142,7 @@ def build_sft_records(
     pickle_paths: list[str | Path],
     success_only: bool,
     outcome_success_values: tuple[str, ...] = ("success",),
+    language: str = "dafny",
 ) -> tuple[list[dict[str, str]], Counter[str]]:
     """Build TRL/HF records for chat-style SFT.
 
@@ -159,7 +160,17 @@ def build_sft_records(
     """
     from language import Language
     from patch import TEXT_BEFORE_EXAMPLE, TEXT_DIFF_EXAMPLE, TEXT_AFTER_EXAMPLE
-    _pb = Language.DAFNY.get_backend().prompt_builder
+    from tasks import discover_tasks
+
+    _pb = Language[language.upper()].get_backend().prompt_builder
+
+    # Task-dispatch fallback for prompt types not handled by the language
+    # prompt builder (e.g. lemma_synth, which owns its own message format).
+    task_instances: dict[str, Any] = {}
+    for _name, cls in discover_tasks().items():
+        pt = getattr(cls, 'prompt_type', None)
+        if pt and pt not in task_instances:
+            task_instances[pt] = cls()
 
     def reconstruct_chat_messages(kind, args, example_before, example_diff, example_after):
         if kind == "implement":
@@ -234,6 +245,17 @@ def build_sft_records(
                 example_after=TEXT_AFTER_EXAMPLE,
             )
 
+            # Fall back to task dispatch for language-specific prompts.
+            if not messages:
+                task = task_instances.get(kind)
+                if task is not None:
+                    rec = task.to_training_record(ex)
+                    if rec:
+                        messages = rec["messages"]
+
+            if not messages:
+                continue
+
             records.append({"prompt": messages, "completion": [{"role": "assistant", "content": response_s}]})
             counts[kind] += 1
 
@@ -299,6 +321,7 @@ def _train_with_trl(
     model_id: str,
     output_dir: str,
     max_seq_length: int,
+    max_steps: int,
     per_device_train_batch_size: int,
     gradient_accumulation_steps: int,
     learning_rate: float,
@@ -315,6 +338,7 @@ def _train_with_trl(
     lora_alpha: int,
     lora_dropout: float,
     lora_target_modules: list[str] | None,
+    max_grad_norm: float = 1.0,
 ) -> None:
     """Train an SFT model with TRL SFTTrainer + PEFT LoRA.
 
@@ -325,6 +349,10 @@ def _train_with_trl(
     """
     import os
 
+    checkpoint_exists = any(p.startswith('checkpoint-')
+                            for p in ((os.path.exists(output_dir) and os.listdir(output_dir)) or []))
+    print(f'Checkpoint in {output_dir} exists?', checkpoint_exists)
+
     if use_wandb:
         os.environ.setdefault("WANDB_PROJECT", wandb_project or "formal-disco")
         if wandb_run_name:
@@ -332,20 +360,32 @@ def _train_with_trl(
         os.environ.setdefault("WANDB_LOG_MODEL", "false")
         os.environ.setdefault("WANDB_WATCH", "false")
 
-    if not records:
-        raise ValueError("No records to train on (after filtering).")
-
-    ds = Dataset.from_list(records)
-
     tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    # Drop records whose prompt+completion don't fit in max_seq_length.
+    # (TRL would otherwise right-truncate past the ask and zero out the loss.)
+    def _fits(record) -> bool:
+        ids = tokenizer.apply_chat_template(
+            list(record["prompt"]) + list(record["completion"]),
+            tokenize=True, add_generation_prompt=False,
+        )
+        return len(ids) <= max_seq_length
+
+    n_before = len(records)
+    records = [r for r in records if _fits(r)]
+    print(f"[filter] kept {len(records)}/{n_before} records with prompt+completion <= {max_seq_length}")
+    if not records:
+        raise ValueError("No records to train on (after filtering).")
+    ds = Dataset.from_list(records)
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         torch_dtype=torch.bfloat16,
         attn_implementation="kernels-community/flash-attn2",
-        device_map="auto")
+        device_map="auto"
+    )
 
     peft_config = LoraConfig(
         r=int(lora_r),
@@ -371,23 +411,56 @@ def _train_with_trl(
         logging_steps=int(logging_steps),
         save_steps=int(save_steps),
         save_total_limit=2,
-#        use_liger_kernel=True,
         seed=int(seed),
         report_to=report_to,
         remove_unused_columns=False,
         fp16=False,
         bf16=True,
         packing=True,
+        max_length=int(max_seq_length),
+        max_grad_norm=float(max_grad_norm),
     )
+
+    if max_steps:
+        training_args.max_steps = max_steps
+
+    # Temporary: log per-step loss to <output_dir>/train_loss.json for offline inspection.
+    from transformers import TrainerCallback
+
+    class JSONLossLogger(TrainerCallback):
+        def __init__(self, path: str):
+            self.path = path
+            self.history: list[dict[str, float]] = []
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if not logs or "loss" not in logs:
+                return
+            entry = {"step": int(state.global_step)}
+            for k in ("loss", "learning_rate", "grad_norm", "epoch"):
+                if k in logs:
+                    try:
+                        entry[k] = float(logs[k])
+                    except Exception:
+                        pass
+            self.history.append(entry)
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+            with open(self.path, "w") as f:
+                json.dump(self.history, f, indent=2)
 
     trainer = SFTTrainer(
         model=model,
         train_dataset=ds,
         args=training_args,
+        callbacks=[JSONLossLogger(os.path.join(output_dir, "train_loss.json"))],
     )
 
     trainer.train(
-        resume_from_checkpoint=True,
+        # Resume from checkpoint if any checkpoint directory exists.
+        # Setting this to True when there's no checkpoint raises an exception,
+        # so we need to check first.
+        # Also note that, confusingly, SFTConfig has a resume_from_checkpoint property
+        # that train() ignores since it has its own argument too.
+        resume_from_checkpoint=checkpoint_exists,
     )
 
     # Save adapter + tokenizer
@@ -417,11 +490,14 @@ def _main_sft() -> None:
         data: str | list[str] = "local-agenda.pkl"
         model_id: str = DEFAULT_HF_MODEL_ID
         output_dir: str = "sft-out"
+        # Formal language (dafny, verus)
+        language: str = "dafny"
         success_only: bool = True
         # Treat GOAL_UNPROVEN as success? (optional)
         treat_goal_unproven_as_success: bool = False
 
         # Training
+        max_steps: Optional[int] = None
         max_seq_length: int = 4096
         per_device_train_batch_size: int = 1
         gradient_accumulation_steps: int = 4
@@ -465,10 +541,13 @@ def _main_sft() -> None:
     else:
         pickle_paths = [str(p) for p in c.data]
 
+    print('Input data files:', c.data)
+
     records, counts = build_sft_records(
         pickle_paths=pickle_paths,
         success_only=bool(c.success_only),
         outcome_success_values=success_values,
+        language=c.language,
     )
 
     # Print training data statistics
@@ -495,6 +574,7 @@ def _main_sft() -> None:
         model_id=c.model_id or DEFAULT_HF_MODEL_ID,
         output_dir=out_dir,
         max_seq_length=c.max_seq_length,
+        max_steps=c.max_steps,
         per_device_train_batch_size=c.per_device_train_batch_size,
         gradient_accumulation_steps=c.gradient_accumulation_steps,
         learning_rate=c.learning_rate,
@@ -511,6 +591,7 @@ def _main_sft() -> None:
         lora_alpha=c.lora_alpha,
         lora_dropout=c.lora_dropout,
         lora_target_modules=c.lora_target_modules,
+        max_grad_norm=c.max_grad_norm,
     )
 
 

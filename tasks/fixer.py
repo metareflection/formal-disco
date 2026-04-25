@@ -106,11 +106,14 @@ class FixerTask(EvaluationTask):
         obj: Any,
         min_hints: int = 1,
         verify_stripped: bool = True,
+        partial: bool = True,
     ) -> tuple[list[dict], Counter]:
         """Extract fixer examples from a single verified program.
 
-        Iteratively strips hints and creates (broken, fixed) pairs until no
-        more hints remain. Returns (examples, stats).
+        When `partial` is True, iteratively strips hints and creates
+        (broken, fixed) pairs until no more hints remain. When False, strips
+        all hints from every spec'd method in a single pass, producing one
+        (broken, fixed) example. Returns (examples, stats).
         """
         examples = []
         stats = Counter()
@@ -123,7 +126,7 @@ class FixerTask(EvaluationTask):
         original_program, trivial_diff = True, False
 
         while True:
-            stripped_program, num_hints = _remove_hints(program_content)
+            stripped_program, num_hints = _remove_hints(program_content, partial=partial)
 
             if num_hints < min_hints:
                 if original_program:
@@ -146,10 +149,10 @@ class FixerTask(EvaluationTask):
                 assert stripped_program != program_content
                 diff = compute_text_diff(stripped_program, program_content)
 
-                print("Stripped program:", stripped_program)
-                print("Diff:", diff)
+                # print("Stripped program:", stripped_program)
+                # print("Diff:", diff)
                 reconstructed = apply_text_diff(stripped_program, diff)
-                print("Diff to original program:", compute_text_diff(reconstructed, program_content))
+                # print("Diff to original program:", compute_text_diff(reconstructed, program_content))
 
                 assert apply_text_diff(stripped_program, diff) == program_content
 
@@ -179,6 +182,8 @@ class FixerTask(EvaluationTask):
         pickle_path = Path(source["path"])
         min_hints = source.get("min_hints", 1)
         verify_stripped = source.get("verify_stripped", True)
+        partial = source.get("partial", True)
+        print('Partial?', partial)
 
         verified_programs = load_verified_programs(
             pickle_path, source.get("include_goal_unproven", False),
@@ -189,7 +194,9 @@ class FixerTask(EvaluationTask):
 
         with ThreadPoolExecutor(max_workers=N_THREADS) as executor:
             futures = {
-                executor.submit(self.extract_one, path, obj, min_hints, verify_stripped): path
+                executor.submit(
+                    self.extract_one, path, obj, min_hints, verify_stripped, partial,
+                ): path
                 for path, obj in verified_programs
             }
             with tqdm(total=len(futures), desc="Generating fixer examples") as pbar:
@@ -262,43 +269,38 @@ class FixerTask(EvaluationTask):
 
         args = example.get("arguments", example)
         program = args.get("program", "")
-        notes = args.get("notes", "")
         name = (
             example.get("metadata", {}).get("program_name")
             or example.get("metadata", {}).get("program_path", "program")
         )
 
-        return self._fix(
-            llm, program, name,
-            initial_notes=notes,
-        )
+        return self._fix(llm, program, name)
 
     def _fix(
         self,
         llm: Any,
         prog_text: str,
         program_name: str,
-        initial_notes: str = "",
     ) -> dict:
-        """Iterative repair loop."""
+        """Attempts to fix the program with k independent samples from the LLM.
+        Here, k = self.max_attempts, and we effectively try pass@k."""
+
         current_text = prog_text
         interaction_log = []
-        ver_notes = initial_notes
         ver = None
 
-        # Get initial verification if no notes provided
-        if not ver_notes:
-            prog = Program(current_text, Language.DAFNY, name=program_name)
-            ver = prog.verify()
-            if ver.outcome == VerificationOutcome.SUCCESS:
-                return {
-                    "success": True,
-                    "program_name": program_name,
-                    "num_attempts": 0,
-                    "verification_outcome": "SUCCESS",
-                    "final_program": current_text,
-                }
-            ver_notes = f"Output of dafny verify on this program:\nstdout:\n{ver.stdout}\n\nstderr:\n{ver.stderr}\n"
+        # Always run verify() to get fresh output, matching extract_one behavior.
+        prog = Program(current_text, Language.DAFNY, name=program_name)
+        ver = prog.verify()
+        if ver.outcome == VerificationOutcome.SUCCESS:
+            return {
+                "success": True,
+                "program_name": program_name,
+                "num_attempts": 0,
+                "verification_outcome": "SUCCESS",
+                "final_program": current_text,
+            }
+        ver_notes = f"Verifier stdout:\n{ver.stdout}\n\nVerifier stderr:\n{ver.stderr}\n"
 
         for attempt in range(self.max_attempts):
             if self.verbose:
@@ -331,10 +333,8 @@ class FixerTask(EvaluationTask):
             repaired_prog = Program(repaired_text, Language.DAFNY, name=program_name)
             ver = repaired_prog.verify()
 
-            current_text = repaired_text
-            ver_notes = f"Output of dafny verify on this program:\nstdout:\n{ver.stdout}\n\nstderr:\n{ver.stderr}\n"
-
-            interaction_log.append({**interaction, 'result': repaired_text, 'result_notes': ver_notes})
+            result_notes = f"Verifier stdout:\n{ver.stdout}\n\nVerifier stderr:\n{ver.stderr}\n"
+            interaction_log.append({**interaction, 'result': repaired_text, 'result_notes': result_notes})
 
             if ver.outcome == VerificationOutcome.SUCCESS:
                 return {
@@ -342,7 +342,7 @@ class FixerTask(EvaluationTask):
                     "program_name": program_name,
                     "num_attempts": attempt + 1,
                     "verification_outcome": "SUCCESS",
-                    "final_program": current_text,
+                    "final_program": repaired_text,
                     "interaction_log": interaction_log,
                 }
 
@@ -390,12 +390,20 @@ def _find_hint_lines(lines: list[str], body_begin: int, body_end: int) -> list[i
     ]
 
 
-def _remove_hints(program: str, lam: float = 1/2) -> tuple[str, int]:
+def _remove_hints(program: str, lam: float = 1/2, partial: bool = True) -> tuple[str, int]:
     """Remove hints (invariants, assertions, decreases) from a Dafny program.
 
-    Targets the last method that has both a non-empty specification (ensures clauses)
-    and hints in its body. Removes K hints from the end of that method's
-    hint list, where K = min(n_hints, 1 + Exp(lam)).
+    A method is considered "spec'd" if it has any `ensures` or `requires` clause.
+
+    When `partial` is True (default), targets the last spec'd method that has
+    hints in its body, and removes K hints from the end of that method's hint
+    list, where K = min(n_hints, 1 + Exp(lam)).
+
+    When `partial` is False, finds the last spec'd method and removes every
+    hint line (global regex, including spec-level `decreases`) from the start
+    of the file through that method's closing brace — matching DafnyBench's
+    stripping on files where test methods don't follow the last spec'd method.
+    Trailing unspec'd methods (e.g. test harnesses) are left alone.
 
     Returns (stripped_program, num_hints_removed). If no suitable method is
     found, returns the original program unchanged with 0 hints removed.
@@ -403,28 +411,41 @@ def _remove_hints(program: str, lam: float = 1/2) -> tuple[str, int]:
     lines = program.splitlines(keepends=True)
     methods = _backend.extract_methods(program)
 
-    # 1- Find last method that (a) has a non-empty specification (> 0 ensures clauses),
-    #    and (b) has hints in the body (assertions, invariants, decreases).
-    target_hints = None
+    if partial:
+        # Find last method that (a) has a non-empty specification (> 0 ensures clauses),
+        # and (b) has hints in the body (assertions, invariants, decreases).
+        target_hints = None
+        for method in reversed(methods):
+            if not (method['ensures'] or method.get('requires')):
+                continue
+            hint_lines = _find_hint_lines(lines, method['body_begin'], method['body_end'])
+            if hint_lines:
+                target_hints = hint_lines
+                break
 
-    for method in reversed(methods):
-        if not method['ensures']:
-            continue
-        hint_lines = _find_hint_lines(lines, method['body_begin'], method['body_end'])
-        if hint_lines:
-            target_hints = hint_lines
-            break
+        if not target_hints:
+            return program, 0
 
-    if not target_hints:
-        return program, 0
+        # At least 1, plus an exponentially-distributed number, capped at total hints.
+        n_remove = min(len(target_hints), 1 + int(random.expovariate(lam)))
+        # Remove from the end so that we strip the deepest/latest hints first.
+        removed = set(target_hints[-n_remove:])
+    else:
+        # Find the last (latest-ending) method with a non-empty spec
+        # (either `ensures` or `requires` clauses).
+        last_spec_end = None
+        for method in methods:
+            if not (method['ensures'] or method.get('requires')):
+                continue
+            if last_spec_end is None or method['body_end'] > last_spec_end:
+                last_spec_end = method['body_end']
+        if last_spec_end is None:
+            return program, 0
+        # Globally strip every hint line from start of file through that method's closing brace.
+        removed = {i for i in range(0, last_spec_end + 1) if _HINT_LINE_RE.match(lines[i])}
+        if not removed:
+            return program, 0
+        n_remove = len(removed)
 
-    # 2- Decide number of last K hints to remove.
-    # At least 1, plus an exponentially-distributed number, capped at total hints.
-    n_remove = min(len(target_hints), 1 + int(random.expovariate(lam)))
-
-    # Remove from the end so that we strip the deepest/latest hints first.
-    removed = set(target_hints[-n_remove:])
-
-    # 3- Remove hints and return new program text and number of hints removed.
     result_lines = [line for i, line in enumerate(lines) if i not in removed]
     return ''.join(result_lines), n_remove

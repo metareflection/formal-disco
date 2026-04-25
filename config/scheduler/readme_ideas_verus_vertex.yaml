@@ -1,0 +1,55 @@
+_target_: scheduler.RoundRobinScheduler
+
+turn_fuel: 5
+
+workers:
+  - _target_: worker.readme_idea_generator.ReadmeInspiredIdeaGenerator
+    jsonl_path: data/gh-readmes-100k.jsonl
+    language: verus
+    distill: all
+    llm:
+      _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
+      model: claude-opus-4-6
+      project: ${oc.env:GCP_PROJECT_ID,formal-disco}
+      location: ${oc.env:GCP_LOCATION,global}
+      max_tokens: 10000
+
+  - _target_: worker.llm_implementer.LLMImplementer
+    language: verus
+    distill: all
+    attempt_priority_factor: 0.9
+    interest_success: 2.0
+    interest_goal_unproven: 1.5
+    interest_fail: 0.5
+    interest_recursion_gamma: 0.0
+    llm:
+      _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
+      model: claude-opus-4-6
+      project: ${oc.env:GCP_PROJECT_ID,formal-disco}
+      location: ${oc.env:GCP_LOCATION,global}
+      max_tokens: 10000
+
+  - _target_: worker.llm_fixer.LLMFixer
+    language: verus
+    distill: all
+    attempt_priority_factor: 0.9
+    interest_success_boost: 1.2
+    interest_recursion_gamma: 0.0
+    llm:
+      _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
+      model: claude-opus-4-6
+      project: ${oc.env:GCP_PROJECT_ID,formal-disco}
+      location: ${oc.env:GCP_LOCATION,global}
+      max_tokens: 10000
+
+  - _target_: worker.editor_worker.EditorWorker
+    language: verus
+    distill: all
+    interest_success_boost: 1.1
+    interest_recursion_gamma: 0.0
+    llm:
+      _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
+      model: claude-opus-4-6
+      project: ${oc.env:GCP_PROJECT_ID,formal-disco}
+      location: ${oc.env:GCP_LOCATION,global}
+      max_tokens: 10000
