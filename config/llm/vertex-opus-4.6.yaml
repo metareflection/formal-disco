@@ -1,0 +1,13 @@
+write:
+  _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
+  model: claude-opus-4-6
+  project: ${oc.env:GCP_PROJECT_ID,formal-disco}
+  location: ${oc.env:GCP_LOCATION,global}
+  max_tokens: 16384
+
+code:
+  _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
+  model: claude-opus-4-6
+  project: ${oc.env:GCP_PROJECT_ID,formal-disco}
+  location: ${oc.env:GCP_LOCATION,global}
+  max_tokens: 16384
