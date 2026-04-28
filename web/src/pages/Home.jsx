@@ -9,9 +9,17 @@ export default function Home() {
           <h2>Fixer Eval Report</h2>
           <p>Compare LLM fixer models on Dafny program repair tasks.</p>
         </Link>
+        <Link to="/verus-fixer-report" className="card">
+          <h2>Verus Fixer Eval Report</h2>
+          <p>Compare LLM fixer models on Verus program repair tasks.</p>
+        </Link>
         <Link to="/lemma-report" className="card">
           <h2>Lemma Synthesis Report</h2>
           <p>Compare LLM models on Dafny lemma body synthesis tasks.</p>
+        </Link>
+        <Link to="/verus-lemma-report" className="card">
+          <h2>Verus Lemma Synthesis Report</h2>
+          <p>Compare LLM models on Verus lemma body synthesis tasks.</p>
         </Link>
         <Link to="/diversity-report" className="card">
           <h2>Diversity Report</h2>

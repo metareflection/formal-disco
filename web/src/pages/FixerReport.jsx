@@ -64,7 +64,7 @@ function buildReport(files) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function ProblemDetail({ name, models }) {
+function ProblemDetail({ name, models, language, languageLabel }) {
   const [activeTab, setActiveTab] = useState(0);
   return (
     <div className="problem-detail">
@@ -90,7 +90,11 @@ function ProblemDetail({ name, models }) {
         })}
       </div>
       <div className="tab-content">
-        <InteractionLog result={models[activeTab]?.byName.get(name)} />
+        <InteractionLog
+          result={models[activeTab]?.byName.get(name)}
+          language={language}
+          languageLabel={languageLabel}
+        />
       </div>
     </div>
   );
@@ -98,7 +102,11 @@ function ProblemDetail({ name, models }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function FixerReport() {
+export default function FixerReport({
+  title = 'Fixer Evaluation Report',
+  language = 'dafny',
+  languageLabel = 'Dafny',
+} = {}) {
   const [files, setFiles] = useState([]);
   const [report, setReport] = useState(null);
   const [search, setSearch] = useState('');
@@ -145,7 +153,7 @@ export default function FixerReport() {
 
   return (
     <div className="page">
-      <h1>Fixer Evaluation Report</h1>
+      <h1>{title}</h1>
 
       {/* ── File loading ── */}
       <section className="section">
@@ -338,7 +346,12 @@ export default function FixerReport() {
                       {isExpanded && (
                         <tr>
                           <td colSpan={report.models.length + 2}>
-                            <ProblemDetail name={name} models={report.models} />
+                            <ProblemDetail
+                              name={name}
+                              models={report.models}
+                              language={language}
+                              languageLabel={languageLabel}
+                            />
                           </td>
                         </tr>
                       )}

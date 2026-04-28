@@ -5,6 +5,18 @@ import {
 } from 'recharts';
 import CodeBlock from '../components/CodeBlock';
 
+function Collapsible({ title, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="collapsible">
+      <button className="collapsible-header" onClick={() => setOpen(o => !o)}>
+        {open ? '▼' : '▶'} {title}
+      </button>
+      {open && <div className="collapsible-body">{children}</div>}
+    </div>
+  );
+}
+
 const MODEL_COLORS = ['#3949ab', '#e53935', '#2e7d32', '#f57c00', '#7b1fa2', '#00838f'];
 
 // ── Data processing ──────────────────────────────────────────────────────────
@@ -60,11 +72,16 @@ function buildReport(files) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function LemmaResultDetail({ result }) {
+function LemmaResultDetail({ result, language, languageLabel }) {
   if (!result) {
     return <div className="no-data">No data for this model on this example.</div>;
   }
-  const { success, num_attempts = 0, verification_outcome, generated_body, program, lemma_name } = result;
+  const {
+    success, num_attempts = 0, verification_outcome,
+    generated_body, program, lemma_name,
+    initial_outcome, initial_notes,
+    final_program, final_notes,
+  } = result;
   return (
     <div className="interaction-log">
       <div className={`result-banner ${success ? 'success' : 'failure'}`}>
@@ -78,29 +95,57 @@ function LemmaResultDetail({ result }) {
       {program && (
         <div className="attempt-step">
           <div className="attempt-header">
-            Program
+            Program (before)
             {lemma_name && (
               <span style={{ fontWeight: 400, marginLeft: '0.75rem', color: '#555', textTransform: 'none', letterSpacing: 0 }}>
                 — synthesizing body of <code style={{ background: '#eef0ff', padding: '1px 6px', borderRadius: 4 }}>{lemma_name}</code>
               </span>
             )}
           </div>
-          <CodeBlock code={program} />
+          <CodeBlock code={program} language={language} />
+
+          {initial_outcome && (
+            <div style={{ marginTop: '0.5rem' }}>
+              <strong>Initial verification:</strong>{' '}
+              <span className={`tab-status ${initial_outcome === 'SUCCESS' ? 'ok' : 'fail'}`}>
+                {initial_outcome}
+              </span>
+            </div>
+          )}
+
+          {initial_notes && (
+            <Collapsible title={`${languageLabel} output (before)`} defaultOpen>
+              <pre className="dafny-output">{initial_notes}</pre>
+            </Collapsible>
+          )}
         </div>
       )}
 
       <div className="attempt-step">
         <div className="attempt-header">Generated body</div>
         {generated_body
-          ? <CodeBlock code={generated_body} />
+          ? <CodeBlock code={generated_body} language={language} />
           : <p className="muted small" style={{ padding: '0.5rem' }}>No body was generated.</p>
         }
       </div>
+
+      {final_program && (
+        <div className={`attempt-step${success ? ' success-step' : ''}`}>
+          <div className="attempt-header">Program (after)</div>
+          <CodeBlock code={final_program} language={language} />
+
+          {final_notes && (
+            <Collapsible title={`${languageLabel} output (after)`} defaultOpen>
+              <pre className="dafny-output">{final_notes}</pre>
+            </Collapsible>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function ExampleDetail({ name, models }) {
+function ExampleDetail({ name, models, language, languageLabel }) {
   const [activeTab, setActiveTab] = useState(0);
   return (
     <div className="problem-detail">
@@ -126,7 +171,11 @@ function ExampleDetail({ name, models }) {
         })}
       </div>
       <div className="tab-content">
-        <LemmaResultDetail result={models[activeTab]?.byName.get(name)} />
+        <LemmaResultDetail
+          result={models[activeTab]?.byName.get(name)}
+          language={language}
+          languageLabel={languageLabel}
+        />
       </div>
     </div>
   );
@@ -134,7 +183,11 @@ function ExampleDetail({ name, models }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function LemmaReport() {
+export default function LemmaReport({
+  title = 'Lemma Synthesis Evaluation Report',
+  language = 'dafny',
+  languageLabel = 'Dafny',
+} = {}) {
   const [files, setFiles] = useState([]);
   const [report, setReport] = useState(null);
   const [search, setSearch] = useState('');
@@ -181,7 +234,7 @@ export default function LemmaReport() {
 
   return (
     <div className="page">
-      <h1>Lemma Synthesis Evaluation Report</h1>
+      <h1>{title}</h1>
 
       {/* ── File loading ── */}
       <section className="section">
@@ -370,7 +423,12 @@ export default function LemmaReport() {
                       {isExpanded && (
                         <tr>
                           <td colSpan={report.models.length + 2}>
-                            <ExampleDetail name={name} models={report.models} />
+                            <ExampleDetail
+                              name={name}
+                              models={report.models}
+                              language={language}
+                              languageLabel={languageLabel}
+                            />
                           </td>
                         </tr>
                       )}

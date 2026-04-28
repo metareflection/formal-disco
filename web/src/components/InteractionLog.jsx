@@ -14,7 +14,7 @@ function Collapsible({ title, children, defaultOpen = false }) {
   );
 }
 
-function AttemptStep({ step, index, isLast, overallSuccess }) {
+function AttemptStep({ step, index, isLast, overallSuccess, language, languageLabel }) {
   const isErrorResult = typeof step.result === 'string' && step.result.startsWith('Error:');
   const hasProgram = typeof step.result === 'string' && !isErrorResult;
 
@@ -23,11 +23,11 @@ function AttemptStep({ step, index, isLast, overallSuccess }) {
       <div className="attempt-header">Attempt {index + 1}</div>
 
       <Collapsible title="Program (before)" defaultOpen={index === 0}>
-        <CodeBlock code={step.program || ''} />
+        <CodeBlock code={step.program || ''} language={language} />
       </Collapsible>
 
       {step.notes && (
-        <Collapsible title="Dafny output">
+        <Collapsible title={`${languageLabel} output`}>
           <pre className="dafny-output">{step.notes}</pre>
         </Collapsible>
       )}
@@ -44,20 +44,32 @@ function AttemptStep({ step, index, isLast, overallSuccess }) {
 
       {hasProgram && (
         <Collapsible title="After applying diff" defaultOpen>
-          <CodeBlock code={step.result} />
+          <CodeBlock code={step.result} language={language} />
         </Collapsible>
       )}
 
       {step.result_notes && (
-        <Collapsible title="Dafny output after" defaultOpen={isLast}>
+        <Collapsible title={`${languageLabel} output after`} defaultOpen={isLast}>
           <pre className="dafny-output">{step.result_notes}</pre>
+        </Collapsible>
+      )}
+
+      {step.diff_vs_ground_truth && (
+        <Collapsible title="Diff vs ground truth">
+          <DiffBlock diff={step.diff_vs_ground_truth} />
+        </Collapsible>
+      )}
+
+      {step.ground_truth_program && (
+        <Collapsible title="Ground truth program">
+          <CodeBlock code={step.ground_truth_program} language={language} />
         </Collapsible>
       )}
     </div>
   );
 }
 
-export default function InteractionLog({ result }) {
+export default function InteractionLog({ result, language = 'dafny', languageLabel = 'Dafny' }) {
   if (!result) {
     return <div className="no-data">No data for this model on this problem.</div>;
   }
@@ -86,6 +98,8 @@ export default function InteractionLog({ result }) {
           index={i}
           isLast={i === log.length - 1}
           overallSuccess={success}
+          language={language}
+          languageLabel={languageLabel}
         />
       ))}
     </div>

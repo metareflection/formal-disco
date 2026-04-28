@@ -417,6 +417,19 @@ def get_run_name(config: dict, path: str) -> str:
     return run_label(path)
 
 
+def resolve_labels(agenda_paths: list[str], labels_arg: str | None) -> list[str]:
+    """Resolve display labels for agendas: --labels CSV overrides config."""
+    if labels_arg:
+        labels = [l.strip() for l in labels_arg.split(",")]
+        if len(labels) != len(agenda_paths):
+            raise ValueError(
+                f"--labels has {len(labels)} entries but {len(agenda_paths)} agendas given"
+            )
+        return labels
+    config = load_plots_config()
+    return [get_run_name(config, p) for p in agenda_paths]
+
+
 def save_chart(chart, name: str) -> None:
     """Save an Altair chart as both .svg and .png in the plots directory."""
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -432,14 +445,19 @@ def save_chart(chart, name: str) -> None:
 # Plot: Task Success Rates
 # ---------------------------------------------------------------------------
 
-def plot_task_success_rates(agenda_paths: list[str]) -> None:
+def plot_task_success_rates(
+    agenda_paths: list[str],
+    labels: list[str] | None = None,
+    name: str = "task-success-rate",
+) -> None:
     import altair as alt
 
-    config = load_plots_config()
+    if labels is None:
+        config = load_plots_config()
+        labels = [get_run_name(config, p) for p in agenda_paths]
     rows = []
 
-    for path in agenda_paths:
-        label = get_run_name(config, path)
+    for path, label in zip(agenda_paths, labels):
         agenda = load_agenda(path)
         task_outcomes = agenda.get("task_outcomes", {})
 
@@ -494,7 +512,7 @@ def plot_task_success_rates(agenda_paths: list[str]) -> None:
         title="Task Success Rates by Run",
     )
 
-    save_chart(chart, "task-success-rate")
+    save_chart(chart, name)
 
 
 # ---------------------------------------------------------------------------
@@ -534,15 +552,25 @@ def _extract_verified_programs(agenda: dict, language: Language) -> list[Program
 # Plot: Program Complexity
 # ---------------------------------------------------------------------------
 
-def plot_program_complexity(agenda_paths: list[str], language: Language) -> None:
+def plot_program_complexity(
+    agenda_paths: list[str],
+    language: Language,
+    labels: list[str] | None = None,
+    name: str = "program-complexity",
+    dafnybench_dir: str | None = None,
+    absolute: bool = False,
+    x_clip_percentile: float | None = None,
+    lower_percentile: float = 25.0,
+) -> None:
     import altair as alt
 
-    config = load_plots_config()
+    if labels is None:
+        config = load_plots_config()
+        labels = [get_run_name(config, p) for p in agenda_paths]
     backend = language.get_backend()
     rows = []
 
-    for path in agenda_paths:
-        label = get_run_name(config, path)
+    for path, label in zip(agenda_paths, labels):
         agenda = load_agenda(path)
         programs = _extract_verified_programs(agenda, language)
         print(f"  {label}: {len(programs)} verified programs")
@@ -565,57 +593,177 @@ def plot_program_complexity(agenda_paths: list[str], language: Language) -> None
         print("No complexity data found.")
         return
 
+    if absolute and not dafnybench_dir:
+        raise ValueError("--absolute requires --dafnybench (for the threshold)")
+    if x_clip_percentile is not None and not dafnybench_dir:
+        raise ValueError("--x-clip-percentile requires --dafnybench")
+
+    # DafnyBench: load and (a) compute per-metric mean, (b) include as another run.
+    ref_means: dict[str, float] = {}
+    if dafnybench_dir:
+        from language import Program
+        from collections import defaultdict
+        per_metric: dict[str, list[float]] = defaultdict(list)
+        n_files = 0
+        for dfy_file in sorted(Path(dafnybench_dir).glob("*.dfy")):
+            try:
+                prog = Program(dfy_file.read_text(), language)
+                cx = backend.complexity(prog)
+            except Exception:
+                continue
+            n_files += 1
+            for metric, values in cx.items():
+                if not values:
+                    continue
+                v = float(np.mean(values))
+                per_metric[metric].append(v)
+                rows.append({"Run": "DafnyBench", "Metric": metric, "Value": v})
+        ref_lower = {m: float(np.percentile(vs, lower_percentile))
+                     for m, vs in per_metric.items()}
+        labels = list(labels) + ["DafnyBench"]
+        print(f"  DafnyBench: {n_files} programs added; "
+              f"per-metric p{lower_percentile}: {ref_lower}")
+        if x_clip_percentile is not None:
+            x_clip = {m: float(np.percentile(vs, x_clip_percentile))
+                      for m, vs in per_metric.items()}
+            print(f"  x-axis clipped at DafnyBench p{x_clip_percentile}: {x_clip}")
+        else:
+            x_clip = {}
+    else:
+        ref_lower = {}
+        x_clip = {}
+
+    # In absolute mode: filter to programs above DafnyBench's lower-percentile
+    # per metric, so the count violins reflect "non-trivial" volume.
+    if absolute:
+        n_before = len(rows)
+        rows = [r for r in rows if r["Value"] > ref_lower.get(r["Metric"], float("inf"))]
+        print(f"  absolute mode: kept {len(rows)}/{n_before} rows "
+              f"(above DafnyBench p{lower_percentile} per metric)")
+
+    metrics = sorted({r["Metric"] for r in rows})
     df = alt.Data(values=rows)
 
-    chart = alt.Chart(df).mark_boxplot(extent="min-max").encode(
-        x=alt.X("Run:N", axis=None),
-        y=alt.Y("Value:Q"),
-        color=alt.Color("Run:N", title="Run"),
+    # Build the grid manually: hconcat over metrics, vconcat over runs within each
+    # metric. Empty (Run, Metric) cells are rendered as blank to keep rows aligned.
+    # x is shared within a metric column but independent across metrics.
+    cell_w, cell_h = 240, 60
+    has_data = {(r["Run"], r["Metric"]) for r in rows}
+
+    columns = []
+    for ci, metric in enumerate(metrics):
+        is_first_col = (ci == 0)
+        cells = []
+        for label in labels:
+            if (label, metric) in has_data:
+                density_kwargs = {
+                    "as_": ["Value", "density"],
+                    "groupby": ["Run"],
+                }
+                if absolute:
+                    density_kwargs["counts"] = True
+                if metric in x_clip:
+                    x_lo = ref_lower[metric] if absolute else 0
+                    x_scale = alt.Scale(domain=[x_lo, x_clip[metric]])
+                else:
+                    x_scale = alt.Undefined
+                cell = alt.Chart(df).transform_filter(
+                    (alt.datum.Metric == metric) & (alt.datum.Run == label)
+                ).transform_density(
+                    "Value", **density_kwargs,
+                ).mark_area(opacity=0.85, clip=True).encode(
+                    x=alt.X("Value:Q",
+                            title=metric if label == labels[-1] else None,
+                            scale=x_scale,
+                            axis=alt.Axis(labels=(label == labels[-1]),
+                                          ticks=(label == labels[-1]))),
+                    y=alt.Y("density:Q", stack="center", title=None,
+                            axis=alt.Axis(labels=False, ticks=False, grid=False)),
+                    color=alt.Color("Run:N", title="Run", sort=labels,
+                                    legend=alt.Legend() if (ci == len(metrics) - 1
+                                                            and label == labels[0])
+                                                          else None),
+                ).properties(width=cell_w, height=cell_h)
+            else:
+                # Blank placeholder so the row stays aligned across columns.
+                cell = alt.Chart(alt.Data(values=[{"x": 0}])).mark_text(
+                    text="(no data)", color="#999", fontSize=10,
+                ).encode(x=alt.value(cell_w / 2), y=alt.value(cell_h / 2)
+                ).properties(width=cell_w, height=cell_h)
+            cells.append(cell)
+        # In absolute mode share y per column too, so volumes are comparable across runs.
+        col_chart = alt.vconcat(*cells, spacing=4).resolve_scale(
+            x="shared", y=("shared" if absolute else "independent"),
+        )
+        columns.append(col_chart)
+
+    # Row labels live in a leftmost label column.
+    label_cells = [
+        alt.Chart(alt.Data(values=[{"t": label}])).mark_text(
+            align="right", baseline="middle", fontSize=11,
+        ).encode(text="t:N", x=alt.value(120), y=alt.value(cell_h / 2)
+        ).properties(width=130, height=cell_h)
+        for label in labels
+    ]
+    label_col = alt.vconcat(*label_cells, spacing=4)
+
+    chart = alt.hconcat(label_col, *columns, spacing=8).resolve_scale(
+        color="shared",
     ).properties(
-        width=120,
-    ).facet(
-        column=alt.Column("Metric:N", title="Complexity Metric"),
-        spacing=10,
-    ).resolve_scale(
-        y="independent",
-    ).properties(
-        title="Program Complexity (per-program mean, verified programs)",
+        title=(f"Program Complexity (counts; programs above DafnyBench p{lower_percentile} per metric)"
+               if absolute else
+               "Program Complexity (per-program mean, verified programs)"),
     )
 
-    save_chart(chart, "program-complexity")
+    output_name = f"{name}-absolute" if absolute else name
+    save_chart(chart, output_name)
 
 
 # ---------------------------------------------------------------------------
 # Plot: Program Diversity
 # ---------------------------------------------------------------------------
 
-def plot_program_diversity(agenda_paths: list[str], language: Language) -> None:
+def plot_program_diversity(
+    agenda_paths: list[str],
+    language: Language,
+    labels: list[str] | None = None,
+    name: str = "program-diversity",
+) -> None:
     import altair as alt
 
-    config = load_plots_config()
+    if labels is None:
+        config = load_plots_config()
+        labels = [get_run_name(config, p) for p in agenda_paths]
     backend = language.get_backend()
 
-    # For diversity we compute corpus-level entropy and unique-count per feature type.
-    # We'll show two sub-plots: entropy (bits) and unique feature count.
+    # Per-feature-type rows for each diversity metric.
     entropy_rows = []
     unique_rows = []
+    pnew_rows = []        # P(any single observed feature is novel) = unique / total
+    pnew_prog_rows = []   # P(program contains >=1 feature never seen in earlier programs)
 
-    for path in agenda_paths:
-        label = get_run_name(config, path)
+    for path, label in zip(agenda_paths, labels):
         agenda = load_agenda(path)
         programs = _extract_verified_programs(agenda, language)
         print(f"  {label}: {len(programs)} verified programs")
 
-        pooled: dict[str, Counter] = {}
+        # Per-program feature_sets, in extraction order (used for streaming P(>=1 new)).
+        per_prog_features: list[dict[str, Counter]] = []
         for prog in programs:
             try:
                 ft = backend.feature_sets(prog)
             except Exception:
                 continue
+            per_prog_features.append(ft)
+
+        # Pooled counters for entropy / unique / P(new).
+        pooled: dict[str, Counter] = {}
+        for ft in per_prog_features:
             for metric, counter in ft.items():
                 pooled.setdefault(metric, Counter()).update(counter)
 
         for metric, counter in pooled.items():
+            total = sum(counter.values())
             entropy_rows.append({
                 "Run": label,
                 "Feature": metric,
@@ -626,38 +774,143 @@ def plot_program_diversity(agenda_paths: list[str], language: Language) -> None:
                 "Feature": metric,
                 "Unique Features": len(counter),
             })
+            pnew_rows.append({
+                "Run": label,
+                "Feature": metric,
+                "P(new)": (len(counter) / total) if total > 0 else 0.0,
+            })
+
+        # Streaming P(>=1 new): iterate programs in order, maintain a "seen" set per
+        # feature type, and count programs whose feature set introduces at least one
+        # never-seen feature.
+        seen: dict[str, set] = {}
+        n_with_new: dict[str, int] = {}
+        n_progs_with_metric: dict[str, int] = {}
+        for ft in per_prog_features:
+            for metric, counter in ft.items():
+                if not counter:
+                    continue
+                n_progs_with_metric[metric] = n_progs_with_metric.get(metric, 0) + 1
+                metric_seen = seen.setdefault(metric, set())
+                introduced_new = False
+                for feat in counter:
+                    if feat not in metric_seen:
+                        introduced_new = True
+                        metric_seen.add(feat)
+                if introduced_new:
+                    n_with_new[metric] = n_with_new.get(metric, 0) + 1
+
+        for metric, denom in n_progs_with_metric.items():
+            pnew_prog_rows.append({
+                "Run": label,
+                "Feature": metric,
+                "P(>=1 new)": (n_with_new.get(metric, 0) / denom) if denom > 0 else 0.0,
+            })
 
     if not entropy_rows:
         print("No diversity data found.")
         return
 
-    # Entropy chart
-    df_ent = alt.Data(values=entropy_rows)
-    chart_ent = alt.Chart(df_ent).mark_bar().encode(
-        x=alt.X("Run:N", axis=None),
-        y=alt.Y("Entropy (bits):Q"),
-        color=alt.Color("Run:N", title="Run"),
-    ).properties(width=120).facet(
-        column=alt.Column("Feature:N", title="Feature"),
-        spacing=10,
-    ).resolve_scale(y="independent").properties(
-        title="Program Diversity: Entropy (verified programs, longest per idea)",
-    )
-    save_chart(chart_ent, "program-diversity-entropy")
+    def _bar_chart(rows, y_field, title, fname):
+        df = alt.Data(values=rows)
+        chart = alt.Chart(df).mark_bar().encode(
+            x=alt.X("Run:N", axis=None),
+            y=alt.Y(f"{y_field}:Q"),
+            color=alt.Color("Run:N", title="Run"),
+        ).properties(width=120).facet(
+            column=alt.Column("Feature:N", title="Feature"),
+            spacing=10,
+        ).resolve_scale(y="independent").properties(title=title)
+        save_chart(chart, fname)
 
-    # Unique count chart
-    df_uniq = alt.Data(values=unique_rows)
-    chart_uniq = alt.Chart(df_uniq).mark_bar().encode(
-        x=alt.X("Run:N", axis=None),
-        y=alt.Y("Unique Features:Q"),
-        color=alt.Color("Run:N", title="Run"),
-    ).properties(width=120).facet(
-        column=alt.Column("Feature:N", title="Feature"),
-        spacing=10,
-    ).resolve_scale(y="independent").properties(
-        title="Program Diversity: Unique Features (verified programs, longest per idea)",
+    _bar_chart(
+        entropy_rows, "Entropy (bits)",
+        "Program Diversity: Entropy (verified programs, longest per idea)",
+        f"{name}-entropy",
     )
-    save_chart(chart_uniq, "program-diversity-unique")
+    _bar_chart(
+        unique_rows, "Unique Features",
+        "Program Diversity: Unique Features (verified programs, longest per idea)",
+        f"{name}-unique",
+    )
+    _bar_chart(
+        pnew_rows, "P(new)",
+        "Program Diversity: P(new) = unique / total observations (verified programs)",
+        f"{name}-pnew",
+    )
+    _bar_chart(
+        pnew_prog_rows, "P(>=1 new)",
+        "Program Diversity: P(>=1 new) per program (streaming, verified programs)",
+        f"{name}-pnew-program",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Plot: Fixer pass@k
+# ---------------------------------------------------------------------------
+
+def _parse_label_path(spec: str) -> tuple[str, str]:
+    """Parse 'Label:path' into (label, path)."""
+    if ":" not in spec:
+        raise ValueError(f"Expected 'Label:path', got: {spec}")
+    label, path = spec.split(":", 1)
+    return label.strip(), path.strip()
+
+
+def plot_fixer_pass_at_k(
+    horizontal: list[tuple[str, str]],
+    curve: list[tuple[str, str]],
+    ks: list[int],
+    name: str = "fixer-pass-at-k",
+) -> None:
+    """Pass@k line plot. `horizontal` entries get a flat line at pass@1.
+    `curve` entries get a line+points at the specified ks."""
+    import altair as alt
+
+    rows = []
+    x_min, x_max = min(ks), max(ks)
+
+    for label, path in horizontal:
+        results = json.load(open(path))["results"]
+        n = len(results)
+        n_pass1 = sum(1 for r in results if r["success"] and r["num_attempts"] <= 1)
+        rate = n_pass1 / n if n else 0.0
+        rows.append({"Model": label, "k": x_min, "Pass@k": rate, "Kind": "horizontal"})
+        rows.append({"Model": label, "k": x_max, "Pass@k": rate, "Kind": "horizontal"})
+
+    for label, path in curve:
+        results = json.load(open(path))["results"]
+        n = len(results)
+        for k in ks:
+            n_pass = sum(1 for r in results if r["success"] and r["num_attempts"] <= k)
+            rate = n_pass / n if n else 0.0
+            rows.append({"Model": label, "k": k, "Pass@k": rate, "Kind": "curve"})
+
+    df = alt.Data(values=rows)
+
+    base = alt.Chart(df).encode(
+        x=alt.X("k:Q",
+                scale=alt.Scale(type="log", base=2, domain=[x_min, x_max]),
+                axis=alt.Axis(values=ks, title="Attempts (k)")),
+        y=alt.Y("Pass@k:Q", scale=alt.Scale(domain=[0, 1]), title="Pass@k"),
+        color=alt.Color("Model:N", title="Model"),
+    )
+
+    line = base.mark_line().encode(
+        strokeDash=alt.StrokeDash("Kind:N",
+                                   scale=alt.Scale(domain=["horizontal", "curve"],
+                                                   range=[[4, 4], [1, 0]]),
+                                   legend=None),
+    )
+    points = base.transform_filter(alt.datum.Kind == "curve").mark_point(
+        filled=True, size=80,
+    )
+
+    chart = (line + points).properties(
+        width=400, height=300,
+        title="Fixer Pass@k",
+    )
+    save_chart(chart, name)
 
 
 # ---------------------------------------------------------------------------
@@ -682,18 +935,54 @@ def main():
     p_tsr = subparsers.add_parser("plot-task-success-rates",
                                   help="Bar chart of success rates per task type")
     p_tsr.add_argument("agendas", nargs="+", help="Paths to agenda .pkl files")
+    p_tsr.add_argument("--name", default="task-success-rate",
+                       help="Output filename base (default: task-success-rate)")
+    p_tsr.add_argument("--labels", default=None,
+                       help="Comma-separated display labels matching agenda order")
 
     # plot-program-complexity
     p_cx = subparsers.add_parser("plot-program-complexity",
                                  help="Box plot of complexity metrics per run")
     p_cx.add_argument("agendas", nargs="+", help="Paths to agenda .pkl files")
     p_cx.add_argument("--language", default="dafny", help="Language (default: dafny)")
+    p_cx.add_argument("--name", default="program-complexity",
+                      help="Output filename base (default: program-complexity)")
+    p_cx.add_argument("--labels", default=None,
+                      help="Comma-separated display labels matching agenda order")
+    p_cx.add_argument("--dafnybench", default=None,
+                      help="Path to DafnyBench ground_truth dir; adds reference rule per metric")
+    p_cx.add_argument("--absolute", action="store_true",
+                      help="Count-scaled violins, filtered to values above DafnyBench's "
+                           "lower-percentile threshold (see --lower-percentile). "
+                           "Output goes to <name>-absolute.{svg,png}. Requires --dafnybench.")
+    p_cx.add_argument("--lower-percentile", type=float, default=25.0,
+                      help="DafnyBench percentile used as the lower threshold in --absolute "
+                           "mode and as the x-axis lower bound when also clipping (default: 25).")
+    p_cx.add_argument("--x-clip-percentile", type=float, default=None,
+                      help="Clip x-axis upper bound at this percentile of DafnyBench's "
+                           "per-program means (e.g. 90). Requires --dafnybench.")
+
+    # plot-fixer-pass-at-k
+    p_pak = subparsers.add_parser("plot-fixer-pass-at-k",
+                                  help="Line plot of fixer pass@k across models")
+    p_pak.add_argument("--horizontal", nargs="*", default=[],
+                       help="'Label:path' entries plotted as horizontal lines at pass@1")
+    p_pak.add_argument("--curve", nargs="*", default=[],
+                       help="'Label:path' entries plotted as line+points across --ks")
+    p_pak.add_argument("--ks", default="1,2,4,8,16",
+                       help="Comma-separated k values for curve entries (default: 1,2,4,8,16)")
+    p_pak.add_argument("--name", default="fixer-pass-at-k",
+                       help="Output filename base (default: fixer-pass-at-k)")
 
     # plot-program-diversity
     p_div = subparsers.add_parser("plot-program-diversity",
                                   help="Bar charts of diversity metrics per run")
     p_div.add_argument("agendas", nargs="+", help="Paths to agenda .pkl files")
     p_div.add_argument("--language", default="dafny", help="Language (default: dafny)")
+    p_div.add_argument("--name", default="program-diversity",
+                       help="Output filename base (default: program-diversity)")
+    p_div.add_argument("--labels", default=None,
+                       help="Comma-separated display labels matching agenda order")
 
     args = parser.parse_args()
 
@@ -703,15 +992,28 @@ def main():
         args.command = "tables"
 
     if args.command == "plot-task-success-rates":
-        plot_task_success_rates(args.agendas)
+        labels = resolve_labels(args.agendas, args.labels)
+        plot_task_success_rates(args.agendas, labels=labels, name=args.name)
+        return
+
+    if args.command == "plot-fixer-pass-at-k":
+        horizontal = [_parse_label_path(s) for s in args.horizontal]
+        curve = [_parse_label_path(s) for s in args.curve]
+        ks = [int(x) for x in args.ks.split(",")]
+        plot_fixer_pass_at_k(horizontal, curve, ks, name=args.name)
         return
 
     if args.command in ("plot-program-complexity", "plot-program-diversity"):
         lang = Language[args.language.upper()]
+        labels = resolve_labels(args.agendas, args.labels)
         if args.command == "plot-program-complexity":
-            plot_program_complexity(args.agendas, lang)
+            plot_program_complexity(args.agendas, lang, labels=labels, name=args.name,
+                                    dafnybench_dir=args.dafnybench,
+                                    absolute=args.absolute,
+                                    x_clip_percentile=args.x_clip_percentile,
+                                    lower_percentile=args.lower_percentile)
         else:
-            plot_program_diversity(args.agendas, lang)
+            plot_program_diversity(args.agendas, lang, labels=labels, name=args.name)
         return
 
     # tables mode

@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Link, NavLink } from 'react-router-dom';
 import Home from './pages/Home';
 import FixerReport from './pages/FixerReport';
+import VerusFixerReport from './pages/VerusFixerReport';
 import LemmaReport from './pages/LemmaReport';
+import VerusLemmaReport from './pages/VerusLemmaReport';
 import DiversityReport from './pages/DiversityReport';
 import DatasetStatsReport from './pages/DatasetStatsReport';
 
@@ -14,8 +16,14 @@ export default function App() {
           <NavLink to="/fixer-report" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
             Fixer Report
           </NavLink>
+          <NavLink to="/verus-fixer-report" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+            Verus Fixer Report
+          </NavLink>
           <NavLink to="/lemma-report" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
             Lemma Report
+          </NavLink>
+          <NavLink to="/verus-lemma-report" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+            Verus Lemma Report
           </NavLink>
           <NavLink to="/diversity-report" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
             Diversity Report
@@ -29,7 +37,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/fixer-report" element={<FixerReport />} />
+          <Route path="/verus-fixer-report" element={<VerusFixerReport />} />
           <Route path="/lemma-report" element={<LemmaReport />} />
+          <Route path="/verus-lemma-report" element={<VerusLemmaReport />} />
           <Route path="/diversity-report" element={<DiversityReport />} />
           <Route path="/dataset-stats" element={<DatasetStatsReport />} />
         </Routes>

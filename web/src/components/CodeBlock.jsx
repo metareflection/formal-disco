@@ -6,7 +6,7 @@ import 'highlight.js/styles/atom-one-dark.css';
 // since they share keywords (method, function, returns, requires, ensures, etc.)
 // hljs.registerLanguage('csharp', csharp);
 
-export default function CodeBlock({ code }) {
+export default function CodeBlock({ code, language = 'dafny' }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -15,11 +15,11 @@ export default function CodeBlock({ code }) {
       ref.current.removeAttribute('data-highlighted');
       hljs.highlightElement(ref.current);
     }
-  }, [code]);
+  }, [code, language]);
 
   return (
     <div className="code-block-wrap">
-      <pre><code ref={ref} className="language-dafny">{code}</code></pre>
+      <pre><code ref={ref} className={`language-${language}`}>{code}</code></pre>
     </div>
   );
 }
