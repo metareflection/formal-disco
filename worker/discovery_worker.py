@@ -1,14 +1,23 @@
 """Worker that applies heuristics to concepts to generate new conjectures and definitions."""
 
 import logging
+import os
 from typing import Any, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agenda import Agenda, Object, Task, WorkStatus
 from discovery import format_concepts_for_prompt, gather_definitions, parse_conjecture_output, heuristic_matches_concept, is_duplicate_statement, resolve_imports
+from discovery.checks.counterexample import check_counterexample
+from discovery.checks.novelty import (
+    NoveltyIndex,
+    check_novelty,
+    collect_agenda_corpus,
+    collect_leandisco_corpus,
+)
 from discovery.prompts import system_conjecture, format_conjecture_user
 from discovery.trace import Tracer
+from discovery.worth import update_heuristic_worth
 from language import Language, Program, VerificationOutcome
 
 from . import Worker
@@ -34,6 +43,13 @@ class DiscoveryWorker(Worker):
         max_heuristics_per_concept: int = 4,
         max_conjectures_per_heuristic: int = 5,
         attempt_priority_factor: float = 0.8,
+        enable_counterexample_check: bool = True,
+        counterexample_num_inst: int = 50,
+        counterexample_timeout: float = 60.0,
+        enable_novelty_check: bool = True,
+        novelty_threshold: float = 0.92,
+        novelty_model: str = NoveltyIndex.DEFAULT_MODEL,
+        lake_project_dir: Optional[str] = None,
     ) -> None:
         self._llm = llm
         self._backend = Language[language.upper()].get_backend()
@@ -42,6 +58,14 @@ class DiscoveryWorker(Worker):
         self._max_heuristics = max_heuristics_per_concept
         self._max_conjectures = max_conjectures_per_heuristic
         self._attempt_priority_factor = attempt_priority_factor
+        self._enable_counterexample_check = enable_counterexample_check
+        self._counterexample_num_inst = counterexample_num_inst
+        self._counterexample_timeout = counterexample_timeout
+        self._enable_novelty_check = enable_novelty_check
+        self._novelty_threshold = novelty_threshold
+        self._novelty_model = novelty_model
+        self._lake_project_dir = lake_project_dir
+        self._novelty_index: Optional[NoveltyIndex] = None
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
         while fuel > 0:
@@ -126,10 +150,8 @@ class DiscoveryWorker(Worker):
             # Parse output
             entries = parse_conjecture_output(response_text)[:self._max_conjectures]
 
-            # Update heuristic attempts
-            attempts = heuristic.properties.get('attempts', 0) + 1
-            await agenda.update_object(heuristic.path,
-                                       new_properties={'attempts': attempts})
+            # Bump the heuristic's attempts component; worth recomputes automatically.
+            await update_heuristic_worth(agenda, h_name, attempts_delta=1)
 
             tracer = Tracer(agenda=agenda, worker="DiscoveryWorker")
             await tracer.heuristic_apply(
@@ -204,14 +226,42 @@ class DiscoveryWorker(Worker):
             },
         ))
 
+        # Novelty gate (applies to both definitions and conjectures).
+        novelty_verdict, novelty_score, novelty_neighbor = await self._run_novelty_check(
+            agenda, entry, name, h_name, tracer,
+        )
+        if novelty_verdict == "too_similar":
+            return obj_path
+
         # Create follow-up task
         if kind == 'conjecture':
             # Typecheck with sorry stub before queuing a prove task
             if not await self._typecheck_conjecture(agenda, entry):
                 logger.info("Conjecture %s failed typecheck, skipping prove task", name)
-                await tracer.reject(heuristic=h_name, candidate=name, reason="typecheck_failed", kind=kind)
+                await tracer.reject(heuristic=h_name, candidate=name, reason="typecheck_failed", concept_kind=kind)
                 return obj_path
-            await tracer.admit(heuristic=h_name, candidate=name, reason="typecheck_passed", kind=kind)
+
+            # Counterexample search before committing an Opus call.
+            cex_verdict = await self._run_counterexample_check(agenda, entry, name, h_name, tracer)
+            if cex_verdict == 'refuted':
+                # Concept exists but is marked refuted — no prove task queued.
+                return obj_path
+
+            await tracer.admit(
+                heuristic=h_name, candidate=name,
+                reason="typecheck_passed", concept_kind=kind,
+                counterexample_check=cex_verdict,
+                novelty_score=novelty_score,
+                novelty_neighbor=novelty_neighbor,
+            )
+            await update_heuristic_worth(
+                agenda, h_name,
+                admits_delta=1,
+                novelty_delta=max(0.0, 1.0 - novelty_score),
+            )
+
+            # Add the admitted statement to the novelty index for future checks.
+            self._index_admit(name, entry.get('lean_statement', ''))
 
             # Priority based on heuristic success rate (Laplace smoothing)
             successes = heuristic.properties.get('successes', 0)
@@ -228,7 +278,18 @@ class DiscoveryWorker(Worker):
             # Set priority based on heuristic success rate
             await agenda.update_task(task_id, priority_factor=priority)
         else:
-            await tracer.admit(heuristic=h_name, candidate=name, reason="definition_admitted", kind=kind)
+            await tracer.admit(
+                heuristic=h_name, candidate=name,
+                reason="definition_admitted", concept_kind=kind,
+                novelty_score=novelty_score,
+                novelty_neighbor=novelty_neighbor,
+            )
+            await update_heuristic_worth(
+                agenda, h_name,
+                admits_delta=1,
+                novelty_delta=max(0.0, 1.0 - novelty_score),
+            )
+            self._index_admit(name, entry.get('lean_statement', ''))
             # Definitions get discover tasks
             await agenda.add_task(Task(
                 id=f"discover-{name}",
@@ -239,6 +300,135 @@ class DiscoveryWorker(Worker):
             ))
 
         return obj_path
+
+    async def _ensure_novelty_index(self, agenda: Agenda) -> Optional[NoveltyIndex]:
+        if not self._enable_novelty_check:
+            return None
+        if self._novelty_index is not None:
+            return self._novelty_index
+
+        cache_path = None
+        ckpt = getattr(agenda, "_checkpoint_path", None)
+        if ckpt:
+            base = ckpt.rsplit(".", 1)[0]
+            cache_path = f"{base}.novelty.npz"
+
+        index = NoveltyIndex(model_name=self._novelty_model, cache_path=cache_path)
+        try:
+            entries = collect_agenda_corpus(agenda)
+            lake = self._lake_project_dir or os.environ.get("LEAN_PROJECT_DIR")
+            entries += collect_leandisco_corpus(lake)
+            index.build(entries)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to build novelty index: %s", e)
+            self._enable_novelty_check = False
+            return None
+
+        self._novelty_index = index
+        return index
+
+    async def _run_novelty_check(
+        self, agenda: Agenda, entry: dict, name: str, h_name: str, tracer: Tracer,
+    ) -> tuple[str, float, str]:
+        """Returns (verdict, similarity, neighbor)."""
+        index = await self._ensure_novelty_index(agenda)
+        if index is None:
+            return ("skipped", 0.0, "")
+
+        statement = entry.get("lean_statement", "")
+        try:
+            result = check_novelty(
+                statement=statement,
+                index=index,
+                threshold=self._novelty_threshold,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("novelty check error for %s: %s", name, e)
+            return ("error", 0.0, "")
+
+        score = float(result.details.get("similarity", 0.0))
+        neighbor = str(result.details.get("nearest", ""))
+
+        if result.verdict == "too_similar":
+            await agenda.update_object(
+                f"concept/{self._domain}/{name}",
+                new_properties={
+                    "too_similar": True,
+                    "novelty_score": score,
+                    "novelty_neighbor": neighbor,
+                },
+            )
+            await tracer.reject(
+                heuristic=h_name, candidate=name,
+                reason="too_similar",
+                witness=neighbor,
+                similarity=score,
+            )
+            logger.info("REJECTED %s as too similar (cosine=%.3f) to %s",
+                        name, score, neighbor)
+            return ("too_similar", score, neighbor)
+
+        return ("novel", score, neighbor)
+
+    def _index_admit(self, name: str, statement: str) -> None:
+        """Add an admitted concept to the in-memory novelty index."""
+        if self._novelty_index is None or not statement:
+            return
+        try:
+            self._novelty_index.add(f"concept/{self._domain}/{name}", statement)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("novelty index add failed: %s", e)
+
+    async def _run_counterexample_check(
+        self, agenda: Agenda, entry: dict, name: str, h_name: str, tracer: Tracer,
+    ) -> str:
+        """Run slim_check on the candidate. Returns verdict tag.
+
+        Side effects: on refutation, marks the concept Object as refuted, emits a
+        ``reject`` trace, and records the witness so it can be reviewed later.
+        """
+        if not self._enable_counterexample_check:
+            return "skipped"
+
+        try:
+            preamble_defs = await gather_definitions(
+                agenda, self._domain,
+                entry.get('lean_statement', ''),
+                entry.get('related_concepts', []),
+            )
+            preamble = '\n\n'.join(preamble_defs)
+
+            result = check_counterexample(
+                statement=entry.get('lean_statement', ''),
+                imports=entry.get('lean_imports', []),
+                preamble=preamble,
+                backend=self._backend,
+                num_inst=self._counterexample_num_inst,
+                timeout=self._counterexample_timeout,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("counterexample_check failed for %s: %s", name, e)
+            return "error"
+
+        if result.verdict == "refuted":
+            await agenda.update_object(
+                f"concept/{self._domain}/{name}",
+                new_properties={
+                    'refuted': True,
+                    'counterexample_witness': result.witness or '',
+                    'counterexample_method': 'slim_check',
+                },
+            )
+            await tracer.reject(
+                heuristic=h_name, candidate=name,
+                reason="counterexample_found",
+                witness=(result.witness or '')[:600],
+            )
+            logger.info("REFUTED %s by counterexample: %s",
+                        name, (result.witness or '')[:200])
+            return "refuted"
+
+        return result.verdict  # 'passed' or 'inconclusive'
 
     async def _typecheck_conjecture(self, agenda: Agenda, entry: dict) -> bool:
         """Verify that a conjecture typechecks with sorry before queuing it for proof.

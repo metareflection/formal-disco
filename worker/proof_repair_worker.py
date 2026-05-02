@@ -9,6 +9,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agenda import Agenda, Object, Task, WorkStatus
 from discovery import format_concepts_for_prompt, gather_definitions, resolve_imports, strip_duplicate_decls
+from discovery.trace import Tracer
+from discovery.worth import difficulty_from_proof, update_heuristic_worth
 from language import Language, Program, VerificationOutcome
 
 from . import Worker
@@ -164,12 +166,28 @@ class ProofRepairWorker(Worker):
 
         logger.info("Proof repair for %s: %s", c_props.get('name', '?'), ver.outcome.name)
 
+        tracer = Tracer(agenda=agenda, worker="ProofRepairWorker")
         if ver.outcome == VerificationOutcome.SUCCESS:
+            await tracer.proof_attempt(
+                theorem=c_props.get('name', '?'),
+                strategy='repair',
+                outcome='success',
+                domain=self._domain,
+                repair_attempt=status.worker_notes.get('repair_attempts', 0) + 1,
+            )
             await self._handle_success(agenda, task, concept_obj, repaired_text)
             return
 
         # Failed — re-queue with updated error for another attempt
         repair_attempts = status.worker_notes.get('repair_attempts', 0) + 1
+        await tracer.proof_attempt(
+            theorem=c_props.get('name', '?'),
+            strategy='repair',
+            outcome='failure',
+            domain=self._domain,
+            repair_attempt=repair_attempts,
+            error_excerpt=(ver.stderr or ver.stdout or '')[:600],
+        )
         if repair_attempts >= self._max_attempts:
             await agenda.update_task(task.id, work_status=WorkStatus.FAILED,
                                      new_notes={"repair_attempts": repair_attempts})
@@ -257,15 +275,14 @@ class ProofRepairWorker(Worker):
             interest_dependencies=[concept_obj.path],
         ))
 
-        # Boost origin heuristic
+        # Credit the origin heuristic — repair successes count as "hard" (difficulty=1.0).
         origin = task.properties.get('origin_heuristic')
         if origin:
-            h_obj = await agenda.get_object(f"heuristic/{origin}")
-            if h_obj:
-                s = h_obj.properties.get('successes', 0) + 1
-                await agenda.update_object(h_obj.path,
-                                           new_properties={'successes': s},
-                                           interest_factor=1.1)
+            await update_heuristic_worth(
+                agenda, origin,
+                proves_delta=1,
+                difficulty_delta=difficulty_from_proof(proof_text, repaired=True),
+            )
 
         await agenda.update_task(task.id, work_status=WorkStatus.DONE,
                                  new_notes={"proved_with": "repair"})

@@ -11,6 +11,7 @@ from agenda import Agenda, Object, Task, WorkStatus
 from discovery import format_concepts_for_prompt, gather_definitions, resolve_imports, strip_duplicate_decls
 from discovery.prompts import system_prove, format_prove_user
 from discovery.trace import Tracer
+from discovery.worth import difficulty_from_proof, update_heuristic_worth
 from language import Language, Program, VerificationOutcome
 
 from . import Worker
@@ -333,6 +334,15 @@ class ProofWorker(Worker):
             properties={'concept': concept_obj.path},
             interest_dependencies=[concept_obj.path],
         ))
+
+        # Credit the origin heuristic with a prove + difficulty (multiplicative worth).
+        origin = task.properties.get('origin_heuristic') or c_props.get('origin_heuristic')
+        if origin:
+            await update_heuristic_worth(
+                agenda, origin,
+                proves_delta=1,
+                difficulty_delta=difficulty_from_proof(proof_text, repaired=False),
+            )
 
         await agenda.update_task(task.id, work_status=WorkStatus.DONE,
                                  new_notes={"proved_with": strategy_name})

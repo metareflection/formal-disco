@@ -9,6 +9,7 @@ from agenda import Agenda, Object, Task, WorkStatus
 from discovery import parse_conjecture_output, parse_reflection_output, is_duplicate_statement
 from discovery.prompts import system_reflect, format_reflect_user
 from discovery.trace import Tracer
+from discovery.worth import WorthComponents, compute_worth
 
 from . import Worker
 
@@ -80,55 +81,51 @@ class ReflectionWorker(Worker):
     async def _update_heuristic_worth(
         self, agenda: Agenda, heuristic_name: str, outcome: str,
     ) -> None:
-        """Update heuristic success tracking and interestingness."""
+        """Emit a worth-update trace and check the kill rule.
+
+        The actual worth components (admits, proves, novelty_sum, difficulty_sum)
+        are updated at their source: DiscoveryWorker on admit, ProofWorker /
+        ProofRepairWorker on proof success. The empirical interestingness has
+        already been recomputed by ``discovery.worth.update_heuristic_worth``
+        before this method runs. Here we just observe and decide whether to kill.
+        """
         h_obj = await agenda.get_object(f"heuristic/{heuristic_name}")
         if h_obj is None:
             return
 
-        h_props = h_obj.properties
-        attempts = h_props.get('attempts', 0)
-        successes = h_props.get('successes', 0)
-        before = h_obj.interestingness
+        components = WorthComponents.from_properties(h_obj.properties)
+        empirical = compute_worth(components)
         tracer = Tracer(agenda=agenda, worker="ReflectionWorker")
 
-        if outcome == 'success':
-            successes += 1
-            await agenda.update_object(h_obj.path,
-                                       new_properties={'successes': successes},
-                                       interest_factor=self._interest_success_boost)
-            logger.info("Heuristic %s: boosted (successes=%d, attempts=%d)",
-                        heuristic_name, successes, attempts)
-            await tracer.worth_update(
-                heuristic=heuristic_name,
-                before=before,
-                after=before * self._interest_success_boost,
-                cause="success",
-                attempts=attempts,
-                successes=successes,
-            )
-        else:
-            await agenda.update_object(h_obj.path,
-                                       interest_factor=self._interest_failure_decay)
-            await tracer.worth_update(
-                heuristic=heuristic_name,
-                before=before,
-                after=before * self._interest_failure_decay,
-                cause="failure",
-                attempts=attempts,
-                successes=successes,
-            )
+        await tracer.worth_update(
+            heuristic=heuristic_name,
+            before=h_obj.interestingness,
+            after=empirical,
+            cause=outcome,
+            attempts=components.attempts,
+            admits=components.admits,
+            proves=components.proves,
+            novelty_sum=components.novelty_sum,
+            difficulty_sum=components.difficulty_sum,
+        )
 
-        # Kill check
-        if (attempts >= self._min_attempts_for_kill and
-                attempts > 0 and successes / attempts < self._kill_threshold):
-            await agenda.update_object(h_obj.path, interest_factor=0.01)
-            logger.info("KILLED heuristic %s: success rate %.2f%% (%d/%d)",
-                        heuristic_name, 100 * successes / attempts,
-                        successes, attempts)
+        # Kill rule: enough attempts AND empirical worth below the threshold.
+        if (
+            components.attempts >= self._min_attempts_for_kill
+            and empirical < self._kill_threshold
+        ):
+            kill_factor = 0.01 / max(h_obj.interestingness, 1e-6)
+            await agenda.update_object(h_obj.path, interest_factor=kill_factor)
+            logger.info(
+                "KILLED heuristic %s: worth=%.4f attempts=%d admits=%d proves=%d",
+                heuristic_name, empirical, components.attempts,
+                components.admits, components.proves,
+            )
             await tracer.heuristic_death(
                 name=heuristic_name,
-                attempts=attempts,
-                successes=successes,
+                attempts=components.attempts,
+                successes=components.proves,
+                worth=empirical,
                 kill_threshold=self._kill_threshold,
             )
 
