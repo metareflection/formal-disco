@@ -1,0 +1,152 @@
+[
+  {
+    "name": "zero_nat",
+    "kind": "operation",
+    "domain": "natural_numbers",
+    "description": "The zero element of natural numbers, the base case for induction",
+    "lean_statement": "def zero_nat : Nat := 0",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["operation", "nullary", "nat", "peano"],
+    "related": ["succ_op"]
+  },
+  {
+    "name": "succ_op",
+    "kind": "operation",
+    "domain": "natural_numbers",
+    "description": "Successor function: the fundamental constructor for natural numbers, maps n to n + 1",
+    "lean_statement": "def succ_op (n : Nat) : Nat := n + 1",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["operation", "unary", "nat", "peano"],
+    "related": ["zero_nat", "add_op", "pred_op"]
+  },
+  {
+    "name": "add_op",
+    "kind": "operation",
+    "domain": "natural_numbers",
+    "description": "Addition of natural numbers, defined recursively via successor",
+    "lean_statement": "def add_op (a b : Nat) : Nat := a + b",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["operation", "binary", "nat", "arithmetic"],
+    "related": ["zero_nat", "succ_op", "mul_op"]
+  },
+  {
+    "name": "mul_op",
+    "kind": "operation",
+    "domain": "natural_numbers",
+    "description": "Multiplication of natural numbers, defined recursively via addition",
+    "lean_statement": "def mul_op (a b : Nat) : Nat := a * b",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["operation", "binary", "nat", "arithmetic"],
+    "related": ["add_op", "pow_op"]
+  },
+  {
+    "name": "pred_op",
+    "kind": "operation",
+    "domain": "natural_numbers",
+    "description": "Predecessor function, truncated at zero: pred 0 = 0, pred (n+1) = n",
+    "lean_statement": "def pred_op (n : Nat) : Nat := n - 1",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["operation", "unary", "nat", "truncated"],
+    "related": ["succ_op", "zero_nat"]
+  },
+  {
+    "name": "pow_op",
+    "kind": "operation",
+    "domain": "natural_numbers",
+    "description": "Exponentiation of natural numbers: a raised to the power b",
+    "lean_statement": "def pow_op (a b : Nat) : Nat := a ^ b",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["operation", "binary", "nat", "arithmetic"],
+    "related": ["mul_op"]
+  },
+  {
+    "name": "double_op",
+    "kind": "operation",
+    "domain": "natural_numbers",
+    "description": "Doubling: maps n to 2 * n",
+    "lean_statement": "def double_op (n : Nat) : Nat := 2 * n",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["operation", "unary", "nat", "arithmetic"],
+    "related": ["mul_op", "add_op", "is_even_def"]
+  },
+  {
+    "name": "is_even_def",
+    "kind": "definition",
+    "domain": "natural_numbers",
+    "description": "A natural number is even if it is divisible by 2",
+    "lean_statement": "def is_even_def (n : Nat) : Prop := ∃ k, n = 2 * k",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["definition", "predicate", "nat", "parity"],
+    "related": ["double_op", "mul_op", "dvd_def"]
+  },
+  {
+    "name": "le_def",
+    "kind": "definition",
+    "domain": "natural_numbers",
+    "description": "Less-than-or-equal on natural numbers: a ≤ b iff there exists k such that b = a + k",
+    "lean_statement": "def le_def (a b : Nat) : Prop := a ≤ b",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["definition", "predicate", "nat", "order"],
+    "related": ["add_op", "zero_nat"]
+  },
+  {
+    "name": "dvd_def",
+    "kind": "definition",
+    "domain": "natural_numbers",
+    "description": "Divisibility: a divides b if there exists k such that b = a * k",
+    "lean_statement": "def dvd_def (a b : Nat) : Prop := a ∣ b",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["definition", "predicate", "nat", "divisibility"],
+    "related": ["mul_op", "is_even_def"]
+  },
+  {
+    "name": "nat_zero_add",
+    "kind": "theorem",
+    "domain": "natural_numbers",
+    "description": "Zero is a left identity for addition: 0 + n = n",
+    "lean_statement": "theorem nat_zero_add (n : Nat) : 0 + n = n",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["theorem", "identity", "nat", "addition"],
+    "related": ["zero_nat", "add_op", "nat_add_zero"]
+  },
+  {
+    "name": "nat_add_zero",
+    "kind": "theorem",
+    "domain": "natural_numbers",
+    "description": "Zero is a right identity for addition: n + 0 = n",
+    "lean_statement": "theorem nat_add_zero (n : Nat) : n + 0 = n",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["theorem", "identity", "nat", "addition"],
+    "related": ["zero_nat", "add_op", "nat_zero_add"]
+  },
+  {
+    "name": "nat_succ_ne_zero",
+    "kind": "theorem",
+    "domain": "natural_numbers",
+    "description": "No successor equals zero (Peano axiom): succ n ≠ 0",
+    "lean_statement": "theorem nat_succ_ne_zero (n : Nat) : n + 1 ≠ 0",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["theorem", "peano", "nat", "inequality"],
+    "related": ["succ_op", "zero_nat"]
+  },
+  {
+    "name": "nat_add_comm",
+    "kind": "theorem",
+    "domain": "natural_numbers",
+    "description": "Addition of natural numbers is commutative: n + m = m + n",
+    "lean_statement": "theorem nat_add_comm (n m : Nat) : n + m = m + n",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["theorem", "commutativity", "nat", "addition"],
+    "related": ["add_op"]
+  },
+  {
+    "name": "nat_mul_zero",
+    "kind": "theorem",
+    "domain": "natural_numbers",
+    "description": "Multiplying any natural number by zero gives zero: n * 0 = 0",
+    "lean_statement": "theorem nat_mul_zero (n : Nat) : n * 0 = 0",
+    "lean_imports": ["Mathlib.Data.Nat.Basic"],
+    "tags": ["theorem", "identity", "nat", "multiplication"],
+    "related": ["mul_op", "zero_nat"]
+  }
+]

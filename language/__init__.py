@@ -203,6 +203,9 @@ class Language(Enum):
         if self == Language.VERUS:
             from .verus import VerusBackend
             return VerusBackend()
+        if self == Language.LEAN:
+            from .lean import LeanBackend
+            return LeanBackend()
         raise NotImplementedError(f"Unsupported language: {self}")
 
 

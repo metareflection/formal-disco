@@ -1,0 +1,252 @@
+[
+  {
+    "name": "sup_op",
+    "kind": "operation",
+    "domain": "order_theory",
+    "description": "Join (supremum) of two elements in a lattice",
+    "lean_statement": "def sup_op {α : Type*} [SemilatticeSup α] (a b : α) : α := a ⊔ b",
+    "lean_imports": ["Mathlib.Order.Lattice"],
+    "tags": ["operation", "binary", "lattice", "join"],
+    "related": ["inf_op", "le_sup_left", "le_sup_right"]
+  },
+  {
+    "name": "inf_op",
+    "kind": "operation",
+    "domain": "order_theory",
+    "description": "Meet (infimum) of two elements in a lattice",
+    "lean_statement": "def inf_op {α : Type*} [SemilatticeInf α] (a b : α) : α := a ⊓ b",
+    "lean_imports": ["Mathlib.Order.Lattice"],
+    "tags": ["operation", "binary", "lattice", "meet"],
+    "related": ["sup_op", "inf_le_left", "inf_le_right"]
+  },
+  {
+    "name": "top_op",
+    "kind": "operation",
+    "domain": "order_theory",
+    "description": "Top element of a bounded order",
+    "lean_statement": "def top_op (α : Type*) [OrderTop α] : α := ⊤",
+    "lean_imports": ["Mathlib.Order.BoundedOrder"],
+    "tags": ["operation", "nullary", "bounded", "lattice"],
+    "related": ["bot_op", "le_top"]
+  },
+  {
+    "name": "bot_op",
+    "kind": "operation",
+    "domain": "order_theory",
+    "description": "Bottom element of a bounded order",
+    "lean_statement": "def bot_op (α : Type*) [OrderBot α] : α := ⊥",
+    "lean_imports": ["Mathlib.Order.BoundedOrder"],
+    "tags": ["operation", "nullary", "bounded", "lattice"],
+    "related": ["top_op", "bot_le"]
+  },
+  {
+    "name": "monotone_def",
+    "kind": "definition",
+    "domain": "order_theory",
+    "description": "A function is monotone if it preserves the order: a ≤ b implies f a ≤ f b",
+    "lean_statement": "-- Monotone function: preserves order\n-- In Mathlib: Monotone f\nexample {α β : Type*} [Preorder α] [Preorder β] (f : α → β) (hf : Monotone f) (a b : α) (h : a ≤ b) : f a ≤ f b := hf h",
+    "lean_imports": ["Mathlib.Order.Monotone.Basic"],
+    "tags": ["definition", "function", "order", "monotone"],
+    "related": ["galois_connection_def", "antitone_def"]
+  },
+  {
+    "name": "antitone_def",
+    "kind": "definition",
+    "domain": "order_theory",
+    "description": "A function is antitone (order-reversing) if a ≤ b implies f b ≤ f a",
+    "lean_statement": "-- Antitone function: reverses order\n-- In Mathlib: Antitone f\nexample {α β : Type*} [Preorder α] [Preorder β] (f : α → β) (hf : Antitone f) (a b : α) (h : a ≤ b) : f b ≤ f a := hf h",
+    "lean_imports": ["Mathlib.Order.Monotone.Basic"],
+    "tags": ["definition", "function", "order", "antitone"],
+    "related": ["monotone_def"]
+  },
+  {
+    "name": "galois_connection_def",
+    "kind": "definition",
+    "domain": "order_theory",
+    "description": "A Galois connection between preorders: a pair (l, u) where l a ≤ b iff a ≤ u b. The lower adjoint l and upper adjoint u form an adjunction.",
+    "lean_statement": "-- Galois connection: l ⊣ u means ∀ a b, l a ≤ b ↔ a ≤ u b\n-- In Mathlib: GaloisConnection l u\nexample {α β : Type*} [Preorder α] [Preorder β] (l : α → β) (u : β → α) (gc : GaloisConnection l u) (a : α) (b : β) : l a ≤ b ↔ a ≤ u b := gc.le_iff_le a b",
+    "lean_imports": ["Mathlib.Order.GaloisConnection"],
+    "tags": ["definition", "galois_connection", "adjunction", "order"],
+    "related": ["monotone_def", "gc_unit", "gc_counit", "galois_insertion_def"]
+  },
+  {
+    "name": "galois_insertion_def",
+    "kind": "definition",
+    "domain": "order_theory",
+    "description": "A Galois insertion is a Galois connection where the upper adjoint is injective (equivalently, l ∘ u = id). Stronger than a Galois connection.",
+    "lean_statement": "-- Galois insertion: a Galois connection where u is a section of l\n-- In Mathlib: GaloisInsertion l u\nexample {α β : Type*} [Preorder α] [Preorder β] (l : α → β) (u : β → α) (gi : GaloisInsertion l u) : GaloisConnection l u := gi.gc",
+    "lean_imports": ["Mathlib.Order.GaloisConnection"],
+    "tags": ["definition", "galois_insertion", "adjunction", "order"],
+    "related": ["galois_connection_def", "closure_operator_def"]
+  },
+  {
+    "name": "closure_operator_def",
+    "kind": "definition",
+    "domain": "order_theory",
+    "description": "A closure operator is a monotone, extensive (a ≤ cl a), idempotent (cl (cl a) = cl a) function. The composition u ∘ l of a Galois connection is a closure operator.",
+    "lean_statement": "-- Closure operator: monotone, extensive, idempotent\n-- In Mathlib: ClosureOperator α\nexample {α : Type*} [PartialOrder α] (cl : ClosureOperator α) (a : α) : a ≤ cl a := cl.le_closure a",
+    "lean_imports": ["Mathlib.Order.Closure"],
+    "tags": ["definition", "closure", "idempotent", "order"],
+    "related": ["galois_connection_def", "monotone_def", "fixed_point_def"]
+  },
+  {
+    "name": "fixed_point_def",
+    "kind": "definition",
+    "domain": "order_theory",
+    "description": "A fixed point of a function f is an element x such that f x = x",
+    "lean_statement": "def is_fixed_point {α : Type*} (f : α → α) (x : α) : Prop := f x = x",
+    "lean_imports": ["Mathlib.Order.FixedPoints"],
+    "tags": ["definition", "fixed_point", "function"],
+    "related": ["lfp_def", "gfp_def", "closure_operator_def"]
+  },
+  {
+    "name": "lfp_def",
+    "kind": "definition",
+    "domain": "order_theory",
+    "description": "Least fixed point of a monotone function on a complete lattice (Knaster-Tarski)",
+    "lean_statement": "-- Least fixed point via Knaster-Tarski\n-- In Mathlib: OrderHom.lfp\nexample {α : Type*} [CompleteLattice α] (f : α →o α) : f (OrderHom.lfp f) = OrderHom.lfp f := OrderHom.lfp_eq f",
+    "lean_imports": ["Mathlib.Order.FixedPoints"],
+    "tags": ["definition", "fixed_point", "lfp", "complete_lattice", "knaster_tarski"],
+    "related": ["gfp_def", "monotone_def", "fixed_point_def"]
+  },
+  {
+    "name": "gfp_def",
+    "kind": "definition",
+    "domain": "order_theory",
+    "description": "Greatest fixed point of a monotone function on a complete lattice (Knaster-Tarski)",
+    "lean_statement": "-- Greatest fixed point via Knaster-Tarski\n-- In Mathlib: OrderHom.gfp\nexample {α : Type*} [CompleteLattice α] (f : α →o α) : f (OrderHom.gfp f) = OrderHom.gfp f := OrderHom.gfp_eq f",
+    "lean_imports": ["Mathlib.Order.FixedPoints"],
+    "tags": ["definition", "fixed_point", "gfp", "complete_lattice", "knaster_tarski"],
+    "related": ["lfp_def", "monotone_def", "fixed_point_def"]
+  },
+  {
+    "name": "le_sup_left",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "An element is less than or equal to its join with another: a ≤ a ⊔ b",
+    "lean_statement": "theorem le_sup_left_order {α : Type*} [SemilatticeSup α] (a b : α) : a ≤ a ⊔ b",
+    "lean_imports": ["Mathlib.Order.Lattice"],
+    "tags": ["theorem", "lattice", "join", "order"],
+    "related": ["sup_op", "le_sup_right", "sup_le"]
+  },
+  {
+    "name": "inf_le_left",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "The meet of two elements is less than or equal to each: a ⊓ b ≤ a",
+    "lean_statement": "theorem inf_le_left_order {α : Type*} [SemilatticeInf α] (a b : α) : a ⊓ b ≤ a",
+    "lean_imports": ["Mathlib.Order.Lattice"],
+    "tags": ["theorem", "lattice", "meet", "order"],
+    "related": ["inf_op", "inf_le_right", "le_inf"]
+  },
+  {
+    "name": "sup_comm",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "Join is commutative: a ⊔ b = b ⊔ a",
+    "lean_statement": "theorem sup_comm_order {α : Type*} [SemilatticeSup α] (a b : α) : a ⊔ b = b ⊔ a",
+    "lean_imports": ["Mathlib.Order.Lattice"],
+    "tags": ["theorem", "lattice", "join", "commutativity"],
+    "related": ["sup_op", "inf_comm", "sup_assoc"]
+  },
+  {
+    "name": "inf_comm",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "Meet is commutative: a ⊓ b = b ⊓ a",
+    "lean_statement": "theorem inf_comm_order {α : Type*} [SemilatticeInf α] (a b : α) : a ⊓ b = b ⊓ a",
+    "lean_imports": ["Mathlib.Order.Lattice"],
+    "tags": ["theorem", "lattice", "meet", "commutativity"],
+    "related": ["inf_op", "sup_comm", "inf_assoc"]
+  },
+  {
+    "name": "sup_inf_distrib",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "In a distributive lattice, join distributes over meet: a ⊔ (b ⊓ c) = (a ⊔ b) ⊓ (a ⊔ c)",
+    "lean_statement": "theorem sup_inf_distrib_order {α : Type*} [DistribLattice α] (a b c : α) : a ⊔ (b ⊓ c) = (a ⊔ b) ⊓ (a ⊔ c)",
+    "lean_imports": ["Mathlib.Order.Lattice"],
+    "tags": ["theorem", "lattice", "distributive", "join", "meet"],
+    "related": ["sup_op", "inf_op"]
+  },
+  {
+    "name": "gc_unit",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "Unit of a Galois connection: a ≤ u (l a). The upper adjoint applied after the lower adjoint is extensive.",
+    "lean_statement": "theorem gc_unit {α β : Type*} [Preorder α] [Preorder β] (l : α → β) (u : β → α) (gc : GaloisConnection l u) (a : α) : a ≤ u (l a)",
+    "lean_imports": ["Mathlib.Order.GaloisConnection"],
+    "tags": ["theorem", "galois_connection", "unit", "adjunction"],
+    "related": ["galois_connection_def", "gc_counit", "closure_operator_def"]
+  },
+  {
+    "name": "gc_counit",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "Counit of a Galois connection: l (u b) ≤ b. The lower adjoint applied after the upper adjoint is reductive.",
+    "lean_statement": "theorem gc_counit {α β : Type*} [Preorder α] [Preorder β] (l : α → β) (u : β → α) (gc : GaloisConnection l u) (b : β) : l (u b) ≤ b",
+    "lean_imports": ["Mathlib.Order.GaloisConnection"],
+    "tags": ["theorem", "galois_connection", "counit", "adjunction"],
+    "related": ["galois_connection_def", "gc_unit"]
+  },
+  {
+    "name": "gc_monotone_l",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "The lower adjoint of a Galois connection is monotone",
+    "lean_statement": "theorem gc_monotone_l {α β : Type*} [Preorder α] [Preorder β] (l : α → β) (u : β → α) (gc : GaloisConnection l u) : Monotone l",
+    "lean_imports": ["Mathlib.Order.GaloisConnection"],
+    "tags": ["theorem", "galois_connection", "monotone", "adjunction"],
+    "related": ["galois_connection_def", "gc_monotone_u", "monotone_def"]
+  },
+  {
+    "name": "gc_monotone_u",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "The upper adjoint of a Galois connection is monotone",
+    "lean_statement": "theorem gc_monotone_u {α β : Type*} [Preorder α] [Preorder β] (l : α → β) (u : β → α) (gc : GaloisConnection l u) : Monotone u",
+    "lean_imports": ["Mathlib.Order.GaloisConnection"],
+    "tags": ["theorem", "galois_connection", "monotone", "adjunction"],
+    "related": ["galois_connection_def", "gc_monotone_l", "monotone_def"]
+  },
+  {
+    "name": "gc_compose_extensive",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "The round-trip u ∘ l is extensive: a ≤ (u ∘ l) a. This is the closure property.",
+    "lean_statement": "theorem gc_compose_extensive {α β : Type*} [Preorder α] [Preorder β] (l : α → β) (u : β → α) (gc : GaloisConnection l u) (a : α) : a ≤ u (l a)",
+    "lean_imports": ["Mathlib.Order.GaloisConnection"],
+    "tags": ["theorem", "galois_connection", "closure", "extensive", "round_trip"],
+    "related": ["galois_connection_def", "gc_unit", "closure_operator_def"]
+  },
+  {
+    "name": "gc_compose_idempotent",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "The round-trip u ∘ l ∘ u ∘ l = u ∘ l: the closure is idempotent",
+    "lean_statement": "theorem gc_compose_idempotent {α β : Type*} [PartialOrder α] [Preorder β] (l : α → β) (u : β → α) (gc : GaloisConnection l u) (a : α) : u (l (u (l a))) = u (l a)",
+    "lean_imports": ["Mathlib.Order.GaloisConnection"],
+    "tags": ["theorem", "galois_connection", "closure", "idempotent", "round_trip"],
+    "related": ["galois_connection_def", "closure_operator_def", "gc_compose_extensive"]
+  },
+  {
+    "name": "le_top",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "Every element is less than or equal to top",
+    "lean_statement": "theorem le_top_order {α : Type*} [OrderTop α] (a : α) : a ≤ ⊤",
+    "lean_imports": ["Mathlib.Order.BoundedOrder"],
+    "tags": ["theorem", "bounded", "top", "order"],
+    "related": ["top_op", "bot_le"]
+  },
+  {
+    "name": "bot_le",
+    "kind": "theorem",
+    "domain": "order_theory",
+    "description": "Bottom is less than or equal to every element",
+    "lean_statement": "theorem bot_le_order {α : Type*} [OrderBot α] (a : α) : ⊥ ≤ a",
+    "lean_imports": ["Mathlib.Order.BoundedOrder"],
+    "tags": ["theorem", "bounded", "bot", "order"],
+    "related": ["bot_op", "le_top"]
+  }
+]

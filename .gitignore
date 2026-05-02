@@ -1,9 +1,21 @@
 discoveries/
-/data/
+/data/*.jsonl
 outputs/
 readme-ideas/
 wandb/
+results/
 
 *.pyc
 __pycache__/
 *.pkl
+*.log
+
+# Hydra runtime output
+.hydra/
+
+# Reflective-event audit logs (sit next to checkpoint pickles)
+*.trace.jsonl
+
+# Frontend build output and deps (web/ and web-eurisko/)
+node_modules/
+dist/

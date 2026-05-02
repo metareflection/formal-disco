@@ -1,0 +1,152 @@
+[
+  {
+    "name": "mul_op",
+    "kind": "operation",
+    "domain": "group_theory",
+    "description": "Group multiplication operation",
+    "lean_statement": "def mul_op {G : Type*} [Group G] (a b : G) : G := a * b",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["operation", "binary", "group"],
+    "related": ["inv_op", "one_op"]
+  },
+  {
+    "name": "inv_op",
+    "kind": "operation",
+    "domain": "group_theory",
+    "description": "Group inverse operation",
+    "lean_statement": "def inv_op {G : Type*} [Group G] (a : G) : G := a⁻¹",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["operation", "unary", "group"],
+    "related": ["mul_op", "one_op"]
+  },
+  {
+    "name": "one_op",
+    "kind": "operation",
+    "domain": "group_theory",
+    "description": "Group identity element",
+    "lean_statement": "def one_op (G : Type*) [Group G] : G := 1",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["operation", "nullary", "group"],
+    "related": ["mul_op", "inv_op"]
+  },
+  {
+    "name": "conjugate_by",
+    "kind": "operation",
+    "domain": "group_theory",
+    "description": "Conjugation: g * a * g⁻¹",
+    "lean_statement": "def conjugate_by {G : Type*} [Group G] (g a : G) : G := g * a * g⁻¹",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["operation", "binary", "group", "conjugation"],
+    "related": ["mul_op", "inv_op", "commutator"]
+  },
+  {
+    "name": "commutator",
+    "kind": "operation",
+    "domain": "group_theory",
+    "description": "Group commutator: a⁻¹ * b⁻¹ * a * b",
+    "lean_statement": "def commutator {G : Type*} [Group G] (a b : G) : G := a⁻¹ * b⁻¹ * a * b",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["operation", "binary", "group", "commutator"],
+    "related": ["conjugate_by", "mul_comm_theorem"]
+  },
+  {
+    "name": "square_op",
+    "kind": "operation",
+    "domain": "group_theory",
+    "description": "Squaring operation: a * a",
+    "lean_statement": "def square_op {G : Type*} [Group G] (a : G) : G := a * a",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["operation", "unary", "group"],
+    "related": ["mul_op"]
+  },
+  {
+    "name": "mul_assoc_theorem",
+    "kind": "theorem",
+    "domain": "group_theory",
+    "description": "Group multiplication is associative",
+    "lean_statement": "theorem mul_assoc_group {G : Type*} [Group G] (a b c : G) : a * b * c = a * (b * c)",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["theorem", "associativity", "group"],
+    "related": ["mul_op"]
+  },
+  {
+    "name": "mul_one_theorem",
+    "kind": "theorem",
+    "domain": "group_theory",
+    "description": "Multiplying by the identity element gives the same element",
+    "lean_statement": "theorem mul_one_group {G : Type*} [Group G] (a : G) : a * 1 = a",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["theorem", "identity", "group"],
+    "related": ["one_op", "mul_op"]
+  },
+  {
+    "name": "mul_inv_cancel_theorem",
+    "kind": "theorem",
+    "domain": "group_theory",
+    "description": "Multiplying by the inverse gives the identity",
+    "lean_statement": "theorem mul_inv_cancel_group {G : Type*} [Group G] (a : G) : a * a⁻¹ = 1",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["theorem", "inverse", "cancellation", "group"],
+    "related": ["inv_op", "mul_op", "one_op"]
+  },
+  {
+    "name": "inv_inv_theorem",
+    "kind": "theorem",
+    "domain": "group_theory",
+    "description": "Double inverse is the identity: (a⁻¹)⁻¹ = a",
+    "lean_statement": "theorem inv_inv_group {G : Type*} [Group G] (a : G) : a⁻¹⁻¹ = a",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["theorem", "inverse", "involution", "group"],
+    "related": ["inv_op"]
+  },
+  {
+    "name": "inv_mul_rev_theorem",
+    "kind": "theorem",
+    "domain": "group_theory",
+    "description": "Inverse of a product reverses the order: (a * b)⁻¹ = b⁻¹ * a⁻¹",
+    "lean_statement": "theorem inv_mul_rev_group {G : Type*} [Group G] (a b : G) : (a * b)⁻¹ = b⁻¹ * a⁻¹",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["theorem", "inverse", "product", "group"],
+    "related": ["inv_op", "mul_op"]
+  },
+  {
+    "name": "mul_left_cancel_theorem",
+    "kind": "theorem",
+    "domain": "group_theory",
+    "description": "Left cancellation: a * b = a * c implies b = c",
+    "lean_statement": "theorem mul_left_cancel_group {G : Type*} [Group G] (a b c : G) (h : a * b = a * c) : b = c",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["theorem", "cancellation", "group"],
+    "related": ["mul_op"]
+  },
+  {
+    "name": "mul_comm_abelian",
+    "kind": "theorem",
+    "domain": "group_theory",
+    "description": "In an abelian group, multiplication is commutative",
+    "lean_statement": "theorem mul_comm_abelian {G : Type*} [CommGroup G] (a b : G) : a * b = b * a",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic"],
+    "tags": ["theorem", "commutativity", "abelian", "group"],
+    "related": ["mul_op", "commutator"]
+  },
+  {
+    "name": "group_hom_def",
+    "kind": "definition",
+    "domain": "group_theory",
+    "description": "A group homomorphism preserves the group operation",
+    "lean_statement": "-- Group homomorphism: a function f such that f(a * b) = f(a) * f(b)\n-- In Mathlib: MonoidHom (or →* notation)\nexample {G H : Type*} [Group G] [Group H] (f : G →* H) (a b : G) : f (a * b) = f a * f b := map_mul f a b",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic", "Mathlib.Algebra.Hom.Group.Defs"],
+    "tags": ["definition", "morphism", "function", "group"],
+    "related": ["mul_op"]
+  },
+  {
+    "name": "subgroup_closure",
+    "kind": "definition",
+    "domain": "group_theory",
+    "description": "A subgroup is closed under multiplication and inverses",
+    "lean_statement": "-- Subgroup: a subset closed under multiplication, inverses, and containing 1\n-- In Mathlib: Subgroup G\nexample {G : Type*} [Group G] (S : Subgroup G) (a b : G) (ha : a ∈ S) (hb : b ∈ S) : a * b ∈ S := S.mul_mem ha hb",
+    "lean_imports": ["Mathlib.Algebra.Group.Basic", "Mathlib.GroupTheory.Subgroup.Basic"],
+    "tags": ["definition", "subgroup", "closure", "group"],
+    "related": ["mul_op", "inv_op", "one_op"]
+  }
+]
