@@ -102,11 +102,6 @@ class Tracer:
         parents: Optional[list[str]],
     ) -> None:
         try:
-            scalar_props = {
-                k: v
-                for k, v in record["payload"].items()
-                if isinstance(v, (str, int, float, bool)) or v is None
-            }
             obj = Object(
                 path=path,
                 type="trace",
@@ -118,7 +113,6 @@ class Tracer:
                     "tick": tick,
                     "seq": seq,
                     "timestamp": ts,
-                    **scalar_props,
                 },
                 interestingness=1.0,
             )
