@@ -160,16 +160,47 @@ def parse_reflection_output(text: str) -> dict[str, Any]:
     # Extract new concepts (reuse conjecture parser for concept blocks)
     result['concepts'] = parse_conjecture_output(text)
 
-    # Extract new heuristic proposal
-    heuristic = {}
-    for field in ('NEW_HEURISTIC_NAME', 'NEW_HEURISTIC_KIND', 'NEW_HEURISTIC_TEMPLATE'):
-        match = re.search(rf'{field}[:\s]*\n?(.*?)(?=\n(?:NEW_HEURISTIC_|$))',
+    # Extract new heuristic proposal. INPUT_KINDS / INPUT_TAGS were added in
+    # Phase 2 so the soundness check's applies_to filter has something to bind
+    # to — without them every reflection-born heuristic would match no concepts
+    # and be rejected as applies_to_empty.
+    heuristic: dict[str, Any] = {}
+    fields = (
+        'NEW_HEURISTIC_NAME',
+        'NEW_HEURISTIC_KIND',
+        'NEW_HEURISTIC_INPUT_KINDS',
+        'NEW_HEURISTIC_INPUT_TAGS',
+        'NEW_HEURISTIC_TEMPLATE',
+    )
+    for field in fields:
+        # ``[: \t]*`` instead of ``[:\s]*`` so we don't accidentally consume the
+        # terminating newline when the value is empty (e.g. ``INPUT_TAGS:\n``).
+        match = re.search(rf'{field}[: \t]*\n?(.*?)(?=\n(?:NEW_HEURISTIC_|$))',
                           text, re.DOTALL)
         if match:
             val = match.group(1).strip()
-            if val and val.upper() != 'NONE':
+            # Guard against the lookahead falling through into the next field's
+            # body when this field's value is empty.
+            if val and val.upper() != 'NONE' and not val.startswith('NEW_HEURISTIC_'):
                 key = field.replace('NEW_HEURISTIC_', '').lower()
                 heuristic[key] = val
+
+    # Parse the comma-separated lists into the property names the worker uses
+    # (worker reads h_spec['input_concept_kinds'] and h_spec['input_tags']).
+    if 'input_kinds' in heuristic:
+        raw = heuristic.pop('input_kinds')
+        items = [s.strip() for s in raw.split(',') if s.strip()]
+        # 'all' is shorthand for "no kind filter" — leave concept_kinds empty.
+        if items and items != ['all']:
+            heuristic['input_concept_kinds'] = items
+    if 'input_tags' in heuristic:
+        raw = heuristic.pop('input_tags')
+        items = [s.strip() for s in raw.split(',') if s.strip()]
+        if items:
+            heuristic['input_tags'] = items
+        else:
+            heuristic.pop('input_tags', None)
+
     if heuristic.get('name') and heuristic.get('template'):
         result['new_heuristic'] = heuristic
 
