@@ -1,0 +1,132 @@
+[
+  {
+    "name": "mod_op",
+    "kind": "operation",
+    "domain": "modular_arithmetic",
+    "description": "Modulus / remainder of a divided by b. Note: Lean's `Nat` modulus has the convention a % 0 = a (not undefined).",
+    "lean_statement": "def mod_op (a b : Nat) : Nat := a % b",
+    "lean_imports": ["Mathlib.Data.Nat.Defs"],
+    "tags": ["operation", "binary", "nat", "modular"],
+    "related": ["div_op", "divides_op", "is_even_def"]
+  },
+  {
+    "name": "div_op",
+    "kind": "operation",
+    "domain": "modular_arithmetic",
+    "description": "Integer (Nat) division: floor of a / b. Lean's convention: a / 0 = 0.",
+    "lean_statement": "def div_op (a b : Nat) : Nat := a / b",
+    "lean_imports": ["Mathlib.Data.Nat.Defs"],
+    "tags": ["operation", "binary", "nat", "modular"],
+    "related": ["mod_op", "divides_op"]
+  },
+  {
+    "name": "divides_op",
+    "kind": "operation",
+    "domain": "modular_arithmetic",
+    "description": "a divides b: there exists k such that b = a * k. Decidable for Nat via Nat.decidable_dvd.",
+    "lean_statement": "def divides_op (a b : Nat) : Prop := a ∣ b",
+    "lean_imports": ["Mathlib.Data.Nat.GCD.Basic"],
+    "tags": ["operation", "binary", "nat", "modular", "predicate"],
+    "related": ["mod_op", "gcd_op", "coprime_def"]
+  },
+  {
+    "name": "gcd_op",
+    "kind": "operation",
+    "domain": "modular_arithmetic",
+    "description": "Greatest common divisor of two natural numbers, via Mathlib's Nat.gcd.",
+    "lean_statement": "def gcd_op (a b : Nat) : Nat := Nat.gcd a b",
+    "lean_imports": ["Mathlib.Data.Nat.GCD.Basic"],
+    "tags": ["operation", "binary", "nat", "modular"],
+    "related": ["lcm_op", "divides_op", "coprime_def"]
+  },
+  {
+    "name": "lcm_op",
+    "kind": "operation",
+    "domain": "modular_arithmetic",
+    "description": "Least common multiple of two natural numbers, via Mathlib's Nat.lcm. Edge case: lcm a 0 = 0.",
+    "lean_statement": "def lcm_op (a b : Nat) : Nat := Nat.lcm a b",
+    "lean_imports": ["Mathlib.Data.Nat.GCD.Basic"],
+    "tags": ["operation", "binary", "nat", "modular"],
+    "related": ["gcd_op", "divides_op"]
+  },
+  {
+    "name": "is_even_def",
+    "kind": "definition",
+    "domain": "modular_arithmetic",
+    "description": "n is even iff n % 2 = 0. Decidable since Nat equality is decidable.",
+    "lean_statement": "def is_even_def (n : Nat) : Prop := n % 2 = 0",
+    "lean_imports": ["Mathlib.Data.Nat.Defs"],
+    "tags": ["definition", "predicate", "nat", "parity"],
+    "related": ["is_odd_def", "mod_op", "double_op"]
+  },
+  {
+    "name": "is_odd_def",
+    "kind": "definition",
+    "domain": "modular_arithmetic",
+    "description": "n is odd iff n % 2 = 1. Decidable.",
+    "lean_statement": "def is_odd_def (n : Nat) : Prop := n % 2 = 1",
+    "lean_imports": ["Mathlib.Data.Nat.Defs"],
+    "tags": ["definition", "predicate", "nat", "parity"],
+    "related": ["is_even_def", "mod_op"]
+  },
+  {
+    "name": "coprime_def",
+    "kind": "definition",
+    "domain": "modular_arithmetic",
+    "description": "a and b are coprime iff their gcd is 1. Decidable.",
+    "lean_statement": "def coprime_def (a b : Nat) : Prop := Nat.gcd a b = 1",
+    "lean_imports": ["Mathlib.Data.Nat.GCD.Basic"],
+    "tags": ["definition", "predicate", "nat", "modular"],
+    "related": ["gcd_op", "divides_op"]
+  },
+  {
+    "name": "double_op",
+    "kind": "operation",
+    "domain": "modular_arithmetic",
+    "description": "Doubling: 2 * n. Always even.",
+    "lean_statement": "def double_op (n : Nat) : Nat := 2 * n",
+    "lean_imports": ["Mathlib.Data.Nat.Defs"],
+    "tags": ["operation", "unary", "nat", "parity"],
+    "related": ["is_even_def", "mod_op"]
+  },
+  {
+    "name": "mod_op_self_zero",
+    "kind": "theorem",
+    "domain": "modular_arithmetic",
+    "description": "n mod n is 0 for any natural n (including 0, since 0 % 0 = 0 in Lean).",
+    "lean_statement": "theorem mod_op_self_zero (n : Nat) : mod_op n n = 0 := by simp [mod_op]",
+    "lean_imports": ["Mathlib.Data.Nat.Defs"],
+    "tags": ["theorem", "nat", "modular"],
+    "related": ["mod_op"]
+  },
+  {
+    "name": "gcd_op_zero_right",
+    "kind": "theorem",
+    "domain": "modular_arithmetic",
+    "description": "gcd of n and 0 is n. Edge case worth seeding because it's a common LLM stumbling block.",
+    "lean_statement": "theorem gcd_op_zero_right (n : Nat) : gcd_op n 0 = n := by simp [gcd_op]",
+    "lean_imports": ["Mathlib.Data.Nat.GCD.Basic"],
+    "tags": ["theorem", "nat", "modular"],
+    "related": ["gcd_op"]
+  },
+  {
+    "name": "divides_self",
+    "kind": "theorem",
+    "domain": "modular_arithmetic",
+    "description": "Every n divides itself.",
+    "lean_statement": "theorem divides_self (n : Nat) : divides_op n n := by simp [divides_op]",
+    "lean_imports": ["Mathlib.Data.Nat.GCD.Basic"],
+    "tags": ["theorem", "nat", "modular"],
+    "related": ["divides_op"]
+  },
+  {
+    "name": "is_even_zero",
+    "kind": "theorem",
+    "domain": "modular_arithmetic",
+    "description": "Zero is even.",
+    "lean_statement": "theorem is_even_zero : is_even_def 0 := by simp [is_even_def]",
+    "lean_imports": ["Mathlib.Data.Nat.Defs"],
+    "tags": ["theorem", "nat", "parity"],
+    "related": ["is_even_def"]
+  }
+]
