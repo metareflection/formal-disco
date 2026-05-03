@@ -95,20 +95,25 @@ class DiscoveryWorker(Worker):
                                      new_notes={"error": f"concept not found: {concept_path}"})
             return
 
-        # Load all heuristics and filter by applicability
-        all_tasks = await agenda.get_tasks()
-        heuristics = []
-        for obj_path in [t.properties.get('concept', '') for t, _ in all_tasks]:
-            pass  # We need to get heuristic objects directly
-
-        # Get heuristic objects by scanning the agenda
+        # Enumerate ALL heuristic objects in the agenda — including ones born
+        # via reflection at runtime — and filter by (a) concept-generation kind
+        # (proof/reflection-kind heuristics belong to other workers), and (b)
+        # applies_to filter for this concept.
+        #
+        # Uses agenda._objects directly because the public Agenda protocol only
+        # exposes ``get_object(path)``; same Phase 1 expedient as in
+        # discovery/checks/{novelty,soundness}.py. Proper query API is Phase 3.
+        objects = getattr(agenda, "_objects", None)
         heuristic_objs = []
-        # We need to iterate objects - use get_object for known paths
-        for h in ['specialize', 'generalize', 'compose_operations',
-                   'algebraic_identities', 'analogy_transfer', 'boundary_cases']:
-            obj = await agenda.get_object(f"heuristic/{h}")
-            if obj is not None and heuristic_matches_concept(obj, concept_obj):
-                heuristic_objs.append(obj)
+        if objects:
+            for obj in objects.values():
+                if obj.type != "heuristic":
+                    continue
+                kind = obj.properties.get("heuristic_kind", "")
+                if kind not in ("concept", "conjecture"):
+                    continue
+                if heuristic_matches_concept(obj, concept_obj):
+                    heuristic_objs.append(obj)
 
         # Sort by interestingness (worth), take top N
         heuristic_objs.sort(key=lambda h: h.interestingness, reverse=True)
