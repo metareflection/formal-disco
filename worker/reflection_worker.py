@@ -7,6 +7,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agenda import Agenda, Object, Task, WorkStatus
 from discovery import parse_conjecture_output, parse_reflection_output, is_duplicate_statement
+from discovery.checks.soundness import (
+    check_heuristic_soundness,
+    collect_existing_heuristics,
+    collect_harness,
+)
+from discovery.heuristic import AppliesToSpec, CheckSpec, CommitSpec, Heuristic, ProposeSpec
 from discovery.prompts import system_reflect, format_reflect_user
 from discovery.trace import Tracer
 from discovery.worth import WorthComponents, compute_worth
@@ -231,7 +237,11 @@ class ReflectionWorker(Worker):
         # Check for new heuristic proposal
         new_h = result.get('new_heuristic')
         if new_h:
-            await self._create_heuristic(agenda, new_h, parent_heuristic=h_name)
+            await self._create_heuristic(
+                agenda, new_h,
+                parent_heuristic=h_name,
+                triggering_concept_path=concept_obj.path,
+            )
 
     async def _reflect_on_failure(
         self, agenda: Agenda, task: Task, concept_obj: Object,
@@ -321,8 +331,20 @@ class ReflectionWorker(Worker):
         logger.info("Reflection on failure of %s: %d weakened conjectures proposed",
                     c_props.get('name', '?'), len(result.get('concepts', [])))
 
-    async def _create_heuristic(self, agenda: Agenda, h_spec: dict, *, parent_heuristic: str = "unknown") -> None:
-        """Create a new heuristic Object from a reflection proposal."""
+    async def _create_heuristic(
+        self,
+        agenda: Agenda,
+        h_spec: dict,
+        *,
+        parent_heuristic: str = "unknown",
+        triggering_concept_path: str = "",
+    ) -> None:
+        """Create a new heuristic Object from a reflection proposal, gated by HeuristicSoundnessCheck.
+
+        Phase 2 (PROPOSAL_EURISKO.md §4.2): the proposer is the LLM that emitted
+        ``h_spec``; the checker is ``check_heuristic_soundness``. Birth only
+        happens if the soundness gate passes.
+        """
         name = h_spec.get('name', '')
         if not name:
             return
@@ -338,26 +360,75 @@ class ReflectionWorker(Worker):
 
         kind = h_spec.get('kind', 'concept')
         template = h_spec.get('template', '')
+        # The reflection prompt may emit applies_to hints; default to empty so the
+        # SoundnessCheck filter test exercises whatever it produces.
+        applies_to_kinds = list(h_spec.get('input_concept_kinds', []) or [])
+        applies_to_tags = list(h_spec.get('input_tags', []) or [])
 
+        proposed = Heuristic(
+            name=name,
+            heuristic_kind=kind,
+            applies_to=AppliesToSpec(
+                concept_kinds=applies_to_kinds,
+                tags=applies_to_tags,
+            ),
+            propose=ProposeSpec(kind="prompt_template", template=template),
+            check=CheckSpec(kind="default_pipeline"),
+            commit=CommitSpec(kind="default"),
+            born_from_reflection=True,
+        )
+
+        # Build the harness (held-out concepts) and the existing-pool snapshot.
+        excludes = (triggering_concept_path,) if triggering_concept_path else ()
+        harness = collect_harness(agenda, exclude_paths=excludes, max_size=30)
+        existing_heuristics = collect_existing_heuristics(agenda)
+
+        verdict = check_heuristic_soundness(
+            proposed=proposed,
+            harness=harness,
+            existing_heuristics=existing_heuristics,
+        )
+
+        tracer = Tracer(agenda=agenda, worker="ReflectionWorker")
+        await tracer.heuristic_soundness_check(
+            name=name,
+            verdict=verdict.verdict,
+            passed=verdict.passed,
+            reason=verdict.reason,
+            witness=verdict.witness,
+            parent_heuristic=parent_heuristic,
+            harness_size=len(harness),
+            n_existing=len(existing_heuristics),
+        )
+
+        if not verdict.passed:
+            logger.info(
+                "REJECTED proposed heuristic %s by soundness check (%s): %s",
+                name, verdict.verdict, verdict.reason,
+            )
+            return
+
+        # Admit: materialize the heuristic Object.
         await agenda.create_object(Object(
             path=path,
             type="heuristic",
             content=template.encode('utf-8'),
             properties={
-                'name': name,
-                'heuristic_kind': kind,
-                'input_concept_kinds': [],
-                'input_tags': [],
+                **proposed.to_object_properties(),
                 'eurisclo_origin': None,
                 'attempts': 0,
-                'successes': 0,
-                'born_from_reflection': True,
+                'admits': 0,
+                'proves': 0,
+                'novelty_sum': 0.0,
+                'difficulty_sum': 0.0,
+                'successes': 0,  # mirrored from proves; kept for legacy UI
             },
         ))
         logger.info("NEW HEURISTIC BORN: %s (kind: %s)", name, kind)
-        await Tracer(agenda=agenda, worker="ReflectionWorker").heuristic_birth(
+        await tracer.heuristic_birth(
             name=name,
             parent_heuristic=parent_heuristic,
             template=template,
             heuristic_kind=kind,
+            harness_match_count=verdict.details.get("n_applicable", 0),
         )

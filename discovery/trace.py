@@ -194,6 +194,22 @@ class Tracer:
             },
         )
 
+    async def heuristic_soundness_check(
+        self, *, name: str, verdict: str, passed: bool, reason: str = "",
+        witness: Optional[str] = None, **extra: Any,
+    ) -> str:
+        return await self.event(
+            "heuristic_soundness_check",
+            {
+                "name": name,
+                "verdict": verdict,
+                "passed": passed,
+                "reason": reason,
+                "witness": witness,
+                **extra,
+            },
+        )
+
 
 def _jsonable(o: Any) -> Any:
     if o is None or isinstance(o, (str, int, float, bool)):
