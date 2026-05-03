@@ -1,13 +1,16 @@
-"""Counterexample search via Mathlib's ``slim_check``.
+"""Counterexample search via the ``plausible`` tactic.
 
-Pre-proof gate: turn the conjecture into ``example ... := by slim_check`` and
+Pre-proof gate: turn the conjecture into ``example ... := by plausible`` and
 let Lean's property-based tester sample concrete instances. If a counterexample
 shows up, we refute *before* spending an Opus call on a doomed proof.
 
-Inconclusive outcomes (slim_check can't sample, no Decidable instance, or it
+Inconclusive outcomes (plausible can't sample, no Decidable instance, or it
 just timed out) are NOT treated as refutation — the conjecture proceeds normally.
 The whole point of the asymmetry is that the check only speaks when it has
 mechanical evidence; silence means "I don't know," not "false."
+
+Note on naming: this used to be ``slim_check`` in older Mathlib. The Lean FRO
+extracted it as a standalone ``Plausible`` package; the API is the same.
 """
 
 from __future__ import annotations
@@ -43,42 +46,46 @@ def _to_example(statement: str) -> str:
 
 
 def build_probe(*, statement: str, imports: list[str], preamble: str, num_inst: int) -> str:
-    """Build a Lean source file that runs slim_check on the conjecture."""
+    """Build a Lean source file that runs plausible on the conjecture."""
     body = _to_example(_strip_proof_body(statement))
-    import_lines = ["import Mathlib.Tactic.SlimCheck"]
+    import_lines = ["import Plausible"]
     import_lines += [f"import {imp}" for imp in resolve_imports(imports)]
     parts = [
         "\n".join(import_lines),
         "",
         preamble,
         "",
-        f"{body} := by slim_check (config := {{ numInst := {num_inst} }})",
+        f"{body} := by plausible (config := {{ numInst := {num_inst} }})",
         "",
     ]
     return "\n".join(parts)
 
 
-# Slim_check writes a structured banner around a counterexample. We accept either
-# the canonical heading or the more conservative ``Found problems!`` line so we
-# don't get fooled by version drift in Mathlib.
-_SLIMCHECK_REFUTED_MARKERS = (
-    "===Found a counterexample===",
+# plausible writes a banner like:
+#   ===================
+#   Found a counter-example!
+#   n := 1
+#   issue: 1 = 0 does not hold
+# Older slim_check formats included for forward-compatibility with mixed setups.
+_REFUTED_MARKERS = (
+    "Found a counter-example!",
     "Found problems!",
+    "===Found a counterexample===",
     "Counter-examples found.",
 )
 
 
 def _looks_refuted(output: str) -> bool:
-    return any(m in output for m in _SLIMCHECK_REFUTED_MARKERS)
+    return any(m in output for m in _REFUTED_MARKERS)
 
 
 def _extract_witness(output: str) -> str:
     """Pull out the lines that look like the counterexample binding(s).
 
-    Slim_check typically prints assignments like ``x := 0`` after the marker.
+    plausible typically prints assignments like ``x := 0`` after the marker.
     We grab a bounded slice as the witness so the trace stays small.
     """
-    for marker in _SLIMCHECK_REFUTED_MARKERS:
+    for marker in _REFUTED_MARKERS:
         idx = output.find(marker)
         if idx >= 0:
             tail = output[idx : idx + 800]

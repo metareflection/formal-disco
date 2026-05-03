@@ -16,6 +16,9 @@ __pycache__/
 # Reflective-event audit logs (sit next to checkpoint pickles)
 *.trace.jsonl
 
+# Novelty embedding caches (sit next to checkpoint pickles)
+*.novelty.npz
+
 # Frontend build output and deps (web/ and web-eurisko/)
 node_modules/
 dist/
