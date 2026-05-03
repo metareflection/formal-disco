@@ -78,13 +78,43 @@ def difficulty_avg(c: WorthComponents) -> float:
     return max(0.0, min(1.0, c.difficulty_sum / c.proves))
 
 
-def compute_worth(c: WorthComponents) -> float:
-    """Compute a heuristic's worth from its components. Returns a non-negative float."""
+def compute_worth(c: WorthComponents, *, global_proves_seen: bool = True) -> float:
+    """Compute a heuristic's worth from its components.
+
+    During the *cold-start* phase — before *any* heuristic in the system has
+    been credited with a successful proof — we replace ``prove_rate`` with the
+    same neutral prior (0.5) we use for novelty/difficulty when their inputs
+    are absent. This stops the kill rule from firing on the four heuristics
+    actively producing admits while ProofWorker is still warming up.
+
+    Once any heuristic globally has ``proves > 0``, the standard formula kicks
+    in for everyone — including those that have been racking up admits without
+    successes, so prove_rate punishes them at that point as intended.
+    """
     a = admit_rate(c)
-    p = prove_rate(c)
+    p = prove_rate(c) if global_proves_seen else 0.5
     n = max(novelty_avg(c), NOVELTY_FLOOR)
     d = DIFFICULTY_BIAS + DIFFICULTY_SCALE * difficulty_avg(c)
     return SCALE * a * p * n * d
+
+
+def _global_proves_seen(agenda) -> bool:
+    """Return True if any heuristic in the agenda has been credited with a prove.
+
+    Reads the private ``_objects`` dict directly because the public Agenda
+    protocol only exposes ``get_object(path)``. Same Phase 1 expedient as in
+    ``checks/novelty.py``.
+    """
+    objects = getattr(agenda, "_objects", None)
+    if not objects:
+        return False
+    for obj in objects.values():
+        if obj.type != "heuristic":
+            continue
+        proves = obj.properties.get("proves", obj.properties.get("successes", 0)) or 0
+        if int(proves) > 0:
+            return True
+    return False
 
 
 async def update_heuristic_worth(
@@ -113,7 +143,7 @@ async def update_heuristic_worth(
     components.difficulty_sum += difficulty_delta
 
     before = float(h_obj.interestingness)
-    new_worth = compute_worth(components)
+    new_worth = compute_worth(components, global_proves_seen=_global_proves_seen(agenda))
     factor = (new_worth / before) if before > 1e-6 else new_worth
 
     await agenda.update_object(

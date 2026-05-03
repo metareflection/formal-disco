@@ -12,6 +12,9 @@ workers:
     domain: group_theory
     max_heuristics_per_concept: 4
     max_conjectures_per_heuristic: 5
+    # group_theory has no Sampleable instances for `(G : Type) [Group G]`,
+    # so slim_check is 100% inconclusive in this domain. Skip the cost.
+    enable_counterexample_check: false
     llm:
       _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
       model: claude-sonnet-4-6
