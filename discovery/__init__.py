@@ -151,6 +151,13 @@ def parse_reflection_output(text: str) -> dict[str, Any]:
     """Parse reflection LLM output into analysis, concepts, and optional new heuristic."""
     result: dict[str, Any] = {}
 
+    # Normalize: ensure a trailing newline so all the ``...\n$`` lookaheads in
+    # the regexes below match the final field. Bedrock / langchain responses
+    # often end without one, which previously caused the last NEW_HEURISTIC_*
+    # field (and thus the whole proposal) to silently drop.
+    if not text.endswith("\n"):
+        text = text + "\n"
+
     # Extract analysis section
     analysis_match = re.search(r'ANALYSIS[:\s]*\n(.*?)(?=\n(?:NAME|NEW_HEURISTIC|$))',
                                text, re.DOTALL)
