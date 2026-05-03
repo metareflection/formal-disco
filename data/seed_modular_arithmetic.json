@@ -24,7 +24,7 @@
     "kind": "operation",
     "domain": "modular_arithmetic",
     "description": "a divides b: there exists k such that b = a * k. Decidable for Nat via Nat.decidable_dvd.",
-    "lean_statement": "def divides_op (a b : Nat) : Prop := a ∣ b",
+    "lean_statement": "abbrev divides_op (a b : Nat) : Prop := a ∣ b",
     "lean_imports": ["Mathlib.Data.Nat.GCD.Basic"],
     "tags": ["operation", "binary", "nat", "modular", "predicate"],
     "related": ["mod_op", "gcd_op", "coprime_def"]
@@ -54,7 +54,7 @@
     "kind": "definition",
     "domain": "modular_arithmetic",
     "description": "n is even iff n % 2 = 0. Decidable since Nat equality is decidable.",
-    "lean_statement": "def is_even_def (n : Nat) : Prop := n % 2 = 0",
+    "lean_statement": "abbrev is_even_def (n : Nat) : Prop := n % 2 = 0",
     "lean_imports": ["Mathlib.Data.Nat.Defs"],
     "tags": ["definition", "predicate", "nat", "parity"],
     "related": ["is_odd_def", "mod_op", "double_op"]
@@ -64,7 +64,7 @@
     "kind": "definition",
     "domain": "modular_arithmetic",
     "description": "n is odd iff n % 2 = 1. Decidable.",
-    "lean_statement": "def is_odd_def (n : Nat) : Prop := n % 2 = 1",
+    "lean_statement": "abbrev is_odd_def (n : Nat) : Prop := n % 2 = 1",
     "lean_imports": ["Mathlib.Data.Nat.Defs"],
     "tags": ["definition", "predicate", "nat", "parity"],
     "related": ["is_even_def", "mod_op"]
@@ -74,7 +74,7 @@
     "kind": "definition",
     "domain": "modular_arithmetic",
     "description": "a and b are coprime iff their gcd is 1. Decidable.",
-    "lean_statement": "def coprime_def (a b : Nat) : Prop := Nat.gcd a b = 1",
+    "lean_statement": "abbrev coprime_def (a b : Nat) : Prop := Nat.gcd a b = 1",
     "lean_imports": ["Mathlib.Data.Nat.GCD.Basic"],
     "tags": ["definition", "predicate", "nat", "modular"],
     "related": ["gcd_op", "divides_op"]
@@ -114,7 +114,7 @@
     "kind": "theorem",
     "domain": "modular_arithmetic",
     "description": "Every n divides itself.",
-    "lean_statement": "theorem divides_self (n : Nat) : divides_op n n := by simp [divides_op]",
+    "lean_statement": "theorem divides_self (n : Nat) : divides_op n n := dvd_refl n",
     "lean_imports": ["Mathlib.Data.Nat.GCD.Basic"],
     "tags": ["theorem", "nat", "modular"],
     "related": ["divides_op"]
@@ -124,7 +124,7 @@
     "kind": "theorem",
     "domain": "modular_arithmetic",
     "description": "Zero is even.",
-    "lean_statement": "theorem is_even_zero : is_even_def 0 := by simp [is_even_def]",
+    "lean_statement": "theorem is_even_zero : is_even_def 0 := by decide",
     "lean_imports": ["Mathlib.Data.Nat.Defs"],
     "tags": ["theorem", "nat", "parity"],
     "related": ["is_even_def"]
