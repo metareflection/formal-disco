@@ -7,7 +7,6 @@ For now we only have a local implementation of the agenda, but the idea is that 
 be distributed so that we can spawn async workers on many machines.
 """
 
-import atexit
 import asyncio
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
@@ -17,6 +16,7 @@ import signal
 import threading
 import pickle
 import os
+import secrets
 import uuid
 import logging
 from dataclasses import dataclass, field
@@ -281,9 +281,12 @@ class LocalAgenda(Agenda):
              else datetime.datetime.now() +
                   datetime.timedelta(seconds=benchmark_codebase_time))
 
-        # FIXME: add handlers to handle SIGTERM, SIGINT, etc.
-        # atexit alone is not really robust.
-        atexit.register(self._checkpoint)
+        # We used to checkpoint at atexit and register that here, but not
+        # anymore: now, if the run is killed before it finishes, we will
+        # just keep the last checkpoint and lose a bit of work. It is tricky
+        # to checkpoint on a signal because checkpointing takes time when
+        # the agenda is large, and usually times out and potentially leaves
+        # corrupt files on disk.
 
 
     def _load(self):
@@ -321,61 +324,66 @@ class LocalAgenda(Agenda):
     def _should_stop(self) -> bool:
         return self._max_attempts is not None and self._total_attempts >= self._max_attempts
 
-    def _checkpoint(self):
+    async def _checkpoint(self):
         if self._checkpoint_path is None:
             return
 
-        tmp_path = f"{self._checkpoint_path}.new"
-        try:
-            with open(tmp_path, 'wb') as f:
-                data = {
-                    'tasks': self._tasks,
-                    'status': self._status,
-                    'clock': self._clock,
-                    'objects': self._objects,
-                    'task_outcomes': self._task_outcomes,
-                    'total_attempts': self._total_attempts,
-                }
-                pickle.dump(data, f)
-                f.flush()
-                os.fsync(f.fileno())
-            # Atomic rename: overwrite target with new file
-            os.replace(tmp_path, self._checkpoint_path)
-            logger.info(f"Checkpointed agenda to {self._checkpoint_path}.")
-
-            # Run global stats (slower) logging every time we checkpoint.
-            s = self._compute_codebase_statistics()
-            self._logger.log_code_base_statistics(s)
-
-            progress_metrics = {'tasks/total_attempts': self._total_attempts}
-            if self._max_attempts is not None:
-                progress_metrics['tasks/max_attempts'] = self._max_attempts
-                progress_metrics['tasks/progress'] = self._total_attempts / self._max_attempts
-            self._logger.log_metrics(progress_metrics)
-            logger.info(f"Codebase statistics: {s}")
-
-            d = self._compute_diversity_metrics()
-            self._logger.log_metrics(d)
-            logger.info(f"Diversity/complexity metrics: {d}")
-
-            self._logger.log_task_outcomes(self._task_outcomes)
-            logger.info(f"Task outcomes: {self._task_outcomes}")
-
-            # Log performance statistics if tracker is available
-            if self._performance_tracker is not None:
-                per_proc_stats = self._performance_tracker.get_statistics()
-                agg_stats = self._performance_tracker.get_aggregate_statistics()
-                self._logger.log_performance_statistics(per_proc_stats, agg_stats)
-                logger.info(f"RPC performance (aggregate): {agg_stats}")
-
-        except Exception as e:
-            logger.warning(f"Failed to write checkpoint: {e}")
-            # Clean up tmp file if something went wrong
+        # Add a random suffix so concurrent checkpoints don't interfere on
+        # each other's temp file (the rename is still atomic; last writer wins).
+        # We don't really have concurrent checkpoints anymore, but this is still here
+        # for precaution if we change again in the future.
+        tmp_path = f"{self._checkpoint_path}.{os.getpid()}.{secrets.token_hex(4)}.new"
+        async with self._lock:
             try:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-            except Exception:
-                pass
+                with open(tmp_path, 'wb') as f:
+                    data = {
+                        'tasks': self._tasks,
+                        'status': self._status,
+                        'clock': self._clock,
+                        'objects': self._objects,
+                        'task_outcomes': self._task_outcomes,
+                        'total_attempts': self._total_attempts,
+                    }
+                    pickle.dump(data, f)
+                    f.flush()
+                    os.fsync(f.fileno())
+                # Atomic rename: overwrite target with new file
+                os.replace(tmp_path, self._checkpoint_path)
+                logger.info(f"Checkpointed agenda to {self._checkpoint_path}.")
+
+                # Run global stats (slower) logging every time we checkpoint.
+                s = self._compute_codebase_statistics()
+                self._logger.log_code_base_statistics(s)
+
+                progress_metrics = {'tasks/total_attempts': self._total_attempts}
+                if self._max_attempts is not None:
+                    progress_metrics['tasks/max_attempts'] = self._max_attempts
+                    progress_metrics['tasks/progress'] = self._total_attempts / self._max_attempts
+                self._logger.log_metrics(progress_metrics)
+                logger.info(f"Codebase statistics: {s}")
+
+                d = self._compute_diversity_metrics()
+                self._logger.log_metrics(d)
+                logger.info(f"Diversity/complexity metrics: {d}")
+
+                self._logger.log_task_outcomes(self._task_outcomes)
+                logger.info(f"Task outcomes: {self._task_outcomes}")
+
+                # Log performance statistics if tracker is available
+                if self._performance_tracker is not None:
+                    per_proc_stats = self._performance_tracker.get_statistics()
+                    agg_stats = self._performance_tracker.get_aggregate_statistics()
+                    self._logger.log_performance_statistics(per_proc_stats, agg_stats)
+                    logger.info(f"RPC performance (aggregate): {agg_stats}")
+
+            except Exception as e:
+                logger.warning(f"Failed to write checkpoint: {e}")
+                # Clean up tmp file if something went wrong
+                try:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                except Exception:
+                    pass
 
 
     def tick(self):
