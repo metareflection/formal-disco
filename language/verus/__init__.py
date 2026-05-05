@@ -59,6 +59,13 @@ _INV_RE = re.compile(r'^\s*invariant\b\s*(.+)', re.MULTILINE)
 _ASSERT_RE = re.compile(r'^\s*assert\s*\((.+)', re.MULTILINE)
 _ENSURES_RE = re.compile(r'^\s*ensures\b\s*(.+)', re.MULTILINE)
 _REQUIRES_RE = re.compile(r'^\s*requires\b\s*(.+)', re.MULTILINE)
+# "Annotations" = body-level proof hints (asserts + loop invariants).
+# Specifications (requires/ensures/decreases) are not counted here.
+_ANNOTATION_REGEXES = (_INV_RE, _ASSERT_RE)
+
+
+def _count_annotations(text: str) -> int:
+    return sum(len(rx.findall(text)) for rx in _ANNOTATION_REGEXES)
 _QUANTIFIER_RE = re.compile(r'\b(forall|exists)\b')
 _LOOP_KW_RE = re.compile(r'\b(while|for|loop)\b')
 
@@ -263,6 +270,36 @@ def _extract_fn_loop_features(source: str) -> list[dict]:
     return results
 
 
+def _extract_annotations_per_fn(source: str) -> list[int]:
+    """Annotation counts (signature + body) for each fn in source.
+
+    Annotations counted: invariant, assert, ensures, requires, decreases, assume.
+    Signature-level annotations (requires/ensures/decreases between the fn line
+    and the opening brace) are included by scanning lines[fn..close_brace].
+    """
+    clean = _remove_comments(source)
+    lines = clean.split('\n')
+    counts: list[int] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _FN_LINE_RE.match(line):
+            brace_line, brace_col = _find_body_brace(lines, i)
+            if brace_line is None:
+                i += 1
+                continue
+            full = '\n'.join(lines[brace_line:])
+            close = _find_matching_brace(full, brace_col)
+            sig_text = '\n'.join(lines[i:brace_line])
+            body_text = full[brace_col + 1:close]
+            fn_text = sig_text + '\n' + body_text
+            counts.append(_count_annotations(fn_text))
+            i = brace_line + body_text.count('\n') + 1
+        else:
+            i += 1
+    return counts
+
+
 def _extract_body_sizes(source: str) -> list[int]:
     """Return non-blank line counts for each fn body."""
     clean = _remove_comments(source)
@@ -295,6 +332,7 @@ class VerusBackend(LanguageBackend):
 
     _COMPLEXITY_METRICS = frozenset({
         'body_sizes', 'n_loops_per_fn', 'n_idents_in_asserts', 'n_idents_in_invs',
+        'n_annotations_per_fn', 'n_annotations_per_program',
     })
 
     _FEATURE_METRICS = frozenset({
@@ -401,6 +439,8 @@ class VerusBackend(LanguageBackend):
             'n_loops_per_fn': [f['n_loops'] for f in fn_loop_features],
             'n_idents_in_asserts': [len(_IDENT_RE.findall(a)) for a in asserts],
             'n_idents_in_invs': [len(_IDENT_RE.findall(inv)) for inv in invariants],
+            'n_annotations_per_fn': _extract_annotations_per_fn(source),
+            'n_annotations_per_program': [_count_annotations(clean)],
         }
 
     def feature_sets(self, program: 'Program') -> dict[str, Counter]:
