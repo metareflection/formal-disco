@@ -13,10 +13,12 @@ sft trains an SFT model from distillation examples stored in an agenda pickle.
 """
 
 import argparse
+import math
 import json
 import pickle
 import os
 import sys
+
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -366,12 +368,17 @@ def _train_with_trl(
 
     # Drop records whose prompt+completion don't fit in max_seq_length.
     # (TRL would otherwise right-truncate past the ask and zero out the loss.)
+    total_kept_tokens = [0]
+
     def _fits(record) -> bool:
         ids = tokenizer.apply_chat_template(
             list(record["prompt"]) + list(record["completion"]),
             tokenize=True, add_generation_prompt=False,
         )
-        return len(ids) <= max_seq_length
+        fits = len(ids) <= max_seq_length
+        if fits:
+            total_kept_tokens[0] += len(ids)
+        return fits
 
     n_before = len(records)
     records = [r for r in records if _fits(r)]
@@ -421,8 +428,33 @@ def _train_with_trl(
         max_grad_norm=float(max_grad_norm),
     )
 
-    if max_steps:
-        training_args.max_steps = max_steps
+    # Treat max_steps as an upper bound: only force it when training for the full
+    # num_train_epochs would exceed it. With packing=True we estimate per-epoch
+    # steps from total tokens / max_seq_length; otherwise from record count.
+    world_size = 4  # This is hardcoded for now: slurm/sft.sbatch requests 4 GPUs
+    effective_batch_size = (
+        int(per_device_train_batch_size) * int(gradient_accumulation_steps) * world_size
+    )
+    if training_args.packing:
+        packed_samples = max(1, math.ceil(total_kept_tokens[0] / max_seq_length))
+    else:
+        packed_samples = len(records)
+    steps_per_epoch = max(1, math.ceil(packed_samples / effective_batch_size))
+    estimated_epoch_steps = math.ceil(steps_per_epoch * float(num_train_epochs))
+
+    if max_steps and int(max_steps) > 0 and estimated_epoch_steps > int(max_steps):
+        training_args.max_steps = int(max_steps)
+        print(
+            f"[steps] capping at max_steps={max_steps} "
+            f"(full {num_train_epochs} epochs ≈ {estimated_epoch_steps} steps; "
+            f"per-epoch ≈ {steps_per_epoch}, effective_batch={effective_batch_size})"
+        )
+    else:
+        print(
+            f"[steps] running num_train_epochs={num_train_epochs} "
+            f"(≈ {estimated_epoch_steps} steps; per-epoch ≈ {steps_per_epoch}, "
+            f"effective_batch={effective_batch_size}); max_steps cap = {max_steps or 'unset'}"
+        )
 
     # Temporary: log per-step loss to <output_dir>/train_loss.json for offline inspection.
     from transformers import TrainerCallback
