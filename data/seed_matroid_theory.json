@@ -1,0 +1,112 @@
+[
+  {
+    "name": "indep_op",
+    "kind": "operation",
+    "domain": "matroid_theory",
+    "description": "Independence predicate of a matroid: M.Indep S means S is independent in M.",
+    "lean_statement": "def indep_op {α : Type*} (M : Matroid α) (S : Set α) : Prop := M.Indep S",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Basic"],
+    "tags": ["operation", "predicate", "matroid"],
+    "related": ["is_base_op", "is_circuit_op", "is_loop_def"]
+  },
+  {
+    "name": "is_base_op",
+    "kind": "operation",
+    "domain": "matroid_theory",
+    "description": "Base predicate: M.IsBase B means B is a maximal independent subset of M.E.",
+    "lean_statement": "def is_base_op {α : Type*} (M : Matroid α) (B : Set α) : Prop := M.IsBase B",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Basic"],
+    "tags": ["operation", "predicate", "matroid", "base"],
+    "related": ["indep_op", "is_circuit_op", "dual_op"]
+  },
+  {
+    "name": "is_circuit_op",
+    "kind": "operation",
+    "domain": "matroid_theory",
+    "description": "Circuit predicate: M.IsCircuit C means C is a minimal dependent set in M.",
+    "lean_statement": "def is_circuit_op {α : Type*} (M : Matroid α) (C : Set α) : Prop := M.IsCircuit C",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Circuit"],
+    "tags": ["operation", "predicate", "matroid", "circuit"],
+    "related": ["indep_op", "is_base_op", "dual_op"]
+  },
+  {
+    "name": "closure_op",
+    "kind": "operation",
+    "domain": "matroid_theory",
+    "description": "Closure operator: M.closure S is the smallest flat containing S ∩ M.E.",
+    "lean_statement": "def closure_op {α : Type*} (M : Matroid α) (S : Set α) : Set α := M.closure S",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Closure"],
+    "tags": ["operation", "matroid", "closure"],
+    "related": ["is_flat_def", "indep_op"]
+  },
+  {
+    "name": "dual_op",
+    "kind": "operation",
+    "domain": "matroid_theory",
+    "description": "Dual matroid: M✶ has bases that are complements (in M.E) of bases of M. Notation: M✶.",
+    "lean_statement": "def dual_op {α : Type*} (M : Matroid α) : Matroid α := M✶",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Dual"],
+    "tags": ["operation", "matroid", "dual"],
+    "related": ["is_base_op", "is_circuit_op"]
+  },
+  {
+    "name": "is_loop_def",
+    "kind": "definition",
+    "domain": "matroid_theory",
+    "description": "An element e of M.E is a loop if {e} is dependent.",
+    "lean_statement": "def is_loop_def {α : Type*} (M : Matroid α) (e : α) : Prop := e ∈ M.E ∧ ¬ M.Indep {e}",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Basic"],
+    "tags": ["definition", "predicate", "matroid", "loop"],
+    "related": ["indep_op", "is_circuit_op"]
+  },
+  {
+    "name": "is_flat_def",
+    "kind": "definition",
+    "domain": "matroid_theory",
+    "description": "A set F ⊆ M.E is a flat (closed set) iff it equals its own closure.",
+    "lean_statement": "def is_flat_def {α : Type*} (M : Matroid α) (F : Set α) : Prop := F ⊆ M.E ∧ M.closure F = F",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Closure"],
+    "tags": ["definition", "predicate", "matroid", "flat", "closure"],
+    "related": ["closure_op"]
+  },
+  {
+    "name": "is_dep_def",
+    "kind": "definition",
+    "domain": "matroid_theory",
+    "description": "A subset D of M.E is dependent if it is not independent.",
+    "lean_statement": "def is_dep_def {α : Type*} (M : Matroid α) (D : Set α) : Prop := D ⊆ M.E ∧ ¬ M.Indep D",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Basic"],
+    "tags": ["definition", "predicate", "matroid"],
+    "related": ["indep_op", "is_circuit_op"]
+  },
+  {
+    "name": "indep_empty_thm",
+    "kind": "theorem",
+    "domain": "matroid_theory",
+    "description": "The empty set is independent in any matroid.",
+    "lean_statement": "theorem indep_empty_thm {α : Type*} (M : Matroid α) : M.Indep ∅ := M.empty_indep",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Basic"],
+    "tags": ["theorem", "matroid", "indep"],
+    "related": ["indep_op"]
+  },
+  {
+    "name": "closure_idempotent_thm",
+    "kind": "theorem",
+    "domain": "matroid_theory",
+    "description": "Closure is idempotent: M.closure (M.closure S) = M.closure S.",
+    "lean_statement": "theorem closure_idempotent_thm {α : Type*} (M : Matroid α) (S : Set α) : M.closure (M.closure S) = M.closure S := M.closure_closure S",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Closure"],
+    "tags": ["theorem", "matroid", "closure", "idempotent"],
+    "related": ["closure_op", "is_flat_def"]
+  },
+  {
+    "name": "isBase_subset_ground_thm",
+    "kind": "theorem",
+    "domain": "matroid_theory",
+    "description": "Every base is contained in the ground set.",
+    "lean_statement": "theorem isBase_subset_ground_thm {α : Type*} (M : Matroid α) (B : Set α) (hB : M.IsBase B) : B ⊆ M.E := hB.subset_ground",
+    "lean_imports": ["Mathlib.Combinatorics.Matroid.Basic"],
+    "tags": ["theorem", "matroid", "base"],
+    "related": ["is_base_op"]
+  }
+]

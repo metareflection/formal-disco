@@ -1,0 +1,74 @@
+_target_: scheduler.RoundRobinScheduler
+
+turn_fuel: 5
+
+workers:
+  - _target_: worker.concept_seeder.ConceptSeeder
+    domain: matroid_theory
+    seed_file: data/seed_matroid_theory.json
+
+  - _target_: worker.discovery_worker.DiscoveryWorker
+    language: lean
+    domain: matroid_theory
+    max_heuristics_per_concept: 4
+    max_conjectures_per_heuristic: 5
+    # matroid concepts are abstract (parameterized over `(M : Matroid α)`);
+    # no SampleableExt instances → slim_check would always be inconclusive.
+    enable_counterexample_check: false
+    llm:
+      _target_: langchain_aws.ChatBedrock
+      model_id: us.anthropic.claude-opus-4-7
+      region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+      max_tokens: 8000
+
+  - _target_: worker.proof_worker.ProofWorker
+    language: lean
+    domain: matroid_theory
+    max_attempts: 3
+    max_strategies: 2
+    interest_success: 3.0
+    interest_fail: 0.7
+    interest_recursion_gamma: 0.5
+    lake_project_dir: ${oc.env:LEAN_PROJECT_DIR}
+    llm:
+      _target_: langchain_aws.ChatBedrock
+      model_id: us.anthropic.claude-opus-4-7
+      region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+      max_tokens: 10000
+
+  - _target_: worker.llm_fixer.LLMFixer
+    language: lean
+    attempt_priority_factor: 0.9
+    interest_success_boost: 1.2
+    interest_recursion_gamma: 0.0
+    llm:
+      _target_: langchain_aws.ChatBedrock
+      model_id: us.anthropic.claude-opus-4-7
+      region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+      max_tokens: 10000
+
+  - _target_: worker.proof_repair_worker.ProofRepairWorker
+    language: lean
+    domain: matroid_theory
+    max_attempts: 3
+    interest_success: 3.0
+    interest_fail: 0.7
+    interest_recursion_gamma: 0.5
+    lake_project_dir: ${oc.env:LEAN_PROJECT_DIR}
+    llm:
+      _target_: langchain_aws.ChatBedrock
+      model_id: us.anthropic.claude-opus-4-7
+      region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+      max_tokens: 10000
+
+  - _target_: worker.reflection_worker.ReflectionWorker
+    domain: matroid_theory
+    interest_success_boost: 1.3
+    interest_failure_decay: 0.8
+    min_attempts_for_kill: 10
+    kill_threshold: 0.05
+    llm:
+      _target_: langchain_aws.ChatBedrock
+      model_id: us.anthropic.claude-opus-4-7
+      region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+      max_tokens: 8000
