@@ -90,20 +90,25 @@ would reclassify a sizeable chunk.
 
 ## Results: grounding (proved theorems × alignment)
 
-`outputs/align-matroid/grounding.md`:
+Two grounding runs: against the original 200-attempt pickle and against
+the 400-attempt boosted pickle (after the worth-tweak experiment).
 
-| Category | Count |
-|---|---|
-| `seed_only` (no invented vocab in statement) | 28 |
-| `fully_aliased` (invented vocab, all aliases to seed) | 0 |
-| `partially_novel` (≥1 invented concept didn't align) | 1 |
+| Category | Original (200) | **Boosted (400)** |
+|---|---|---|
+| Total proved theorems | 29 | **44** |
+| `seed_only` (no invented vocab in statement) | 28 (97%) | 30 (68%) |
+| `fully_aliased` (invented vocab, all aliases to seed) | 0 | 0 |
+| `partially_novel` (≥1 invented concept didn't align) | 1 (3%) | **14 (32%)** |
 
-The single `partially_novel` proved theorem is
-**`uniform_matroid_circuits_have_uniform_size`**, which uses
-`is_uniform_matroid` (a `Matroid α → Prop` predicate at a shape no seed
-has).
+The original headline ("1 of 29 = 3% of proved theorems use genuinely-novel
+invented vocabulary") was a baseline-priority artifact, not a
+fundamental property of the system. With the worth-tweak run, **32% of
+proved theorems use novel invented content** — an order-of-magnitude
+shift, all 13 new ones produced by giving the prover priority on the
+invented-vocab pile.
 
-Headline: **1 of 29 proved theorems contains genuinely-novel invented content**.
+Output files: `outputs/align-matroid/grounding.md` (original) and
+`outputs/align-matroid/grounding-boosted.md` (final).
 
 ## The priority finding
 
@@ -210,11 +215,12 @@ alignment + worth-tweak experiments add three sharpenings:
    (~4%) collapse back to seeds. The bulk is symbolically distinct
    (though many will likely Mathlib-align — a Phase 2 hypothesis to test).
 
-2. **At the original 200-attempt cap, 28/29 proved theorems lived in
-   seed vocabulary.** With the worth-tweak resume, this shifts to **43
-   of 57** — still the majority, but no longer overwhelming. The system
-   can produce humanely-meaningful invented-vocab content; it just
-   needs the prove step to be told to look at it.
+2. **At the original 200-attempt cap, 28/29 = 97% of proved theorems
+   lived in seed vocabulary.** With the worth-tweak resume to 400, this
+   shifts to **30/44 = 68%**. Invented-vocab proved theorems went from
+   1 to 14 — a 14× increase, in 200 added attempts. The system *can*
+   produce humanely-meaningful invented-vocab content; it just needs
+   the prove step to be told to look at it.
 
 3. **The proposer-verifier gap is fixable by re-prioritization.** What
    looked like a structural depth limit was a priority-attention
