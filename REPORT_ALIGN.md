@@ -88,6 +88,60 @@ Mathlib-aligned**, not truly novel — the seed pool just doesn't include
 their canonical counterparts. Phase 2 alignment (vs `canonical_matroid_mathlib.json`)
 would reclassify a sizeable chunk.
 
+## Results: Phase 2 alignment (invented vs Mathlib wrappers)
+
+`outputs/align-matroid-mathlib/`. Run on the 400-attempt boosted pickle.
+Canonical pool: 12 thin wrappers around Mathlib matroid predicates
+(`Matroid.IsLoop`, `Matroid.IsCircuit`, `Matroid.IsCocircuit`,
+`Matroid.IsBase`, `Matroid.IsHyperplane`, etc.) in
+`data/canonical_matroid_mathlib.json`.
+
+| | count |
+|---|---|
+| total invented (boosted pickle) | 202 |
+| **alias** (iff to a Mathlib wrapper) | 9 |
+| novel | 96 |
+| shape_mismatch | 32 |
+| unparseable | 65 |
+
+The 9 Mathlib aliases:
+
+| Invented | Mathlib | Tactic |
+|---|---|---|
+| `is_loop` | `Matroid.IsLoop` | `unfold; aesop` |
+| `is_loop_specialized` | `Matroid.IsLoop` | `unfold; aesop` |
+| `loop_as_dual_coloop` | `Matroid.IsLoop` | `unfold; aesop` |
+| `is_coloop_op` | `Matroid.IsColoop` | `unfold; rfl` |
+| `is_cocircuit` | `Matroid.IsCocircuit` | `unfold; rfl` |
+| `is_cocircuit_def` | `Matroid.IsCocircuit` | `unfold; rfl` |
+| `cocircuit_as_dual_circuit` | `Matroid.IsCocircuit` | `unfold; rfl` |
+| `cocircuit_as_circuit_of_dual` | `Matroid.IsCocircuit` | `unfold; rfl` |
+| `spanning_op` | `Matroid.Spanning` | `unfold; rfl` |
+
+The system invented **three different variants of "loop"** (all
+α-equivalent to Mathlib's `IsLoop`) and **four different variants of
+"cocircuit"** (all aligning to `Matroid.IsCocircuit`). This is the
+synonym-explosion failure mode: the LLM reinvents the same predicate
+under different names because it doesn't know the canonical name
+exists.
+
+### Combined grounding (Phase 1 + Phase 2)
+
+Phase 1 grounded 4 invented concepts to seed predicates; Phase 2
+grounded 9 to Mathlib predicates. One overlap (`loop_as_dual_coloop`
+aliases to *both* `is_loop_def` (seed) and `mathlib_isLoop`, which is
+consistent since the seed itself aligns to Mathlib's loop).
+
+**Unique grounded concepts: 12.** Out of ~140 testable post-shape-filter,
+that's ~9% canonical-grounded. The bulk of "novel" invented vocabulary
+either truly is novel, lives at a shape neither pool covers, or is
+a degenerate description-as-statement that the parser rejects.
+
+The system is reinventing existing canonical predicates ~2× more often
+against Mathlib than against seeds — which makes sense: the seed pool
+has 8 predicates, the Mathlib pool has 12, and the LLM has more prior
+exposure to Mathlib's namespacing conventions.
+
 ## Results: grounding (proved theorems × alignment)
 
 Two grounding runs: against the original 200-attempt pickle and against
@@ -250,6 +304,47 @@ rephrased in LLM-named vocabulary, with proofs that compose Mathlib
 primitives." That's not nothing — but it's not the same as the system
 *deriving* base-cobase duality.
 
+## Goal-directed Whitney attack (run, failed)
+
+A separate ×100 priority boost was applied to the prove task for
+`hyperplane_complement_is_cocircuit` (Whitney's circuit-cocircuit
+duality — the canonical "deep" matroid result). The agenda was resumed
+from the boosted pickle with cap=500, giving the system 100 additional
+attempts under maximum focus on this single conjecture.
+
+**Outcome: failed.** After cap, the prove task was in FAILED state with
+`proof_attempts: 3` (the system tried all 3 of its proof strategies and
+none worked). The conjecture remained unproven.
+
+The system did prove one nearby tautology in this run —
+`dual_circuit_is_base_complement_hyperplane` — but the proof is
+`Iff.rfl` because `M.IsCocircuit C` is *defined* as `M✶.IsCircuit C`.
+Whitney duality requires actually constructing the proof from
+`Matroid.IsHyperplane` machinery, which the system couldn't do.
+
+### Refined ceiling picture
+
+Combining the worth-tweak and Whitney results, the system's
+proof-construction capability splits into three regimes:
+
+| Difficulty | Examples | Outcome |
+|---|---|---|
+| **Trivial** (`Iff.rfl`/`simp`, def unfolding) | `self_dual_iff_double_dual_fixes`, `dual_circuit_is_base_complement_hyperplane` | Always proves |
+| **Medium** (4–19 line proofs chaining Mathlib lemmas) | `spanning_circuit_iff_base_insert`, `is_loop_iff_k_dependent_one` | Proves via prove+repair when given priority |
+| **Canonically deep** (multi-page-equivalent argument) | `hyperplane_complement_is_cocircuit` | Fails even with ×100 priority + 100 attempts |
+
+The depth ceiling **exists**, but for the deepest results — not for the
+medium-tier results we previously suspected were depth-blocked. Earlier
+"depth as residual bottleneck" framing came from observing 3 prove-stage
+failures at t=224 before proof_repair had time to work them; by cap, those
+got repaired. Genuinely deep theorems like Whitney don't get repaired
+either.
+
+ProofWorker has structural caps `max_attempts: 3` (per task) and
+`max_strategies: 2` (proof strategies tried). Raising these likely won't
+break the Whitney ceiling — the LLM doesn't construct multi-page
+matroid arguments, regardless of how many tries it gets.
+
 ## What's left to try
 
 - **Phase 2 alignment** (vs `canonical_matroid_mathlib.json`). Likely
@@ -285,11 +380,14 @@ primitives." That's not nothing — but it's not the same as the system
 
 ## One-line takeaway
 
-Lean-checking the LLM-invented matroid vocabulary against seed vocabulary
-shows that ~96% of it is symbolically novel; the prover overwhelmingly
-ignored that novel vocabulary at the original priorities; with a ×3
-priority boost on invented-vocab prove tasks, the prover and its
+Lean-checking the LLM-invented matroid vocabulary against seed and
+Mathlib canonical pools shows ~9% of it grounds (4 to seeds, 9 to
+Mathlib); the prover overwhelmingly ignored the novel vocabulary at the
+original priorities; with a ×3 priority boost, the prover and its
 proof_repair partner produced 14 verified theorems in invented matroid
-vocabulary, of which 12 are substantive multi-step constructive proofs
-that compose Mathlib's matroid library — confirming that priority, not
-proof depth, was the dominant limiter on humanely-meaningful output.
+vocabulary (12 substantive, 2 trivial), and the proved-with-novel
+fraction jumped from 3% to 32% — confirming that **priority was the
+dominant bottleneck for medium-depth content**. A goal-directed ×100
+focus on Whitney's circuit-cocircuit duality, however, still failed
+after 100 dedicated attempts, identifying a **depth ceiling for
+canonically deep theorems** that priority alone doesn't break.
