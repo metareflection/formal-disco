@@ -63,11 +63,16 @@ def align_one(
     invented_concept: dict,
     canonical_concepts: list[dict],
     timeout: float = 60.0,
+    *,
+    symmetric: bool = False,
 ) -> AlignmentResult:
     """Align a single invented concept against all compatible canonical concepts.
 
     invented_concept and canonical_concepts are dicts with keys
     'name' and 'lean_statement'.
+
+    If `symmetric=True`, skip candidates with names <= the invented name.
+    Use in invented-vs-invented mode so each pair {A, B} is checked once.
     """
     invented_parsed = parse_definition(invented_concept.get("lean_statement", ""))
     if invented_parsed is None:
@@ -90,6 +95,8 @@ def align_one(
             continue
         if cp.name == invented_parsed.name:
             continue  # don't compare against itself
+        if symmetric and cp.name <= invented_parsed.name:
+            continue  # let the partner half do this pair
         compatible.append((cp, c.get("lean_statement", "")))
 
     if not compatible:
@@ -115,12 +122,13 @@ def align_many(
     *,
     max_workers: int = 6,
     timeout: float = 60.0,
+    symmetric: bool = False,
 ) -> list[AlignmentResult]:
     """Run align_one on each invented concept in parallel."""
     results: list[AlignmentResult | None] = [None] * len(invented_concepts)
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = {
-            ex.submit(align_one, backend, ic, canonical_concepts, timeout): i
+            ex.submit(align_one, backend, ic, canonical_concepts, timeout, symmetric=symmetric): i
             for i, ic in enumerate(invented_concepts)
         }
         for fut in as_completed(futures):

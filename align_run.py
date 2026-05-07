@@ -26,6 +26,7 @@ from collections import Counter
 from pathlib import Path
 
 from align.probe import align_many
+from align.cluster import cluster_synonyms
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -119,12 +120,24 @@ def main() -> int:
                    help="Per-probe Lean timeout (seconds)")
     p.add_argument("--limit", type=int, default=None,
                    help="If set, only process this many invented concepts (for dry-runs)")
+    p.add_argument("--mode", choices=("vs-seed", "invented-vs-invented"), default="vs-seed",
+                   help="vs-seed: align each invented concept to seed concepts. "
+                        "invented-vs-invented: pairwise within invented pool to find synonym clusters.")
+    p.add_argument("--canonical", type=Path, default=None,
+                   help="In vs-seed mode, use this JSON file (same schema as --seed) "
+                        "as the canonical pool instead of --seed. "
+                        "Use to align against Mathlib wrappers (data/canonical_matroid_mathlib.json).")
     args = p.parse_args()
 
     seed_concepts = load_seed_concepts(args.seed)
     seed_names = {c["name"] for c in seed_concepts}
     invented = load_invented_concepts(args.pickle, seed_names, args.domain)
     logger.info(f"Loaded {len(seed_concepts)} seed concepts, {len(invented)} invented concepts")
+
+    canonical_concepts = seed_concepts
+    if args.canonical:
+        canonical_concepts = load_seed_concepts(args.canonical)
+        logger.info(f"Using --canonical pool from {args.canonical}: {len(canonical_concepts)} concepts")
 
     if args.limit:
         invented = invented[: args.limit]
@@ -135,12 +148,45 @@ def main() -> int:
     backend = Language.LEAN.get_backend()
 
     t0 = time.time()
-    results = align_many(backend, invented, seed_concepts, max_workers=args.workers, timeout=args.timeout)
+    if args.mode == "vs-seed":
+        canonical = canonical_concepts
+    else:
+        # invented-vs-invented: each concept's canonical pool is the rest of the invented set.
+        # align_one already excludes self-comparisons by name.
+        canonical = invented
+
+    results = align_many(backend, invented, canonical, max_workers=args.workers,
+                         timeout=args.timeout, symmetric=(args.mode == "invented-vs-invented"))
     dt = time.time() - t0
-    logger.info(f"Aligned {len(results)} concepts in {dt:.1f}s")
+    logger.info(f"Aligned {len(results)} concepts in {dt:.1f}s (mode={args.mode})")
 
     write_report(results, args.output)
     logger.info(f"Wrote {args.output}/alignment.{{json,md}}")
+
+    if args.mode == "invented-vs-invented":
+        clusters = cluster_synonyms(results)
+        cluster_md = ["# Synonym clusters", ""]
+        cluster_md.append(f"Found **{len(clusters)}** non-trivial clusters "
+                          f"(size ≥ 2) in {len(results)} invented concepts.\n")
+        for c in clusters:
+            cluster_md.append(f"## Cluster (size {c.size}, rep `{c.representative}`)")
+            for m in c.members:
+                cluster_md.append(f"- `{m}`")
+            cluster_md.append("")
+            cluster_md.append("Proven edges:")
+            for a, b, tac in c.edges:
+                cluster_md.append(f"- `{a}` ↔ `{b}` (via `{tac}`)")
+            cluster_md.append("")
+        (args.output / "synonyms.md").write_text("\n".join(cluster_md))
+
+        # JSON for downstream tools
+        cluster_json = [
+            {"representative": c.representative, "members": c.members,
+             "edges": [{"a": a, "b": b, "tactic": t} for a, b, t in c.edges]}
+            for c in clusters
+        ]
+        (args.output / "synonyms.json").write_text(json.dumps(cluster_json, indent=2))
+        logger.info(f"Wrote {args.output}/synonyms.{{json,md}} ({len(clusters)} clusters)")
 
     cats = Counter(r.category for r in results)
     print("=" * 60)
