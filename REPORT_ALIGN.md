@@ -12,24 +12,24 @@ Run dates: 2026-05-06.
 The matroid system invented 144 predicates. Lean-driven alignment shows
 **only 4 of 110 testable ones (~4%) are α-equivalent to a seed concept**;
 the rest are either symbolically novel (63), at a new argument shape (43),
-or unparseable (34). Cross-referenced against proved theorems: **1 of 29
-proved theorems uses genuinely-novel invented vocabulary**.
+or unparseable (34). Cross-referenced against proved theorems at the end
+of the original 200-attempt run: **1 of 29 proved theorems uses
+genuinely-novel invented vocabulary**.
 
-A separate diagnostic on the prove-task pile revealed the dominant
-limiter: of 109 invented-vocab prove tasks created, the prover attempted
-**only 1** (vs 33 of 321 seed-only tasks). Priority was overwhelmingly
-biased toward seed-only conjectures.
+A diagnostic on the prove-task pile revealed the dominant limiter: of
+109 invented-vocab prove tasks created, the prover attempted **only 1**
+(vs 33 of 321 seed-only tasks). Priority was overwhelmingly biased
+toward seed-only conjectures.
 
 A worth-tweak experiment (×3.0 boost on prove-task priority for any
-conjecture using invented vocabulary) was launched to test whether
-priority alone was the bottleneck. Early results (224/400 attempts):
-**all 4 new prove attempts since resume went to invented-vocab tasks**,
-producing 1 new proved theorem (`self_dual_iff_double_dual_fixes`). But
-inspection shows the 1 successful proof is `Iff.rfl` (a trivial
-definitional restatement) while 3 attempted invented-vocab proofs failed
-on substantive matroid content (`spanning_circuit_iff_base_insert` and
-two corollaries). So priority was only *part* of the bottleneck —
-**depth-of-proof is the other part**, and it isn't fixed by re-prioritization.
+conjecture using invented vocabulary, applied retroactively to the
+existing pile via a one-off pickle rewrite) was launched. It hit cap at
+400 attempts. **Final result: proved-with-invented-vocab grew from 1 →
+14, of which 12 are substantive multi-step constructive proofs** — real
+matroid theorems including `spanning_circuit_iff_base_insert` (17-line
+proof) and `is_loop_iff_k_dependent_one` (13-line proof). Priority was
+the bottleneck. With it removed, the proof + proof-repair pipeline
+handles depth.
 
 ## Setup: alignment toolchain
 
@@ -131,7 +131,7 @@ queue. Born/reflection heuristics that produce invented-vocab
 conjectures have lower observed success rates (because the prover never
 gets to try their output) and so stay at the bottom.
 
-## Worth-tweak experiment (in flight)
+## Worth-tweak experiment (completed)
 
 A configurable multiplier `invented_vocab_boost` was added to
 `DiscoveryWorker`. When the conjecture's statement contains any invented
@@ -145,75 +145,104 @@ whose conjecture references an invented predicate, and multiplies their
 TaskStatus priority by 3.0. Output: `agenda-discovery-matroid-boosted.pkl`.
 
 The discovery scheduler was resumed against the boosted pickle with the
-cap raised to 400. Run still in flight at time of writing.
+cap raised to 400. Run hit the cap.
 
-### Snapshot at 224/400 attempts (24 since resume)
+### Final results (400/400 attempts, 200 in resume)
 
-| | t=200 (pre-resume) | t=224 (now) | Δ |
+Resume-tail deltas vs pre-resume baseline:
+
+| | t=200 (pre-resume) | t=400 (final) | Δ in resume |
 |---|---|---|---|
-| prove ATTEMPTED (invented) | 1 | **5** | +4 |
-| prove ATTEMPTED (seed_only) | 33 | 33 | 0 |
-| prove DONE (invented) | 1 | 2 | +1 |
-| prove FAILED (invented) | 0 | 2 | +2 |
-| proved-with-invented theorems | 1 | 2 | +1 |
+| prove ATTEMPTED (invented) | 1 | 16 | **+15** |
+| prove ATTEMPTED (seed_only) | 33 | 46 | +13 |
+| prove DONE (invented) | 1 | 11 | **+10** |
+| prove DONE (seed_only) | 22 | 23 | +1 |
+| prove FAILED (invented) | 0 | 4 | +4 |
+| prove FAILED (seed_only) | 10 | 20 | +10 |
+| proved-with-invented theorems | 1 | **14** | **+13** |
 
-**Every new prove attempt since resume targeted an invented-vocab task.**
-The boost completely redirected the prover.
+The boost achieved parity in attempt counts — invented and seed-only
+attempted at roughly the same rate post-resume. The DONE rate flipped:
+**10 new invented DONEs vs 1 new seed_only DONE** (most easy seed-only
+conjectures had been picked off in the original run, leaving only hard
+ones; the unblocked invented-vocab pile was where the easy wins now
+lived).
 
-### Refined read: priority + depth
+In-resume invented success rate: **10/15 = 67%** (vs seed_only's 1/13 ≈
+8% in the resume tail).
 
-The 1 new proved theorem since resume — `self_dual_iff_double_dual_fixes`
-— has the proof:
+### Substantive vs trivial proofs
 
-```lean
-theorem self_dual_iff_double_dual_fixes {α : Type*} (M : Matroid α) :
-    self_dual_matroid M ↔ M✶ = M := Iff.rfl
-```
+Of the 14 proved-with-invented theorems:
 
-The proof is `Iff.rfl` because `self_dual_matroid` is *defined* as
-`M✶ = M`. So this is a tautological restatement of a definition, not
-substantive content.
+| Category | Count | Examples |
+|---|---|---|
+| **Substantive** (multi-line constructive proof) | **12** | `spanning_circuit_iff_base_insert` (17 lines), `uniform_matroid_circuits_have_uniform_size` (19), `is_loop_iff_k_dependent_one` (13), `spanning_circuit_rank_identity` (15) |
+| **Trivial** (`Iff.rfl` / `rfl` definitional restatement) | 2 | `self_dual_iff_double_dual_fixes`, `closure_coclosure_dual_conjugation` |
 
-The 2 failures (so far) are on substantive matroid statements —
-`spanning_circuit_iff_base_insert`, `spanning_circuit_rank_identity`,
-`spanning_circuit_symm_diff_base` — each exhausting 3 proof attempts
-without success. These are real classical matroid results (a spanning
-circuit has cardinality `rank + 1`; deleting any element gives a base).
+The 12 substantive proofs are real matroid arguments. For example,
+`spanning_circuit_iff_base_insert` chains 6+ Mathlib lemmas
+(`hC.diff_singleton_indep`, `Matroid.IsCircuit.closure_diff_singleton_eq`,
+`Matroid.spanning_iff_closure_eq`, `hindep.isBase_of_spanning`, etc.)
+into a base-deletion characterization of spanning circuits. This is the
+shape of proof a textbook would give.
 
-So the corrected diagnosis:
+### Diagnosis
 
-- **Priority** was the dominant bottleneck — most invented-vocab tasks
-  weren't even being tried. The boost fixes that.
-- **Depth** is a residual bottleneck — even when attempted, substantive
-  invented-vocab claims fail because the prover can't construct the
-  multi-step matroid argument. The boost doesn't help with this.
+Priority was the bottleneck. The boost unblocked the invented-vocab
+pile and the existing **proof_repair worker** handled the depth
+challenge: 26 proof_repair tasks completed in this run, taking initial
+prove failures (e.g., the `spanning_circuit_*` cluster I had previously
+flagged as failures at t=224) and constructing successful multi-step
+proofs on retry.
 
-The system can prove invented-vocab statements that have a 1-line
-discharge (Iff.rfl, simp, aesop in trivial cases). It cannot prove
-invented-vocab statements that require chaining several Mathlib lemmas
-in a non-obvious way.
+Earlier framing of "depth as residual bottleneck" came from observing
+3 failures at t=224 before repair had time to work them. By cap, those
+same conjectures were proved.
 
 ## Implications for "humanely meaningful" output
 
 REPORT_MATROID.md ended with: *"the discovery system produces internally
 consistent output that doesn't ground in shared vocabulary."* The
-alignment + priority experiments add three sharpenings:
+alignment + worth-tweak experiments add three sharpenings:
 
 1. **Most invented vocabulary is not seed-aliased.** 4 of 110 testable
    (~4%) collapse back to seeds. The bulk is symbolically distinct
    (though many will likely Mathlib-align — a Phase 2 hypothesis to test).
 
-2. **Of the proved corpus, 28/29 = 97% lives entirely in seed
-   vocabulary.** The discovery system's *output* is dominated by
-   restated seed-vocabulary results, even though its *proposals* (679
-   conjectures, 33% using invented vocab) are much more diverse.
+2. **At the original 200-attempt cap, 28/29 proved theorems lived in
+   seed vocabulary.** With the worth-tweak resume, this shifts to **43
+   of 57** — still the majority, but no longer overwhelming. The system
+   can produce humanely-meaningful invented-vocab content; it just
+   needs the prove step to be told to look at it.
 
-3. **The proposer-verifier gap survives re-prioritization.** Priority
-   was a real bottleneck, but giving the verifier the floor only unlocks
-   tautological restatements of definitions. The substantive
-   invented-vocab content remains unreached. Reasonable reflection isn't
-   just blocked by attention; it's blocked by proof-construction depth
-   when the proof can't be a one-liner.
+3. **The proposer-verifier gap is fixable by re-prioritization.** What
+   looked like a structural depth limit was a priority-attention
+   limit. Once the prover gets the floor, the existing
+   prove + proof_repair pipeline produces 12 substantive multi-step
+   matroid proofs out of 14 invented-vocab DONEs (86% substantive).
+   "Reasonable reflection requires the verifier to keep pace" is the
+   right framing, and the verifier *can* keep pace given attention.
+
+### What the substantive proofs actually demonstrate
+
+The system has not constructed matroid theory from first principles. The
+12 substantive proofs heavily invoke Mathlib's existing matroid library
+(`Matroid.IsCircuit.closure_diff_singleton_eq`,
+`Matroid.spanning_iff_closure_eq`, `hC.diff_singleton_indep`, etc.).
+What it has done is *navigate* that library — choose which lemmas to
+chain, in what order, with what intermediate predicates — to discharge
+non-trivial conjectures stated in invented vocabulary. That's real proof
+engineering work, but it's "library composition," not "theory building
+from foundations."
+
+This nuance matters for the keynote framing: a mathematician inspecting
+`spanning_circuit_iff_base_insert` would recognize it as substantive
+matroid reasoning, but they'd also notice the proof leans on
+Mathlib-canonical lemmas. The corpus is "Mathlib-style matroid theorems
+rephrased in LLM-named vocabulary, with proofs that compose Mathlib
+primitives." That's not nothing — but it's not the same as the system
+*deriving* base-cobase duality.
 
 ## What's left to try
 
@@ -222,15 +251,19 @@ alignment + priority experiments add three sharpenings:
   giving a sharper count of what's actually new content.
 - **Invented-vs-invented alignment** for synonym clustering. Catches the
   multiple-loopless-variants case where no seed has the relevant shape.
-- **Worth-tweak run completion** (in flight). The full 200-attempt
-  resume tail will quantify the trivial-vs-substantive split among
-  newly-proved invented-vocab theorems. If trivial dominates by 4:1 or
-  more, "depth is the residual bottleneck" is firmly established.
-- **Direct attack on depth**: increase `max_attempts` on `prove` and
-  `proof_repair` tasks (currently 3); add a multi-step proof strategy
-  (currently `direct_tactic_proof` and `structured_proof`); or
-  goal-direct the prover toward a specific target theorem rather than
-  letting it pick.
+- **Re-run grounding on the boosted pickle.** The grounding tool was
+  run against the original 200-attempt pickle. With 14 proved-with-invented
+  in the 400-attempt boosted pickle, re-running grounding would update
+  the headline metric.
+- **Bigger run with the boost on.** 14 proved-with-invented over a
+  200-attempt resume is a small sample. cap=1000+ with the boost on
+  from t=0 (rather than retroactively) would let us track invented-vocab
+  yield as the corpus matures.
+- **Disentangle Mathlib-composition from theory-building.** The 12
+  substantive proofs lean on Mathlib lemmas. A version of grounding
+  that scores proofs by "fraction of proof body that's Mathlib calls
+  vs. inline reasoning" would tell us whether the system is composing
+  or constructing.
 
 ## Files
 
@@ -246,9 +279,11 @@ alignment + priority experiments add three sharpenings:
 
 ## One-line takeaway
 
-Lean-checking the LLM-invented matroid vocabulary against canonical
-matroid vocabulary shows that ~96% of it is symbolically novel; the
-discovery system's proved corpus largely sidesteps this novelty by
-proving in seed vocabulary; and giving the prover priority to attempt
-the invented-vocab pile unlocks tautological restatements of definitions
-but not substantive proofs.
+Lean-checking the LLM-invented matroid vocabulary against seed vocabulary
+shows that ~96% of it is symbolically novel; the prover overwhelmingly
+ignored that novel vocabulary at the original priorities; with a ×3
+priority boost on invented-vocab prove tasks, the prover and its
+proof_repair partner produced 14 verified theorems in invented matroid
+vocabulary, of which 12 are substantive multi-step constructive proofs
+that compose Mathlib's matroid library — confirming that priority, not
+proof depth, was the dominant limiter on humanely-meaningful output.
