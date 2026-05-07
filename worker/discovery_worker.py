@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from typing import Any, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -50,6 +51,7 @@ class DiscoveryWorker(Worker):
         novelty_threshold: float = 0.92,
         novelty_model: str = NoveltyIndex.DEFAULT_MODEL,
         lake_project_dir: Optional[str] = None,
+        invented_vocab_boost: float = 1.0,
     ) -> None:
         self._llm = llm
         self._backend = Language[language.upper()].get_backend()
@@ -66,6 +68,9 @@ class DiscoveryWorker(Worker):
         self._novelty_model = novelty_model
         self._lake_project_dir = lake_project_dir
         self._novelty_index: Optional[NoveltyIndex] = None
+        # Multiplier applied to a prove-task's priority when its conjecture's
+        # statement references any invented (non-seed) concept name. 1.0 = off.
+        self._invented_vocab_boost = float(invented_vocab_boost)
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
         while fuel > 0:
@@ -273,6 +278,19 @@ class DiscoveryWorker(Worker):
             attempts = heuristic.properties.get('attempts', 0)
             priority = (successes + 1) / (attempts + 2)
 
+            # Boost the prove-task priority when the conjecture references an
+            # invented (non-seed) concept by name. Tests whether the prove-step
+            # bottleneck for invented-vocab conjectures is *priority* (fixable)
+            # vs *depth* (the prover genuinely can't construct multi-step proofs
+            # in invented vocabulary).
+            if self._invented_vocab_boost != 1.0:
+                stmt = entry.get('lean_statement', '')
+                invented_names = self._invented_concept_names(agenda)
+                if any(re.search(rf'\b{re.escape(n)}\b', stmt) for n in invented_names):
+                    priority *= self._invented_vocab_boost
+                    logger.info("Boosting prove priority for %s ×%.2f (uses invented vocab)",
+                                name, self._invented_vocab_boost)
+
             task_id = await agenda.add_task(Task(
                 id=f"prove-{name}",
                 type="prove",
@@ -305,6 +323,26 @@ class DiscoveryWorker(Worker):
             ))
 
         return obj_path
+
+    def _invented_concept_names(self, agenda: Agenda) -> set[str]:
+        """Names of concepts in the agenda that have origin_heuristic set
+        (i.e., not seeded). Reads agenda._objects directly — same Phase 1
+        expedient as in checks/novelty.py and worth.py.
+        """
+        objects = getattr(agenda, "_objects", None) or {}
+        names: set[str] = set()
+        for obj in objects.values():
+            if obj.type != "concept":
+                continue
+            props = obj.properties
+            if props.get("domain") != self._domain:
+                continue
+            if not props.get("origin_heuristic"):
+                continue  # seeded
+            nm = props.get("name", "")
+            if nm:
+                names.add(nm)
+        return names
 
     async def _ensure_novelty_index(self, agenda: Agenda) -> Optional[NoveltyIndex]:
         if not self._enable_novelty_check:

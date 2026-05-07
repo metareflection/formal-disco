@@ -15,6 +15,11 @@ workers:
     # matroid concepts are abstract (parameterized over `(M : Matroid α)`);
     # no SampleableExt instances → slim_check would always be inconclusive.
     enable_counterexample_check: false
+    # Multiplier on the prove-task priority when the conjecture's statement
+    # references any invented (non-seed) concept. Tests whether the
+    # prove-stage bottleneck for invented-vocab conjectures is fixable by
+    # re-prioritization (vs structural / depth-of-proof limited).
+    invented_vocab_boost: 3.0
     llm:
       _target_: langchain_aws.ChatBedrock
       model_id: us.anthropic.claude-opus-4-7

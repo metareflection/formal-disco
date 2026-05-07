@@ -28,8 +28,14 @@ def _try_one_pair(
     canonical: ParsedDef,
     canonical_stmt: str,
     timeout: float,
+    canonical_agenda_name: str,
 ) -> AlignmentMatch | None:
     """Try the tactic ladder against this (invented, canonical) pair.
+
+    `canonical_agenda_name` is the property-side name (used for reporting in
+    AlignmentMatch); `canonical.name` is the parsed-from-body name (used for
+    probe rendering). They differ when the discovery worker auto-renamed a
+    concept on conflict.
 
     Returns the first matching tactic, or None if none succeed.
     """
@@ -50,7 +56,7 @@ def _try_one_pair(
         if ver.outcome == VerificationOutcome.SUCCESS:
             log_excerpt = ((ver.stdout or "") + (ver.stderr or ""))[-200:]
             return AlignmentMatch(
-                canonical_name=canonical.name,
+                canonical_name=canonical_agenda_name,
                 tactic_name=tactic_name,
                 tactic_str=tactic_str,
                 log_excerpt=log_excerpt,
@@ -83,31 +89,39 @@ def align_one(
         )
 
     sig = invented_parsed.signature_key
-    result = AlignmentResult(invented_name=invented_parsed.name, invented_signature=sig)
+    # Use the agenda's property name as the result identity. The parser-extracted
+    # name (used downstream for probe rendering) can differ when the discovery
+    # worker auto-renames a concept on conflict but leaves the LLM-generated
+    # body's `def NAME ...` unchanged — e.g. `is_loop_def_specialized` whose
+    # body still says `def is_loop_def ...`.
+    agenda_name = invented_concept.get("name", invented_parsed.name)
+    result = AlignmentResult(invented_name=agenda_name, invented_signature=sig)
 
     # Filter canonical pool to compatible signatures
-    compatible: list[tuple[ParsedDef, str]] = []
+    compatible: list[tuple[ParsedDef, str, str]] = []  # (parsed, stmt, agenda_name)
     for c in canonical_concepts:
         cp = parse_definition(c.get("lean_statement", ""))
         if cp is None:
             continue
         if cp.signature_key != sig:
             continue
-        if cp.name == invented_parsed.name:
-            continue  # don't compare against itself
-        if symmetric and cp.name <= invented_parsed.name:
+        candidate_agenda = c.get("name", cp.name)
+        if candidate_agenda == agenda_name:
+            continue  # don't compare against itself (by agenda identity)
+        if symmetric and candidate_agenda <= agenda_name:
             continue  # let the partner half do this pair
-        compatible.append((cp, c.get("lean_statement", "")))
+        compatible.append((cp, c.get("lean_statement", ""), candidate_agenda))
 
     if not compatible:
         result.note = "shape_mismatch"
         return result
 
     invented_stmt = invented_concept.get("lean_statement", "")
-    for canonical_parsed, canonical_stmt in compatible:
+    for canonical_parsed, canonical_stmt, canonical_agenda_name in compatible:
         match = _try_one_pair(
             backend, invented_parsed, invented_stmt,
-            canonical_parsed, canonical_stmt, timeout
+            canonical_parsed, canonical_stmt, timeout,
+            canonical_agenda_name=canonical_agenda_name,
         )
         if match:
             result.matches.append(match)
