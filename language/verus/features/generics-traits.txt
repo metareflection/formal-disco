@@ -1,0 +1,36 @@
+Verus inherits Rust's generics and traits. Functions can be generic over any type. The `View` trait (provided by `vstd`) connects an executable type to a ghost spec view (`@`). Custom traits can include both exec methods and spec methods.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn pick_first<T: Copy>(v: &Vec<T>) -> (r: T)
+    requires v@.len() > 0,
+    ensures r == v@[0],
+{
+    v[0]
+}
+
+trait Bounded {
+    spec fn upper_bound(&self) -> int;
+
+    fn is_below(&self, x: u32) -> (b: bool)
+        ensures b == ((x as int) < self.upper_bound()),
+    ;
+}
+
+struct CapU32 { cap: u32 }
+
+impl Bounded for CapU32 {
+    spec fn upper_bound(&self) -> int { self.cap as int }
+
+    fn is_below(&self, x: u32) -> (b: bool)
+        ensures b == ((x as int) < self.upper_bound()),
+    {
+        x < self.cap
+    }
+}
+
+} // verus!
+```

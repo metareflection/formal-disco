@@ -1,0 +1,27 @@
+A `calc` block is an equational/relational chain of steps that proves a (in)equality between its first and last terms. Each step's relation defaults to `==` but may be `<=`, `<`, `==>`, etc. Hints (assertions or lemma calls) for individual steps go in `{ ... }` between the lines.
+
+```dafny
+lemma SquareOfSum(x: int, y: int)
+  ensures (x + y) * (x + y) == x * x + 2 * x * y + y * y
+{
+  calc {
+    (x + y) * (x + y);
+  == { assert (x + y) * (x + y) == x * (x + y) + y * (x + y); }
+    x * (x + y) + y * (x + y);
+  == x * x + x * y + y * x + y * y;
+  == x * x + 2 * x * y + y * y;
+  }
+}
+
+lemma Monotone(a: int, b: int, c: int)
+  requires a <= b
+  requires c >= 0
+  ensures a + c <= b + c
+{
+  calc {
+    a + c;
+  <= { assert a <= b; }
+    b + c;
+  }
+}
+```

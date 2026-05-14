@@ -1,0 +1,28 @@
+`Seq<T>` is a ghost, immutable, unbounded-length sequence used in specifications. It supports indexing `s[i]`, length `s.len()`, push (`s.push(x)`), update (`s.update(i, x)`), concatenation (`+`), slicing (`s.subrange(i, j)`), and the `seq![...]` macro literal.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+proof fn seq_push_last<T>(s: Seq<T>, x: T)
+    ensures s.push(x).len() == s.len() + 1,
+            s.push(x).last() == x,
+{
+}
+
+proof fn seq_concat_index<T>(a: Seq<T>, b: Seq<T>, i: int)
+    requires 0 <= i < a.len() + b.len(),
+    ensures (a + b)[i] == if i < a.len() { a[i] } else { b[i - a.len()] },
+{
+}
+
+proof fn seq_literal_props() {
+    let s: Seq<int> = seq![1, 2, 3];
+    assert(s.len() == 3);
+    assert(s[0] == 1);
+    assert(s[2] == 3);
+}
+
+} // verus!
+```

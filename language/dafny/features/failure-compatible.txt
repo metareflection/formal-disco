@@ -1,0 +1,40 @@
+The `:-` operator (the "elephant operator") is a control-flow shortcut for failure-compatible types. A type `T` is failure-compatible if it has members `IsFailure()`, `PropagateFailure()`, and (if value-carrying) `Extract()`. `var x :- e;` binds `x` to the success value of `e` or returns the propagated failure to the caller.
+
+```dafny
+datatype Outcome<T> = Success(value: T) | Failure(msg: string)
+{
+  predicate IsFailure() { this.Failure? }
+  function PropagateFailure<U>(): Outcome<U>
+    requires IsFailure()
+  {
+    Failure(this.msg)
+  }
+  function Extract(): T
+    requires !IsFailure()
+  {
+    this.value
+  }
+}
+
+function SafeDiv(a: int, b: int): Outcome<int>
+{
+  if b == 0 then Failure("div by zero") else Success(a / b)
+}
+
+method Compute(a: int, b: int, c: int) returns (r: Outcome<int>)
+  ensures b == 0 ==> r.Failure?
+  ensures b != 0 && c == 0 ==> r.Failure?
+{
+  var x :- SafeDiv(a, b);
+  var y :- SafeDiv(x, c);
+  return Success(y);
+}
+
+method UseFailureCompatible() returns (r: Outcome<int>, bad: Outcome<int>)
+  ensures bad.Failure?
+{
+  r := Compute(100, 5, 2);
+  bad := Compute(10, 0, 2);
+  assert bad.Failure?;
+}
+```

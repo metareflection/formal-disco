@@ -1,0 +1,37 @@
+A `proof fn` runs only at verification time and is the standard way to write a lemma. Its `requires` and `ensures` form the lemma statement; its body provides hints (recursive calls, intermediate `assert`s) that lead the SMT solver to a proof. Calling a lemma at a use site exports the conclusion to the caller's context.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+spec fn pow2(n: nat) -> nat
+    decreases n,
+{
+    if n == 0 { 1 } else { 2 * pow2((n - 1) as nat) }
+}
+
+proof fn pow2_positive(n: nat)
+    ensures pow2(n) >= 1,
+    decreases n,
+{
+    if n == 0 {
+    } else {
+        pow2_positive((n - 1) as nat);
+    }
+}
+
+proof fn pow2_monotone(n: nat, m: nat)
+    requires n <= m,
+    ensures pow2(n) <= pow2(m),
+    decreases m - n,
+{
+    if n == m {
+    } else {
+        pow2_monotone(n, (m - 1) as nat);
+        pow2_positive((m - 1) as nat);
+    }
+}
+
+} // verus!
+```

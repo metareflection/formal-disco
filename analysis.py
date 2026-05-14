@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare multiple agenda runs: success rates and diversity/complexity metrics."""
+"""Compare multiple agenda runs: success rates and feature-set metrics."""
 
 import argparse
 import json
@@ -258,9 +258,16 @@ def _detect_language(agenda: dict) -> Language:
     raise ValueError("Could not detect language from agenda objects")
 
 
+def _is_numeric_counter(counter: Counter) -> bool:
+    """A Counter whose keys are all int (and non-bool) supports median/p90."""
+    if not counter:
+        return False
+    return all(isinstance(k, int) and not isinstance(k, bool) for k in counter.keys())
+
+
 def diversity_complexity_table(agendas: dict[str, dict]) -> None:
     print("=" * 80)
-    print("DIVERSITY & COMPLEXITY (dataset/ programs only)")
+    print("DIVERSITY (dataset/ programs only)")
     print("=" * 80)
 
     labels = list(agendas.keys())
@@ -279,7 +286,6 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
         lang = _detect_language(a)
         backend = lang.get_backend()
 
-        all_complexity = []
         all_features = []
         n_parseable = 0
 
@@ -287,9 +293,7 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
             text = o.content.decode("utf-8") if isinstance(o.content, bytes) else o.content
             prog = Program(text, lang)
             try:
-                cx = backend.complexity(prog)
                 ft = backend.feature_sets(prog)
-                all_complexity.append(cx)
                 all_features.append(ft)
                 n_parseable += 1
             except Exception:
@@ -298,7 +302,6 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
         per_agenda[label] = {
             "n_total": len(dataset_objs),
             "n_parseable": n_parseable,
-            "complexity": all_complexity,
             "features": all_features,
         }
 
@@ -315,34 +318,37 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
         row_vals.append(str(d["n_total"]) if d else "0")
     rows.append(("Programs in dataset/", row_vals))
 
-    # Collect complexity/feature keys from all agendas (language-dependent)
-    complexity_keys = sorted({
-        ck for label in labels
-        if (d := per_agenda[label]) and d["complexity"]
-        for ck in d["complexity"][0]
-    })
     feature_keys = sorted({
         fk for label in labels
         if (d := per_agenda[label]) and d["features"]
         for fk in d["features"][0]
     })
 
-    # Complexity metrics: aggregate across all programs
-    rows.append(("", [""] * len(labels)))
-    rows.append(("COMPLEXITY (mean of per-program means)", [""] * len(labels)))
+    # Numeric features: per-program mean of the multiset, averaged across programs.
+    numeric_keys = [
+        fk for fk in feature_keys
+        if any((d := per_agenda[label]) and d["features"]
+               and _is_numeric_counter(d["features"][0].get(fk, Counter()))
+               for label in labels)
+    ]
+    if numeric_keys:
+        rows.append(("", [""] * len(labels)))
+        rows.append(("NUMERIC FEATURES (mean of per-program means)", [""] * len(labels)))
+        for ck in numeric_keys:
+            row_vals = []
+            for label in labels:
+                d = per_agenda[label]
+                if not d or not d["features"]:
+                    row_vals.append("-")
+                    continue
+                per_prog_means = [
+                    _safe_mean(list(ft[ck].elements()))
+                    for ft in d["features"] if ck in ft and ft[ck]
+                ]
+                row_vals.append(f"{_safe_mean(per_prog_means):.2f}")
+            rows.append((f"  {ck}", row_vals))
 
-    for ck in complexity_keys:
-        row_vals = []
-        for label in labels:
-            d = per_agenda[label]
-            if not d or not d["complexity"]:
-                row_vals.append("-")
-                continue
-            per_prog_means = [_safe_mean(cx[ck]) for cx in d["complexity"] if ck in cx]
-            row_vals.append(f"{_safe_mean(per_prog_means):.2f}")
-        rows.append((f"  {ck}", row_vals))
-
-    # Diversity metrics: entropy of pooled feature counters
+    # Diversity: entropy of pooled feature counters.
     rows.append(("", [""] * len(labels)))
     rows.append(("DIVERSITY (entropy in bits, pooled)", [""] * len(labels)))
 
@@ -359,7 +365,7 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
             row_vals.append(f"{_entropy(pooled):.2f}")
         rows.append((f"  {fk}", row_vals))
 
-    # Also: unique feature counts
+    # Also: unique feature counts.
     rows.append(("", [""] * len(labels)))
     rows.append(("DIVERSITY (unique features, pooled)", [""] * len(labels)))
 
@@ -577,20 +583,20 @@ def plot_program_complexity(
 
         for prog in programs:
             try:
-                cx = backend.complexity(prog)
+                fs = backend.feature_sets(prog)
             except Exception:
                 continue
-            for metric, values in cx.items():
-                if not values:
+            for metric, counter in fs.items():
+                if not counter or not _is_numeric_counter(counter):
                     continue
                 rows.append({
                     "Run": label,
                     "Metric": metric,
-                    "Value": float(np.mean(values)),
+                    "Value": float(np.mean(list(counter.elements()))),
                 })
 
     if not rows:
-        print("No complexity data found.")
+        print("No numeric-feature data found.")
         return
 
     if absolute and not dafnybench_dir:
@@ -608,14 +614,14 @@ def plot_program_complexity(
         for dfy_file in sorted(Path(dafnybench_dir).glob("*.dfy")):
             try:
                 prog = Program(dfy_file.read_text(), language)
-                cx = backend.complexity(prog)
+                fs = backend.feature_sets(prog)
             except Exception:
                 continue
             n_files += 1
-            for metric, values in cx.items():
-                if not values:
+            for metric, counter in fs.items():
+                if not counter or not _is_numeric_counter(counter):
                     continue
-                v = float(np.mean(values))
+                v = float(np.mean(list(counter.elements())))
                 per_metric[metric].append(v)
                 rows.append({"Run": "DafnyBench", "Metric": metric, "Value": v})
         ref_lower = {m: float(np.percentile(vs, lower_percentile))

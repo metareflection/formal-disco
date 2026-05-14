@@ -1,0 +1,44 @@
+Classes are heap-allocated reference types with mutable fields, methods, and constructors. Traits are abstract supertypes — they declare members that classes implement via `extends`. A class may extend multiple traits. `this` is the implicit receiver; `reads`/`modifies` clauses must mention objects whose state is read or written.
+
+```dafny
+trait Shape {
+  function Area(): real
+    reads this
+}
+
+class Rectangle extends Shape {
+  var width: real
+  var height: real
+
+  constructor(w: real, h: real)
+    requires w >= 0.0 && h >= 0.0
+    ensures width == w && height == h
+  {
+    width := w;
+    height := h;
+  }
+
+  function Area(): real
+    reads this
+  {
+    width * height
+  }
+
+  method Scale(k: real)
+    requires k >= 0.0
+    modifies this
+    ensures width == k * old(width) && height == k * old(height)
+  {
+    width := k * width;
+    height := k * height;
+  }
+}
+
+method UseClass()
+{
+  var r := new Rectangle(3.0, 4.0);
+  assert r.Area() == 12.0;
+  r.Scale(2.0);
+  assert r.Area() == 48.0;
+}
+```

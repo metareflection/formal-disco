@@ -1,0 +1,41 @@
+Frame clauses constrain what heap state code may read or write. Functions use `reads` to declare what state they observe; methods use `modifies` to declare what objects they may mutate. `old(e)` refers to a value in the pre-state, `fresh(o)` says `o` is freshly allocated, and `unchanged(o)` says `o`'s state is identical to a previous state.
+
+```dafny
+class Cell {
+  var v: int
+  constructor(x: int)
+    ensures v == x
+  {
+    v := x;
+  }
+}
+
+function GetValue(c: Cell): int
+  reads c
+{
+  c.v
+}
+
+method Increment(c: Cell)
+  modifies c
+  ensures c.v == old(c.v) + 1
+{
+  c.v := c.v + 1;
+}
+
+method Untouched(a: Cell, b: Cell)
+  requires a != b
+  modifies a
+  ensures unchanged(b)
+{
+  a.v := 99;
+}
+
+method MakeAndIncrement() returns (c: Cell)
+  ensures fresh(c)
+  ensures c.v == 1
+{
+  c := new Cell(0);
+  Increment(c);
+}
+```

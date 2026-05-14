@@ -1,0 +1,27 @@
+Bitwise reasoning over fixed-width Rust integers (`u8`/`u16`/`u32`/`u64`) is dispatched to a dedicated bit-blasting solver via `assert(...) by(bit_vector)`. This handles facts that involve `&`, `|`, `^`, `!`, `<<`, `>>`, and modular wrap-around precisely.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn mask_low_bits(x: u32) -> (r: u32)
+    ensures r <= 0xF,
+            r == x & 0xF,
+{
+    assert(forall|y: u32| y & 0xF <= 0xF) by(bit_vector);
+    x & 0xF
+}
+
+proof fn xor_self_is_zero(x: u32)
+    ensures x ^ x == 0,
+{
+    assert(x ^ x == 0u32) by(bit_vector);
+}
+
+proof fn shift_then_mask(x: u32) {
+    assert((x << 4) & 0xF == 0) by(bit_vector);
+}
+
+} // verus!
+```

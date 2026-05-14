@@ -1,0 +1,25 @@
+A verified `while` loop carries `invariant` clauses that hold before the loop, after every iteration, and (with the negated guard) at the loop's exit. A `decreases` clause names a value that strictly decreases each iteration, proving termination.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn count_to(n: u32) -> (r: u32)
+    requires n <= 1_000_000,
+    ensures r == n,
+{
+    let mut i: u32 = 0;
+    while i < n
+        invariant
+            i <= n,
+            n <= 1_000_000,
+        decreases n - i,
+    {
+        i = i + 1;
+    }
+    i
+}
+
+} // verus!
+```

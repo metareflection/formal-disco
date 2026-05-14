@@ -1,0 +1,152 @@
+[
+  {
+    "id": "verus-macro-prelude",
+    "title": "verus! macro and vstd prelude",
+    "regex": "\\bverus!\\s*\\{|\\buse\\s+vstd::"
+  },
+  {
+    "id": "function-modes",
+    "title": "Function modes (spec / proof / exec, open/closed spec)",
+    "regex": "\\b(spec|proof|exec)\\s+fn\\b|\\b(open|closed)\\s+spec\\b"
+  },
+  {
+    "id": "external-body",
+    "title": "Unverified shims via #[verifier::external_body]",
+    "regex": "#\\[verifier::external_body\\]|#\\[verifier::external\\]"
+  },
+  {
+    "id": "requires-ensures",
+    "title": "Function preconditions and postconditions",
+    "regex": "\\b(requires|ensures|recommends)\\b"
+  },
+  {
+    "id": "assertions",
+    "title": "assert / assume / assert by { ... } proof blocks",
+    "regex": "\\bassert\\s*\\(|\\bassume\\s*\\(|\\bassert\\b[^;]*\\bby\\s*\\{"
+  },
+  {
+    "id": "assert-by-modes",
+    "title": "assert by (bit_vector | nonlinear_arith | compute)",
+    "regex": "\\bby\\s*\\((bit_vector|nonlinear_arith|compute|compute_only)\\b"
+  },
+  {
+    "id": "decreases-recursion",
+    "title": "Termination via decreases",
+    "regex": "\\bdecreases\\b"
+  },
+  {
+    "id": "broadcast-lemmas",
+    "title": "broadcast proof fn / broadcast use",
+    "regex": "\\bbroadcast\\b"
+  },
+  {
+    "id": "logical-ops",
+    "title": "Logical operators (==>, <==>, &&&, |||)",
+    "regex": "==>|<==>|&&&|\\|\\|\\|"
+  },
+  {
+    "id": "quantifiers-triggers",
+    "title": "Quantifier expressions and triggers",
+    "regex": "\\b(forall|exists)\\s*\\||#\\[trigger\\]|#!\\[trigger\\]"
+  },
+  {
+    "id": "choose-operator",
+    "title": "Witness extraction via choose|x| ...",
+    "regex": "\\bchoose\\s*\\|"
+  },
+  {
+    "id": "extensional-equality",
+    "title": "Extensional equality (=~=, =~~=)",
+    "regex": "=~~?="
+  },
+  {
+    "id": "int-nat-types",
+    "title": "Mathematical int and nat types",
+    "regex": "(:|->|<)\\s*(int|nat)\\b|\\bas\\s+(int|nat)\\b"
+  },
+  {
+    "id": "bit-vectors",
+    "title": "Bit-vector reasoning over fixed-width ints",
+    "regex": "\\b(u8|u16|u32|u64|u128|i8|i16|i32|i64|i128)\\b.*[&|^]|by\\s*\\(bit_vector\\)"
+  },
+  {
+    "id": "structs-enums",
+    "title": "Structs, enums, pattern matching, is/-> ops",
+    "regex": "\\b(struct|enum)\\s+\\w+|\\bmatch\\b|\\bis\\s+\\w+\\s*$"
+  },
+  {
+    "id": "seq-collection",
+    "title": "Ghost Seq<T> collection",
+    "regex": "\\bSeq\\s*[<:]|\\bseq!\\s*\\["
+  },
+  {
+    "id": "set-multiset",
+    "title": "Ghost Set<T> and Multiset<T>",
+    "regex": "\\b(Set|Multiset)\\s*[<:]|\\bset!\\s*\\["
+  },
+  {
+    "id": "map-collection",
+    "title": "Ghost Map<K, V>",
+    "regex": "\\bMap\\s*[<:]|\\bmap!\\s*\\["
+  },
+  {
+    "id": "vec-exec",
+    "title": "Executable Vec<T> with view()/@",
+    "regex": "\\bVec\\s*[<:]|\\.view\\(\\)|@\\s*[^=]"
+  },
+  {
+    "id": "mutable-refs",
+    "title": "&mut parameters and old(x)",
+    "regex": "&\\s*mut\\b|\\bold\\s*\\("
+  },
+  {
+    "id": "while-loops",
+    "title": "while loops with invariants",
+    "regex": "\\bwhile\\b[^;{]*\\{|\\binvariant\\b"
+  },
+  {
+    "id": "for-loops",
+    "title": "for loops over ranges/iterators",
+    "regex": "\\bfor\\s+\\w+\\s+in\\b"
+  },
+  {
+    "id": "loop-ensures",
+    "title": "loop { ... } with invariant / ensures / break",
+    "regex": "\\bloop\\s*(invariant|ensures|\\{)|\\bbreak\\b"
+  },
+  {
+    "id": "arrays-slices",
+    "title": "Fixed-size arrays and slices",
+    "regex": "\\[\\s*\\w+\\s*;\\s*\\d|&\\s*\\[\\s*\\w"
+  },
+  {
+    "id": "closures-spec-fn",
+    "title": "Closures and spec_fn types",
+    "regex": "\\bspec_fn\\s*\\(|\\bFnSpec\\b|\\|[\\w,\\s:]*\\|\\s*->|\\|[\\w,\\s:]*\\|\\s+\\w"
+  },
+  {
+    "id": "generics-traits",
+    "title": "Generics and traits (incl. View)",
+    "regex": "\\btrait\\s+\\w+|\\bimpl\\b[^{]*\\bfor\\b|\\bView\\b"
+  },
+  {
+    "id": "lemmas-proofs",
+    "title": "Proof functions used as lemmas",
+    "regex": "\\bproof\\s+fn\\s+\\w+"
+  },
+  {
+    "id": "ghost-tracked",
+    "title": "Ghost<T> / Tracked<T> wrappers and proof blocks",
+    "regex": "\\b(Ghost|Tracked)\\s*<|\\bproof\\s*\\{"
+  },
+  {
+    "id": "type-invariants",
+    "title": "Type invariants on structs",
+    "regex": "#\\[verifier::type_invariant\\]"
+  },
+  {
+    "id": "cell-pointer",
+    "title": "Low-level memory: PCell<T> and PPtr<T>",
+    "regex": "\\b(PCell|PPtr)\\b"
+  }
+]

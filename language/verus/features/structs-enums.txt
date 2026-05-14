@@ -1,0 +1,45 @@
+Verus reuses Rust's `struct` and `enum` for both executable and ghost data. Pattern matching with `match` works as in Rust; in addition, Verus offers `e is Variant` and `e->field` shorthands for variant tests and field projection on enums.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+enum Shape {
+    Circle(u32),
+    Rect { w: u32, h: u32 },
+}
+
+spec fn area_spec(s: Shape) -> nat {
+    match s {
+        Shape::Circle(r) => (3 * (r as nat) * (r as nat)),
+        Shape::Rect { w, h } => (w as nat) * (h as nat),
+    }
+}
+
+fn classify(s: &Shape) -> (r: u8)
+    ensures (s is Circle) ==> r == 0,
+            (s is Rect)   ==> r == 1,
+{
+    match s {
+        Shape::Circle(_) => 0,
+        Shape::Rect { .. } => 1,
+    }
+}
+
+fn manhattan(p: &Point) -> (r: i64)
+    requires -1000 <= p.x <= 1000, -1000 <= p.y <= 1000,
+    ensures r >= 0,
+{
+    let ax = if p.x >= 0 { p.x as i64 } else { -(p.x as i64) };
+    let ay = if p.y >= 0 { p.y as i64 } else { -(p.y as i64) };
+    ax + ay
+}
+
+} // verus!
+```

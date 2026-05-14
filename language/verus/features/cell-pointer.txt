@@ -1,0 +1,19 @@
+`PCell<T>` is a verified interior-mutable cell: the cell itself can be shared (`&PCell<T>`) while the right to read/write is carried by a separate `Tracked<PointsTo<T>>` permission token. `PPtr<T>` is the analogous heap pointer. Using these correctly is how Verus reasons about low-level mutable state without losing soundness.
+
+```rust
+use vstd::prelude::*;
+use vstd::cell::*;
+
+verus! {
+
+fn cell_demo()
+{
+    let (cell, Tracked(mut perm)) = PCell::<u32>::empty();
+
+    cell.put(Tracked(&mut perm), 42);
+    let v = *cell.borrow(Tracked(&perm));
+    assert(v == 42);
+}
+
+} // verus!
+```

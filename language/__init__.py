@@ -8,6 +8,7 @@ Each backend provides:
     (implement, repair, extend, idea generation).
 """
 
+import math
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
@@ -92,52 +93,37 @@ class PromptBuilder:
 class LanguageBackend:
     """Implements language-specific operations over programs.
 
-    A backend supports verification, program metrics (complexity and diversity),
-    and LLM prompt construction.  Each backend may also expose additional
-    language-specific operations used when deriving training examples.
+    A backend supports verification, program feature metrics, and LLM prompt
+    construction.  Each backend may also expose additional language-specific
+    operations used when deriving training examples.
 
-    The metrics work as follows.
+    A program feature metric is a Counter of occurrences of a given feature
+    in the program. Keys must be discrete (str, int, bool)
+    so that discrete entropy is a meaningful diversity measure.
 
-    - A program complexity metric is a single number associated with the program
-      that measures one dimension of its complexity. These can include:
-        - Average loops per method
-        - Average function/method body size
-        - Average assertion/loop invariant complexity (e.g., number of identifiers)
-        - Average loop invariants per method
-        - Average lemma body length
+    Examples of features:
+      - Subject words in identifiers (str)
+      - Logical templates of assertions/invariants/pre/post-conditions (str)
+      - Loop skeletons (str)
+      - Per-method body size (int)
+      - Number of loops per method (int)
+      - Number of identifiers in each assertion or invariant (int)
 
-      As a rule of thumb, ideally these metrics should not be just related to program size
-      (e.g., lines of code). A program can be short and complex, or long and trivial.
-      We're still exploring what these metrics /should/ be, but the idea is that the discovery
-      system will optimize for finding programs maximizing these metrics, so they should
-      reflect properties we want to encourage in our synthetic corpus.
-
-    - A program feature metric counts occurrences of certain features in the program,
-      and should be useful for measuring diversity, or semantic program similarity.
-      These can include things like:
-        - Words appearing in method/lemma/datatype/class names
-        - Logical templates of assertions, loop invariants, pre/post-conditions
-        - Number of assertions per method
-        - Lemma body lengths
-        - Loop structures (e.g., "for { for {} }", "while {}")
-
-      These metrics will allow us to do two things:
-      1. Compare the feature distributions in our synthetic vs a reference corpus
-         (e.g., DafnyBench), allowing us to compare diversity. Entropy is a simple metric for this.
-      2. For each program, measure its "uniqueness" with respect to the whole corpus.
-         This will allow us to select good in-context examples for workers in the distributed system.
-         For instance, a program that uses a very unique loop structure or post-condition might be
-         selected over programs using extremely common ones.
+    These metrics support two consumers:
+      1. Diversity: entropy of the pooled Counter across a corpus measures
+         how varied the feature is. For ordered (int) features we may
+         additionally compute statistics like median/p90 to track how the
+         discovery system pushes those values up over time
+         (once we do entropy maximization, and diversity pushes towards higher values).
+      2. Per-program uniqueness: how rare are this program's features
+         relative to the corpus, used to select in-context examples for
+         workers, to prioritize things in the agenda, and to do entropy
+         maximization via iterative SFT ranking by uniqueness/surprisal.
     """
 
     @property
     def prompt_builder(self) -> PromptBuilder:
         """Return the PromptBuilder for this language."""
-        raise NotImplementedError
-
-    @property
-    def complexity_metrics(self) -> set[str]:
-        """Return the set of program complexity metrics supported by this backend."""
         raise NotImplementedError
 
     @property
@@ -173,20 +159,50 @@ class LanguageBackend:
         """Call the verifier on a batch of programs in parallel and return the outcomes."""
         raise NotImplementedError
 
-    def complexity(self, program: 'Program') -> dict[str, Any]:
-        """Return a dict of complexity metrics for the given program.
-
-        All keys must be present in complexity_metrics().
-        """
-        raise NotImplementedError
-
     def feature_sets(self, program: 'Program') -> dict[str, Counter[Any]]:
         """Return a dict of feature Counters for the given program.
 
-        Intended for measuring corpus diversity and individual program
-        uniqueness.  All keys must be present in feature_metrics().
+        Counter keys must be discrete (str, int, bool) — see class docstring.
+        All metric names returned must be present in feature_metrics().
         """
         raise NotImplementedError
+
+    def surprisal(
+        self,
+        program: 'Program',
+        corpus_stats: dict[str, Counter[Any]],
+    ) -> dict[str, float]:
+        """Per-metric maximum surprisal (in bits) of a program under a corpus.
+
+        For each feature metric, computes the self-information
+        -log2(count(v) / total) for every value v the program exhibits, and
+        returns the maximum — i.e., how surprising the program's rarest value
+        of that feature is relative to the pooled corpus distribution.
+
+        corpus_stats[metric] is the pooled Counter across the corpus. The
+        program is typically itself in the corpus, so any value it has should
+        already be counted; if a value is nevertheless unseen, its surprisal
+        is +inf. Metrics for which the program has no values are omitted from
+        the result.
+        """
+        feats = self.feature_sets(program)
+        result: dict[str, float] = {}
+        for metric, counter in feats.items():
+            if not counter:
+                continue
+            pooled = corpus_stats[metric]
+            total = sum(pooled.values())
+            max_s = 0.0
+            for v in counter:
+                c = pooled[v]
+                if c == 0:
+                    max_s = math.inf
+                    break
+                s = math.log2(total / c)
+                if s > max_s:
+                    max_s = s
+            result[metric] = max_s
+        return result
 
 
 class Language(Enum):

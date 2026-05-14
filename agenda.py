@@ -364,7 +364,7 @@ class LocalAgenda(Agenda):
 
                 d = self._compute_diversity_metrics()
                 self._logger.log_metrics(d)
-                logger.info(f"Diversity/complexity metrics: {d}")
+                logger.info(f"Diversity metrics: {d}")
 
                 self._logger.log_task_outcomes(self._task_outcomes)
                 logger.info(f"Task outcomes: {self._task_outcomes}")
@@ -771,12 +771,12 @@ class LocalAgenda(Agenda):
         return stats
 
     def _compute_diversity_metrics(self) -> dict[str, float]:
-        """Compute diversity and complexity metrics over dataset programs.
+        """Compute feature-set metrics over dataset programs.
 
         For each feature metric, computes the entropy of the pooled distribution
         across all programs (one per parent idea, taking the longest).
-        For each complexity metric, computes the median and 90th percentile of
-        all values collected across all programs.
+        For numeric features (Counter[int]), additionally computes median and
+        p90 over the multiset of observed values.
         """
         from language import Program, Language as Lang
 
@@ -797,7 +797,6 @@ class LocalAgenda(Agenda):
                 programs_by_idea[parent_idea] = (obj.path, text, n_lines)
 
         feature_totals: dict[str, Counter] = {}
-        complexity_values: dict[str, list] = {}
 
         for path, text, _ in programs_by_idea.values():
             prog = Program(text, Lang[self._language.upper()], name=path)
@@ -806,14 +805,6 @@ class LocalAgenda(Agenda):
                     if metric not in feature_totals:
                         feature_totals[metric] = Counter()
                     feature_totals[metric] += counter
-            except Exception:
-                pass
-            try:
-                for metric, values in self._backend.complexity(prog).items():
-                    if isinstance(values, list):
-                        if metric not in complexity_values:
-                            complexity_values[metric] = []
-                        complexity_values[metric].extend(values)
             except Exception:
                 pass
 
@@ -828,13 +819,12 @@ class LocalAgenda(Agenda):
                 for c in counter.values() if c > 0
             )
             stats[f"diversity/{metric}-entropy"] = entropy
-
-        for metric, values in complexity_values.items():
-            if not values:
-                continue
-            arr = np.array(values, dtype=float)
-            stats[f"complexity/{metric}-median"] = float(np.median(arr))
-            stats[f"complexity/{metric}-p90"] = float(np.percentile(arr, 90))
+            # Numeric features (int keys): also report median/p90 of the multiset.
+            if counter and all(isinstance(k, int) and not isinstance(k, bool)
+                               for k in counter.keys()):
+                arr = np.array(list(counter.elements()), dtype=float)
+                stats[f"diversity/{metric}-median"] = float(np.median(arr))
+                stats[f"diversity/{metric}-p90"] = float(np.percentile(arr, 90))
 
         return stats
 

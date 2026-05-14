@@ -1,0 +1,24 @@
+A `broadcast proof fn` is a lemma whose `ensures` clause is automatically used by the SMT solver in any scope that runs `broadcast use`. This makes recurring facts (e.g., monotonicity of an operation) available without an explicit call site each time.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+spec fn double(x: int) -> int { 2 * x }
+
+broadcast proof fn double_monotone(x: int, y: int)
+    requires x <= y,
+    ensures #[trigger] double(x) <= #[trigger] double(y),
+{
+}
+
+proof fn use_broadcast(a: int, b: int, c: int)
+    requires a <= b, b <= c,
+    ensures double(a) <= double(c),
+{
+    broadcast use double_monotone;
+}
+
+} // verus!
+```

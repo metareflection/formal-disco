@@ -1,0 +1,33 @@
+Arrays in Dafny are heap-allocated, mutable reference-typed sequences. `array<T>` is a 1-D array, `array2<T>`/`array3<T>` are multi-dimensional. Allocate with `new T[n]` and access with `a[i]`. The slice `a[..]` converts a 1-D array to a `seq<T>`.
+
+```dafny
+method ArrayDemo() returns (sum: int)
+{
+  var a := new int[5];
+  var i := 0;
+  while i < a.Length
+    invariant 0 <= i <= a.Length
+    invariant forall k :: 0 <= k < i ==> a[k] == k
+  {
+    a[i] := i;
+    i := i + 1;
+  }
+  assert a[3] == 3;
+  assert a[..] == [0, 1, 2, 3, 4];
+
+  // 2-D array
+  var grid := new int[3, 4];
+  grid[1, 2] := 42;
+  assert grid[1, 2] == 42;
+  assert grid.Length0 == 3 && grid.Length1 == 4;
+
+  sum := 0;
+  i := 0;
+  while i < a.Length
+    invariant 0 <= i <= a.Length
+  {
+    sum := sum + a[i];
+    i := i + 1;
+  }
+}
+```

@@ -1,0 +1,20 @@
+A `requires` clause states a precondition the caller must establish; an `ensures` clause is a postcondition the function guarantees. Multiple clauses are comma-separated. Naming the return value with `-> (r: T)` lets the postcondition refer to it.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn abs_diff(a: i32, b: i32) -> (r: i32)
+    requires
+        -1000 <= a <= 1000,
+        -1000 <= b <= 1000,
+    ensures
+        r >= 0,
+        r == a - b || r == b - a,
+{
+    if a >= b { a - b } else { b - a }
+}
+
+} // verus!
+```

@@ -1,0 +1,31 @@
+`Set<T>` is a ghost (possibly infinite) set; `Multiset<T>` is a ghost bag counting occurrences. They support `insert`, `remove`, `contains`, `union`, `intersect`, `difference`, and a `len()` (defined when `finite()`). Literal `set![...]` and `multiset![...]` macros build small ones.
+
+```rust
+use vstd::prelude::*;
+use vstd::multiset::Multiset;
+use vstd::multiset::*;
+
+verus! {
+
+proof fn set_basics() {
+    let s: Set<int> = set![1, 2, 3];
+    assert(s.contains(1));
+    assert(!s.contains(4));
+    assert(s.insert(4).contains(4));
+    assert(s.remove(1) =~= set![2, 3]);
+}
+
+proof fn multiset_basics() {
+    let m: Multiset<int> = Multiset::empty().insert(1).insert(1).insert(2);
+    assert(m.count(1) == 2);
+    assert(m.count(2) == 1);
+    assert(m.count(3) == 0);
+}
+
+proof fn set_union_distrib(a: Set<int>, b: Set<int>, c: Set<int>)
+    ensures (a + b) + c =~= a + (b + c),
+{
+}
+
+} // verus!
+```

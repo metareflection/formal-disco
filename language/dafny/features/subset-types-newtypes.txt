@@ -1,0 +1,30 @@
+Subset types `type T = x: B | P(x)` carve out values of a base type satisfying a predicate; conversions between T and B are implicit when provable. Newtypes `newtype N = x: B | P(x)` create a *distinct* type with its own operators and explicit conversions via `as`. Both may need a `witness` clause when the constraint is non-trivial.
+
+```dafny
+type Even = x: int | x % 2 == 0 witness 0
+
+newtype uint8 = x: int | 0 <= x < 256
+
+type NonEmptyIntSeq = s: seq<int> | |s| > 0 witness [0]
+
+method UseSubsetAndNewtype()
+{
+  // Subset type: implicit when the constraint can be proved.
+  var e: Even := 4;
+  var f: Even := e + 2;
+  assert f == 6;
+
+  // Newtype: explicit conversion required.
+  var b: uint8 := 200;
+  var c: uint8 := b - 50;
+  assert c == 150;
+  var asInt: int := b as int;
+  assert asInt == 200;
+}
+
+method First(s: NonEmptyIntSeq) returns (x: int)
+  ensures x == s[0]
+{
+  x := s[0];
+}
+```

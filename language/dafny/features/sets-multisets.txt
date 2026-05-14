@@ -1,0 +1,24 @@
+Dafny provides finite `set<T>`, infinite `iset<T>`, and `multiset<T>` (bag) collection types. Sets use `{a, b, c}` displays and support union (+), intersection (*), difference (-), membership (in), subset (<=), and cardinality (|s|). Multisets count occurrences with `ms[x]`.
+
+```dafny
+method SetsAndMultisets() {
+  var s: set<int> := {1, 2, 3};
+  var t: set<int> := {2, 3, 4};
+
+  assert s + t == {1, 2, 3, 4};
+  assert s * t == {2, 3};
+  assert s - t == {1};
+  assert s <= s + t;
+  assert 2 in s;
+  assert 5 !in s;
+  assert |s| == 3;
+
+  var ms: multiset<int> := multiset{1, 1, 2, 3};
+  assert ms[1] == 2;
+  assert ms[2] == 1;
+  assert |ms| == 4;
+
+  var inf: iset<int> := iset x | x > 0;
+  assert 5 in inf;
+}
+```

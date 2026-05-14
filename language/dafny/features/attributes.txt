@@ -1,0 +1,43 @@
+Verification attributes use the `{:name args}` syntax and tune the SMT-based prover. Common ones: `{:fuel f, n}` controls function unfolding depth; `{:trigger t}` provides a quantifier instantiation pattern; `{:induction k}` chooses induction variables; `{:opaque}` hides a definition; `{:axiom}` trusts a body-less declaration.
+
+```dafny
+function {:fuel 3} Pow(b: int, n: nat): int
+{
+  if n == 0 then 1 else b * Pow(b, n - 1)
+}
+
+lemma {:induction n} PowNonNegBase(b: int, n: nat)
+  requires b >= 0
+  ensures Pow(b, n) >= 0
+{
+  if n == 0 {
+  } else {
+    PowNonNegBase(b, n - 1);
+  }
+}
+
+predicate {:opaque} IsPositive(x: int)
+{
+  x > 0
+}
+
+lemma RevealPositive(x: int)
+  requires x > 0
+  ensures IsPositive(x)
+{
+  reveal IsPositive();
+}
+
+lemma ManyElements(s: seq<int>)
+  requires forall i {:trigger s[i]} :: 0 <= i < |s| ==> s[i] >= 0
+  ensures forall i :: 0 <= i < |s| ==> s[i] + 1 >= 1
+{
+}
+
+method UseAttributes()
+{
+  PowNonNegBase(2, 5);
+  assert Pow(2, 3) == 8;
+  RevealPositive(7);
+}
+```

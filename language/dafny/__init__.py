@@ -419,13 +419,10 @@ class DafnyBackend(LanguageBackend):
     Most metrics are computed with simple regex-based heuristics.
     """
 
-    _COMPLEXITY_METRICS = frozenset({
-        'body_sizes', 'n_loops_per_method', 'n_idents_in_asserts', 'n_idents_in_invs',
-    })
-
     _FEATURE_METRICS = frozenset({
         'subject_words', 'invariant_templates', 'assert_templates',
         'ensures_templates', 'requires_templates', 'loop_skeletons',
+        'body_sizes', 'n_loops_per_method', 'n_idents_in_asserts', 'n_idents_in_invs',
     })
 
     @property
@@ -440,10 +437,6 @@ class DafnyBackend(LanguageBackend):
     @property
     def prompt_builder(self) -> DafnyPromptBuilder:
         return DafnyPromptBuilder()
-
-    @property
-    def complexity_metrics(self) -> frozenset[str]:
-        return self._COMPLEXITY_METRICS
 
     @property
     def feature_metrics(self) -> frozenset[str]:
@@ -495,22 +488,6 @@ class DafnyBackend(LanguageBackend):
         """Extract per-method stats: name, assertion count, invariant count."""
         return _extract_methods(str(program))
 
-    def complexity(self, program: 'Program') -> dict[str, Any]:
-        source = str(program)
-        clean = _remove_comments(source)
-
-        asserts = [_first_line_stripped(m.group(1)) for m in _ASSERT_RE.finditer(clean)]
-        invariants = [_first_line_stripped(m.group(1)) for m in _INV_RE.finditer(clean)]
-
-        method_loop_features = _extract_method_loop_features(source)
-
-        return {
-            'body_sizes': _extract_body_sizes(source),
-            'n_loops_per_method': [f['n_loops'] for f in method_loop_features],
-            'n_idents_in_asserts': [len(_IDENT_RE.findall(a)) for a in asserts],
-            'n_idents_in_invs': [len(_IDENT_RE.findall(inv)) for inv in invariants],
-        }
-
     def feature_sets(self, program: 'Program') -> dict[str, Counter]:
         source = str(program)
         clean = _remove_comments(source)
@@ -534,5 +511,9 @@ class DafnyBackend(LanguageBackend):
             'ensures_templates': Counter(_make_template(s) for s in ensures),
             'requires_templates': Counter(_make_template(s) for s in requires),
             'loop_skeletons': Counter(loop_skeletons),
+            'body_sizes': Counter(_extract_body_sizes(source)),
+            'n_loops_per_method': Counter(f['n_loops'] for f in method_loop_features),
+            'n_idents_in_asserts': Counter(len(_IDENT_RE.findall(a)) for a in asserts),
+            'n_idents_in_invs': Counter(len(_IDENT_RE.findall(inv)) for inv in invariants),
         }
 

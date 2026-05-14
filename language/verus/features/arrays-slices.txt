@@ -1,0 +1,22 @@
+Fixed-size arrays `[T; N]` and slices `&[T]` are first-class in Verus. Their ghost view is a `Seq<T>` accessed as `a@`. A slice's length is in its view (`s@.len()`) and indexed with `s[i]`.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn slice_first(s: &[u32]) -> (r: u32)
+    requires s@.len() > 0,
+    ensures r == s@[0],
+{
+    s[0]
+}
+
+fn array_sum_first_three(a: &[u32; 3]) -> (r: u64)
+    ensures r == a@[0] as u64 + a@[1] as u64 + a@[2] as u64,
+{
+    a[0] as u64 + a[1] as u64 + a[2] as u64
+}
+
+} // verus!
+```

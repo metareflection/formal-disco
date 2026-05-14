@@ -1,0 +1,26 @@
+Verus supports `for` loops over standard Rust integer ranges (and other iterators). Inside a for loop the loop counter is in scope, and `invariant` clauses describe what holds across iterations.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn count_evens(n: u32) -> (r: u32)
+    requires n <= 1000,
+    ensures r <= n,
+{
+    let mut c: u32 = 0;
+    for i in 0..n
+        invariant
+            n <= 1000,
+            c <= i,
+    {
+        if i % 2 == 0 {
+            c = c + 1;
+        }
+    }
+    c
+}
+
+} // verus!
+```

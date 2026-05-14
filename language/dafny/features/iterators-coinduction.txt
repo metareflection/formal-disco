@@ -1,0 +1,36 @@
+Iterators are stateful objects that produce a stream of values via `yield`. They have implicit history sequences (`xs`, `ys`, …) recording yielded values. Codatatypes (`codatatype`) describe possibly-infinite values defined by their observations; functions over codatatypes can be co-recursive, and `greatest lemma` (a.k.a. `colemma`) supports coinductive proofs.
+
+```dafny
+iterator Counter(n: nat) yields (x: nat)
+  yield ensures |xs| <= n
+  yield ensures forall j :: 0 <= j < |xs| ==> xs[j] == j
+{
+  var i := 0;
+  while i < n
+    invariant 0 <= i <= n
+    invariant |xs| == i
+    invariant forall j :: 0 <= j < i ==> xs[j] == j
+  {
+    x := i;
+    yield;
+    i := i + 1;
+  }
+}
+
+codatatype Stream<T> = Cons(head: T, tail: Stream<T>)
+
+function Repeat<T>(t: T): Stream<T>
+{
+  Cons(t, Repeat(t))
+}
+
+greatest predicate AllEqual<T(==)>(s: Stream<T>, v: T)
+{
+  s.head == v && AllEqual(s.tail, v)
+}
+
+greatest lemma RepeatIsAllEqual<T(==)>(t: T)
+  ensures AllEqual(Repeat(t), t)
+{
+}
+```

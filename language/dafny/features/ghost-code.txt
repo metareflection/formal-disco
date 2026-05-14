@@ -1,0 +1,31 @@
+Ghost code exists only for verification and is erased before compilation. Functions, predicates, methods, fields, and variables can be declared `ghost`. The `{:opaque}` attribute or `opaque` modifier hides a function's body, requiring `reveal F();` to expose it at use sites. This helps the verifier scale by selectively unfolding definitions.
+
+```dafny
+ghost predicate Sorted(s: seq<int>)
+{
+  forall i, j :: 0 <= i < j < |s| ==> s[i] <= s[j]
+}
+
+opaque function Double(x: int): int
+{
+  x + x
+}
+
+lemma DoubleEquals2x(x: int)
+  ensures Double(x) == 2 * x
+{
+  reveal Double();
+}
+
+ghost method ProveSorted()
+{
+  ghost var s: seq<int> := [1, 3, 5, 7];
+  assert Sorted(s);
+}
+
+method UseGhost(x: int)
+{
+  DoubleEquals2x(x);
+  assert Double(x) == 2 * x;
+}
+```

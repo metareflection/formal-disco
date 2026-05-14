@@ -1,0 +1,30 @@
+A bare `loop { ... }` runs forever unless `break` exits it. In Verus a loop carries `invariant` clauses (true on each entry to the body) and may also carry `ensures` clauses describing what holds when control falls out via `break`.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn at_least_ten(start: u32) -> (r: u32)
+    requires start <= 100,
+    ensures r >= 10,
+{
+    let mut i: u32 = start;
+    loop
+        invariant
+            i >= start,
+            i <= 100 || i >= 10,
+        ensures
+            i >= 10,
+        decreases if i >= 10 { 0 as int } else { (10 - i) as int },
+    {
+        if i >= 10 {
+            break;
+        }
+        i = i + 1;
+    }
+    i
+}
+
+} // verus!
+```

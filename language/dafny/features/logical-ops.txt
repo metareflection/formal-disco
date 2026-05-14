@@ -1,0 +1,30 @@
+Dafny's boolean operators include conjunction `&&`, disjunction `||`, implication `==>`, reverse implication `<==`, and bi-implication (logical equivalence) `<==>`. Both `&&` and `||` are short-circuiting; `==>` and `<==` have lower precedence and right- (resp. left-) associate. `<==>` has the lowest precedence among logical operators.
+
+```dafny
+predicate Tautologies(p: bool, q: bool, r: bool)
+{
+  ((p && q) ==> p) &&
+  (p ==> (p || q)) &&
+  ((p ==> q) <==> (!p || q)) &&
+  (((p ==> q) && (q ==> r)) ==> (p ==> r))
+}
+
+lemma DeMorgan(p: bool, q: bool)
+  ensures !(p && q) <==> (!p || !q)
+  ensures !(p || q) <==> (!p && !q)
+{
+}
+
+lemma Contrapositive(p: bool, q: bool)
+  ensures (p ==> q) <==> (!q ==> !p)
+{
+}
+
+method LogicDemo()
+{
+  assert Tautologies(true, false, true);
+  DeMorgan(true, false);
+  assert true <== false;     // reverse implication
+  assert (true <==> true);
+}
+```

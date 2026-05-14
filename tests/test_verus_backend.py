@@ -115,38 +115,40 @@ class TestFeatureSets:
 
     def test_empty_program(self):
         fs = backend().feature_sets(Program("", Language.VERUS))
-        for v in fs.values():
-            assert len(v) == 0
+        for k, v in fs.items():
+            # n_annotations_per_program always emits the whole-program count,
+            # even when 0 (it's not per-fn, so there's no notion of "no items").
+            if k == "n_annotations_per_program":
+                assert v == Counter([0])
+            else:
+                assert len(v) == 0
 
 
-class TestComplexity:
-    """Complexity metric tests — pure Python, no Verus invocation."""
-
-    def test_returns_all_keys(self):
-        b = backend()
-        assert set(b.complexity(load("max.rs")).keys()) == b.complexity_metrics
+class TestNumericFeatureSets:
+    """Numeric feature metrics (formerly complexity) — pure Python, no Verus invocation."""
 
     def test_body_sizes_positive(self):
-        c = backend().complexity(load("binary_search.rs"))
-        assert all(s > 0 for s in c["body_sizes"])
+        c = backend().feature_sets(load("binary_search.rs"))["body_sizes"]
+        assert sum(c.values()) > 0
+        assert all(s > 0 for s in c.elements())
 
     def test_no_loops_in_max(self):
-        c = backend().complexity(load("max.rs"))
-        assert all(n == 0 for n in c["n_loops_per_fn"])
+        c = backend().feature_sets(load("max.rs"))["n_loops_per_fn"]
+        assert all(n == 0 for n in c.elements())
 
     def test_loops_in_binary_search(self):
-        c = backend().complexity(load("binary_search.rs"))
-        assert any(n > 0 for n in c["n_loops_per_fn"])
+        c = backend().feature_sets(load("binary_search.rs"))["n_loops_per_fn"]
+        assert any(n > 0 for n in c.elements())
 
     def test_idents_in_asserts(self):
         source = "verus! {\nfn check(x: i64) {\n  assert(x > 0);\n}\n}\n"
-        c = backend().complexity(Program(source, Language.VERUS))
-        assert len(c["n_idents_in_asserts"]) == 1
-        assert c["n_idents_in_asserts"][0] >= 1
+        c = backend().feature_sets(Program(source, Language.VERUS))["n_idents_in_asserts"]
+        assert sum(c.values()) == 1
+        assert all(n >= 1 for n in c.elements())
 
     def test_multiple_fns_body_sizes(self):
-        c = backend().complexity(load("sum_vec.rs"))
-        assert len(c["body_sizes"]) >= 2
+        c = backend().feature_sets(load("sum_vec.rs"))["body_sizes"]
+        assert sum(c.values()) >= 2
 
 
 class TestPromptBuilder:
@@ -271,8 +273,8 @@ class TestStrip:
             "  let y = x;\n"
             "}\n"
         )
-        c = b.complexity(Program(source, Language.VERUS))
-        assert c["n_idents_in_asserts"] == []
+        fs = b.feature_sets(Program(source, Language.VERUS))
+        assert sum(fs["n_idents_in_asserts"].values()) == 0
 
     def test_ensures_in_comment_not_counted(self):
         b = backend()
@@ -284,33 +286,6 @@ class TestStrip:
         )
         fs = b.feature_sets(Program(source, Language.VERUS))
         assert len(fs["ensures_templates"]) == 0
-
-    def test_complexity_invariant_to_strip(self):
-        b = backend()
-        source = (
-            "verus! {\n"
-            "fn sum(n: u64) -> (s: u64)\n"
-            "  requires n < 1000\n"
-            "  ensures s >= 0\n"
-            "{\n"
-            "  let mut s: u64 = 0;\n"
-            "  let mut i: u64 = 0;\n"
-            "  while i < n\n"
-            "    invariant 0 <= i <= n  // i stays in range\n"
-            "    invariant s >= 0\n"
-            "    decreases n - i\n"
-            "  {\n"
-            "    assert(s >= 0);  /* holds by invariant */\n"
-            "    s = s + i;\n"
-            "    i = i + 1;\n"
-            "  }\n"
-            "  s\n"
-            "}\n"
-            "} // verus!\n"
-        )
-        prog = Program(source, Language.VERUS)
-        stripped = b.strip(prog)
-        assert b.complexity(prog) == b.complexity(stripped)
 
     def test_feature_sets_invariant_to_strip(self):
         b = backend()
@@ -341,9 +316,6 @@ class TestStrip:
 
 class TestBackendMetadata:
     """Backend registration and metric-set membership."""
-
-    def test_complexity_metrics_nonempty(self):
-        assert len(backend().complexity_metrics) > 0
 
     def test_feature_metrics_nonempty(self):
         assert len(backend().feature_metrics) > 0

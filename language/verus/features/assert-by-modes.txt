@@ -1,0 +1,25 @@
+Verus has specialized solvers selected by `assert(...) by(mode)`. `by(bit_vector)` discharges propositional/bitwise facts about fixed-width integers via a bit-blasting solver. `by(nonlinear_arith)` enables nonlinear integer/real reasoning (multiplication, division). `by(compute)` evaluates closed expressions by interpretation.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn bv_fact(x: u32) {
+    assert(x & 0 == 0) by(bit_vector);
+    assert(x ^ x == 0) by(bit_vector);
+}
+
+proof fn nonlinear_fact(a: int, b: int)
+    requires a >= 0, b >= 0,
+    ensures (a + b) * (a + b) == a * a + 2 * a * b + b * b,
+{
+    assert((a + b) * (a + b) == a * a + 2 * a * b + b * b) by(nonlinear_arith);
+}
+
+proof fn compute_fact() {
+    assert(7 * 11 * 13 == 1001) by(compute);
+}
+
+} // verus!
+```

@@ -1,0 +1,31 @@
+A `#[verifier::type_invariant]` attribute attaches a per-instance invariant to a struct. Verus checks that every constructor and mutation maintains the invariant, and assumes it inside method bodies, removing the need to repeat the property in every `requires`.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+struct PercentU32 {
+    v: u32,
+}
+
+#[verifier::type_invariant]
+spec fn percent_inv(p: PercentU32) -> bool {
+    p.v <= 100
+}
+
+impl PercentU32 {
+    fn new() -> (r: PercentU32) {
+        PercentU32 { v: 0 }
+    }
+
+    fn raise_to(&mut self, target: u32)
+        requires target <= 100,
+        ensures final(self).v == target,
+    {
+        self.v = target;
+    }
+}
+
+} // verus!
+```

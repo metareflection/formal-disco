@@ -1,0 +1,21 @@
+`choose|x: T| P(x)` is a spec-level operator that picks some `x` satisfying `P` if one exists. Combined with `exists`, it lets a proof name a witness so subsequent steps can reason about it concretely.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+spec fn divides(d: int, n: int) -> bool {
+    d != 0 && exists|k: int| n == #[trigger] (d * k)
+}
+
+proof fn divides_extracts_witness(d: int, n: int)
+    requires divides(d, n),
+    ensures exists|k: int| n == #[trigger] (d * k),
+{
+    let k = choose|k: int| n == #[trigger] (d * k);
+    assert(n == d * k);
+}
+
+} // verus!
+```

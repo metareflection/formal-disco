@@ -1,0 +1,26 @@
+Verus functions have three modes. `spec fn` is a ghost mathematical function used in specifications (no side effects, may use unbounded `int`/`nat`). `proof fn` runs only at verification time and is used to write lemmas. `exec fn` (the default `fn`) is compiled to runtime code. A `spec fn` is `closed` by default outside its module; mark it `open spec fn` to expose its body to other modules.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+pub open spec fn double_spec(x: int) -> int {
+    2 * x
+}
+
+proof fn double_is_monotone(x: int, y: int)
+    requires x <= y,
+    ensures double_spec(x) <= double_spec(y),
+{
+}
+
+exec fn double_exec(x: u32) -> (r: u32)
+    requires x < 1_000_000,
+    ensures r as int == double_spec(x as int),
+{
+    x + x
+}
+
+} // verus!
+```

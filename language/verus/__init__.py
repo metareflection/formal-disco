@@ -1,4 +1,4 @@
-"""Verus language backend implementing verification, complexity metrics, and diversity features.
+"""Verus language backend implementing verification and feature metrics.
 
 Verification is performed by invoking `verus` on a temporary file.
 
@@ -10,7 +10,7 @@ import os
 import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Optional
+from typing import Optional
 
 from execute import execute
 from .. import LanguageBackend, VerificationOutcome, VerificationOutput
@@ -330,14 +330,11 @@ class VerusBackend(LanguageBackend):
     Most metrics are computed with simple regex-based heuristics.
     """
 
-    _COMPLEXITY_METRICS = frozenset({
-        'body_sizes', 'n_loops_per_fn', 'n_idents_in_asserts', 'n_idents_in_invs',
-        'n_annotations_per_fn', 'n_annotations_per_program',
-    })
-
     _FEATURE_METRICS = frozenset({
         'subject_words', 'invariant_templates', 'assert_templates',
         'ensures_templates', 'requires_templates', 'loop_skeletons',
+        'body_sizes', 'n_loops_per_fn', 'n_idents_in_asserts', 'n_idents_in_invs',
+        'n_annotations_per_fn', 'n_annotations_per_program',
     })
 
     def __init__(self, verus_binary: str | None = None, verus_root: str | None = None) -> None:
@@ -356,10 +353,6 @@ class VerusBackend(LanguageBackend):
     @property
     def prompt_builder(self) -> VerusPromptBuilder:
         return VerusPromptBuilder()
-
-    @property
-    def complexity_metrics(self) -> frozenset[str]:
-        return self._COMPLEXITY_METRICS
 
     @property
     def feature_metrics(self) -> frozenset[str]:
@@ -425,24 +418,6 @@ class VerusBackend(LanguageBackend):
                     )
         return results
 
-    def complexity(self, program: 'Program') -> dict[str, Any]:
-        source = str(program)
-        clean = _remove_comments(source)
-
-        asserts = [_first_line_stripped(m.group(1)) for m in _ASSERT_RE.finditer(clean)]
-        invariants = [_first_line_stripped(m.group(1)) for m in _INV_RE.finditer(clean)]
-
-        fn_loop_features = _extract_fn_loop_features(source)
-
-        return {
-            'body_sizes': _extract_body_sizes(source),
-            'n_loops_per_fn': [f['n_loops'] for f in fn_loop_features],
-            'n_idents_in_asserts': [len(_IDENT_RE.findall(a)) for a in asserts],
-            'n_idents_in_invs': [len(_IDENT_RE.findall(inv)) for inv in invariants],
-            'n_annotations_per_fn': _extract_annotations_per_fn(source),
-            'n_annotations_per_program': [_count_annotations(clean)],
-        }
-
     def feature_sets(self, program: 'Program') -> dict[str, Counter]:
         source = str(program)
         clean = _remove_comments(source)
@@ -466,4 +441,10 @@ class VerusBackend(LanguageBackend):
             'ensures_templates': Counter(_make_template(s) for s in ensures),
             'requires_templates': Counter(_make_template(s) for s in requires),
             'loop_skeletons': Counter(loop_skeletons),
+            'body_sizes': Counter(_extract_body_sizes(source)),
+            'n_loops_per_fn': Counter(f['n_loops'] for f in fn_loop_features),
+            'n_idents_in_asserts': Counter(len(_IDENT_RE.findall(a)) for a in asserts),
+            'n_idents_in_invs': Counter(len(_IDENT_RE.findall(inv)) for inv in invariants),
+            'n_annotations_per_fn': Counter(_extract_annotations_per_fn(source)),
+            'n_annotations_per_program': Counter([_count_annotations(clean)]),
         }

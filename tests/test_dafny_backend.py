@@ -130,34 +130,31 @@ class TestFeatureSets:
             assert len(v) == 0
 
 
-class TestComplexity:
-    """Complexity metric tests — pure Python, no Dafny invocation."""
-
-    def test_returns_all_keys(self):
-        b = backend()
-        assert set(b.complexity(load("max.dfy")).keys()) == b.complexity_metrics
+class TestNumericFeatureSets:
+    """Numeric feature metrics (formerly complexity) — pure Python, no Dafny invocation."""
 
     def test_body_sizes_positive(self):
-        c = backend().complexity(load("binary_search.dfy"))
-        assert all(s > 0 for s in c["body_sizes"])
+        c = backend().feature_sets(load("binary_search.dfy"))["body_sizes"]
+        assert sum(c.values()) > 0
+        assert all(s > 0 for s in c.elements())
 
     def test_no_loops_in_max(self):
-        c = backend().complexity(load("max.dfy"))
-        assert all(n == 0 for n in c["n_loops_per_method"])
+        c = backend().feature_sets(load("max.dfy"))["n_loops_per_method"]
+        assert all(n == 0 for n in c.elements())
 
     def test_loops_in_binary_search(self):
-        c = backend().complexity(load("binary_search.dfy"))
-        assert any(n > 0 for n in c["n_loops_per_method"])
+        c = backend().feature_sets(load("binary_search.dfy"))["n_loops_per_method"]
+        assert any(n > 0 for n in c.elements())
 
     def test_idents_in_asserts(self):
         source = "method Check(x: int) {\n  assert x > 0;\n}\n"
-        c = backend().complexity(Program(source, Language.DAFNY))
-        assert len(c["n_idents_in_asserts"]) == 1
-        assert c["n_idents_in_asserts"][0] >= 1
+        c = backend().feature_sets(Program(source, Language.DAFNY))["n_idents_in_asserts"]
+        assert sum(c.values()) == 1
+        assert all(n >= 1 for n in c.elements())
 
     def test_multiple_functions_body_sizes(self):
-        c = backend().complexity(load("sum_array.dfy"))
-        assert len(c["body_sizes"]) >= 2
+        c = backend().feature_sets(load("sum_array.dfy"))["body_sizes"]
+        assert sum(c.values()) >= 2
 
 
 class TestPromptBuilder:
@@ -282,8 +279,8 @@ class TestStrip:
             "  var y := x;\n"
             "}\n"
         )
-        c = b.complexity(Program(source, Language.DAFNY))
-        assert c["n_idents_in_asserts"] == []
+        fs = b.feature_sets(Program(source, Language.DAFNY))
+        assert sum(fs["n_idents_in_asserts"].values()) == 0
 
     def test_invariant_in_line_comment_not_counted(self):
         b = backend()
@@ -309,8 +306,8 @@ class TestStrip:
             "  var y := x;\n"
             "}\n"
         )
-        c = b.complexity(Program(source, Language.DAFNY))
-        assert c["n_idents_in_asserts"] == []
+        fs = b.feature_sets(Program(source, Language.DAFNY))
+        assert sum(fs["n_idents_in_asserts"].values()) == 0
 
     def test_ensures_in_comment_not_counted(self):
         b = backend()
@@ -322,30 +319,6 @@ class TestStrip:
         )
         fs = b.feature_sets(Program(source, Language.DAFNY))
         assert len(fs["ensures_templates"]) == 0
-
-    def test_complexity_invariant_to_strip(self):
-        b = backend()
-        source = (
-            "method Sum(n: int) returns (s: int)\n"
-            "  requires n >= 0\n"
-            "  ensures s >= 0\n"
-            "{\n"
-            "  s := 0;\n"
-            "  var i := 0;\n"
-            "  while i < n\n"
-            "    invariant 0 <= i <= n  // i stays in range\n"
-            "    invariant s >= 0\n"
-            "    decreases n - i\n"
-            "  {\n"
-            "    assert s >= 0;  /* holds by invariant */\n"
-            "    s := s + i;\n"
-            "    i := i + 1;\n"
-            "  }\n"
-            "}\n"
-        )
-        prog = Program(source, Language.DAFNY)
-        stripped = b.strip(prog)
-        assert b.complexity(prog) == b.complexity(stripped)
 
     def test_feature_sets_invariant_to_strip(self):
         b = backend()
@@ -564,9 +537,6 @@ class TestExtractMethods:
 
 class TestBackendMetadata:
     """Backend registration and metric-set membership."""
-
-    def test_complexity_metrics_nonempty(self):
-        assert len(backend().complexity_metrics) > 0
 
     def test_feature_metrics_nonempty(self):
         assert len(backend().feature_metrics) > 0

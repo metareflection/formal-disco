@@ -1,0 +1,25 @@
+The forall statement performs a parallel update or a universally quantified proof. Forms: `forall x | P(x) { S(x); }` updates each indexed element (e.g., `a[x] := ...`); `forall x | P(x) ensures Q(x) { proof }` proves `forall x :: P(x) ==> Q(x)` element-wise.
+
+```dafny
+method CopyArray(a: array<int>) returns (b: array<int>)
+  ensures b.Length == a.Length
+  ensures fresh(b)
+  ensures forall i :: 0 <= i < a.Length ==> b[i] == a[i]
+{
+  b := new int[a.Length];
+  forall i | 0 <= i < a.Length {
+    b[i] := a[i];
+  }
+}
+
+lemma SeqShiftPositive(s: seq<int>)
+  requires forall i :: 0 <= i < |s| ==> s[i] >= 0
+  ensures forall i :: 0 <= i < |s| ==> s[i] + 1 >= 1
+{
+  forall i | 0 <= i < |s|
+    ensures s[i] + 1 >= 1
+  {
+    assert s[i] >= 0;
+  }
+}
+```
