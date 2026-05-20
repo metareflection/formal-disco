@@ -140,11 +140,181 @@ def _iter_distill_examples_from_pickle(pickle_path: str | Path) -> Iterable[dict
             yield ex
 
 
+def _reconstruct_program(ex: dict[str, Any], language: str) -> str | None:
+    """Reconstruct the program associated with a distill example, if any.
+
+    - implement/initiate/generate: response *is* a full program.
+    - repair/extend: response is a text diff to apply to arguments["program"].
+    - lemma_synth (dafny): substitute the response body back into the hollowed
+      program at the named lemma.
+    - idea (and unknown kinds): no associated program; returns None.
+
+    Returns None if the program can't be reconstructed for any reason; callers
+    treat those as unrankable.
+    """
+    from patch import apply_text_diff
+
+    kind = str(ex.get("prompt", "") or "")
+    args = ex.get("arguments") or {}
+    response = ex.get("response")
+    if response is None or not isinstance(args, dict):
+        return None
+    response_s = str(response)
+
+    if kind in ("implement", "initiate", "generate"):
+        return response_s
+    if kind in ("repair", "extend"):
+        base = args.get("program", "")
+        if not base:
+            return None
+        try:
+            return apply_text_diff(str(base), response_s)
+        except Exception:
+            return None
+    if kind == "lemma_synth" and language.lower() == "dafny":
+        try:
+            from tasks.lemma_synth import insert_lemma_body, extract_body_from_response
+            base = args.get("program", "")
+            lemma_name = args.get("lemma_name", "")
+            if not base or not lemma_name:
+                return None
+            body = extract_body_from_response(response_s)
+            return insert_lemma_body(str(base), str(lemma_name), body)
+        except Exception:
+            return None
+    return None
+
+
+def _select_top_surprisal_indices(
+    programs: list[str | None],
+    fraction: float,
+    language: str,
+) -> set[int] | None:
+    """Pick the indices to keep within a single prompt-type group.
+
+    `programs[i]` is the reconstructed program for the i-th example in the
+    group, or None if it couldn't be reconstructed.
+
+    For each rankable example, compute the per-metric maximum surprisal under
+    the pooled feature distribution of the group. Rank examples within each
+    metric (rank 1 = most surprising). Each example's score is the *best*
+    (smallest) rank it achieves across any metric — i.e. examples that are top
+    on any single feature are favored. We keep the top `fraction` by score.
+
+    Returns the set of kept indices, or None if the group has no rankable
+    examples (caller falls back to keeping the whole group).
+    """
+    from language import Language, Program
+
+    backend = Language[language.upper()].get_backend()
+    lang_enum = Language[language.upper()]
+
+    pooled: dict[str, Counter] = defaultdict(Counter)
+    feats_by_i: dict[int, dict[str, Counter]] = {}
+    for i, p_text in enumerate(programs):
+        if not p_text:
+            continue
+        try:
+            fs = backend.feature_sets(Program(p_text, lang_enum))
+        except Exception:
+            continue
+        feats_by_i[i] = fs
+        for metric, c in fs.items():
+            pooled[metric].update(c)
+
+    if not feats_by_i:
+        return None
+
+    surprisal_by_i: dict[int, dict[str, float]] = {}
+    for i, fs in feats_by_i.items():
+        s: dict[str, float] = {}
+        for metric, counter in fs.items():
+            if not counter:
+                continue
+            pooled_c = pooled[metric]
+            total = sum(pooled_c.values())
+            if total == 0:
+                continue
+            best = 0.0
+            for v in counter:
+                c = pooled_c[v]
+                if c == 0:
+                    best = math.inf
+                    break
+                val = math.log2(total / c)
+                if val > best:
+                    best = val
+            s[metric] = best
+        if s:
+            surprisal_by_i[i] = s
+
+    if not surprisal_by_i:
+        return None
+
+    # Rank within each metric (descending surprisal -> rank 1, 2, ...).
+    all_metrics = {m for s in surprisal_by_i.values() for m in s}
+    best_rank_by_i: dict[int, int] = {}
+    for m in all_metrics:
+        present = sorted(
+            ((i, s[m]) for i, s in surprisal_by_i.items() if m in s),
+            key=lambda x: -x[1],
+        )
+        for rank, (i, _) in enumerate(present, start=1):
+            cur = best_rank_by_i.get(i)
+            if cur is None or rank < cur:
+                best_rank_by_i[i] = rank
+
+    n_rankable = len(best_rank_by_i)
+    n_keep = max(1, math.ceil(fraction * n_rankable))
+    ordered = sorted(best_rank_by_i.items(), key=lambda x: x[1])
+    return {i for i, _ in ordered[:n_keep]}
+
+
+def _filter_by_surprisal(
+    records: list[dict[str, str]],
+    examples: list[dict[str, Any]],
+    fraction: float,
+    language: str,
+) -> tuple[list[dict[str, str]], Counter[str]]:
+    """Apply top-surprisal filtering, grouped by prompt type.
+
+    `records[i]` is the SFT record built from `examples[i]`. Returns the filtered
+    records and a Counter of kept-by-prompt-type counts.
+    """
+    by_kind: dict[str, list[int]] = defaultdict(list)
+    for i, ex in enumerate(examples):
+        by_kind[str(ex.get("prompt", "unknown"))].append(i)
+
+    kept: list[int] = []
+    kept_counts: Counter[str] = Counter()
+    for kind, idxs in by_kind.items():
+        programs = [_reconstruct_program(examples[i], language) for i in idxs]
+        keep_local = _select_top_surprisal_indices(programs, fraction, language)
+        if keep_local is None:
+            # No rankable examples in this group: pass them all through.
+            print(f"  [top-surprisal] {kind}: no rankable examples, "
+                  f"keeping all {len(idxs)}")
+            kept.extend(idxs)
+            kept_counts[kind] += len(idxs)
+            continue
+        rankable = sum(1 for p in programs if p is not None)
+        for local_i, ex_i in enumerate(idxs):
+            if local_i in keep_local:
+                kept.append(ex_i)
+                kept_counts[kind] += 1
+        print(f"  [top-surprisal] {kind}: kept {len(keep_local)}/{rankable} "
+              f"rankable ({len(idxs)} total)")
+
+    kept.sort()
+    return [records[i] for i in kept], kept_counts
+
+
 def build_sft_records(
     pickle_paths: list[str | Path],
     success_only: bool,
     outcome_success_values: tuple[str, ...] = ("success",),
     language: str = "dafny",
+    top_surprisal_fraction: float | None = None,
 ) -> tuple[list[dict[str, str]], Counter[str]]:
     """Build TRL/HF records for chat-style SFT.
 
@@ -214,6 +384,11 @@ def build_sft_records(
     # Second pass: build SFT records
     records: list[dict[str, str]] = []
     counts: Counter[str] = Counter()
+    # Parallel list of source examples, only populated when we will filter by
+    # surprisal afterwards (so we can rank within each prompt type).
+    source_examples: list[dict[str, Any]] | None = (
+        [] if top_surprisal_fraction is not None else None
+    )
     for pickle_path in pickle_paths:
         for ex in _iter_distill_examples_from_pickle(pickle_path):
             kind = str(ex.get("prompt", "unknown"))
@@ -260,6 +435,18 @@ def build_sft_records(
 
             records.append({"prompt": messages, "completion": [{"role": "assistant", "content": response_s}]})
             counts[kind] += 1
+            if source_examples is not None:
+                source_examples.append(ex)
+
+    if top_surprisal_fraction is not None and source_examples is not None:
+        if not (0.0 < top_surprisal_fraction <= 1.0):
+            raise ValueError(
+                f"top_surprisal_fraction must be in (0, 1], got {top_surprisal_fraction}"
+            )
+        print(f"\n[top-surprisal] filtering with fraction={top_surprisal_fraction}")
+        records, counts = _filter_by_surprisal(
+            records, source_examples, top_surprisal_fraction, language
+        )
 
     return records, counts
 
@@ -527,6 +714,10 @@ def _main_sft() -> None:
         success_only: bool = True
         # Treat GOAL_UNPROVEN as success? (optional)
         treat_goal_unproven_as_success: bool = False
+        # If set (in (0, 1]), filter SFT examples to the top fraction by best
+        # per-metric surprisal rank within each prompt type. Used as an
+        # entropy-maximization-style data selection for iterative SFT.
+        top_surprisal_fraction: Optional[float] = None
 
         # Training
         max_steps: Optional[int] = None
@@ -580,6 +771,7 @@ def _main_sft() -> None:
         success_only=bool(c.success_only),
         outcome_success_values=success_values,
         language=c.language,
+        top_surprisal_fraction=c.top_surprisal_fraction,
     )
 
     # Print training data statistics
