@@ -8,6 +8,8 @@ workers:
     jsonl_path: data/gh-readmes-100k.jsonl
     distill: all
     language: ${language}
+    doc_snippets_min: 0
+    doc_snippets_max: 3
     llm:
       _target_: langchain_aws.ChatBedrock
       model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
