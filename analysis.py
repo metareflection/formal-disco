@@ -920,6 +920,119 @@ def plot_fixer_pass_at_k(
 
 
 # ---------------------------------------------------------------------------
+# Entropy report (per-agenda program feature distributions)
+# ---------------------------------------------------------------------------
+
+def entropy_report(
+    agenda_paths: list[str],
+    language: Language | None = None,
+    labels: list[str] | None = None,
+    source: str = "verified",
+) -> None:
+    """Print per-feature entropy (and supporting counts) for each agenda.
+
+    Sources:
+      - "verified": longest verified program per source idea (matches the
+        plotting helpers and the way the iterative SFT corpus is built).
+      - "dataset":  every dataset/ object as-is (matches diversity_complexity_table).
+
+    Useful as a quick numerical readout to track how entropy maximization
+    via iterative SFT is moving the corpus over time.
+    """
+    if labels is None:
+        config = load_plots_config()
+        labels = [get_run_name(config, p) for p in agenda_paths]
+
+    per_agenda: dict[str, dict] = {}
+    for path, label in zip(agenda_paths, labels):
+        agenda = load_agenda(path)
+        lang = language or _detect_language(agenda)
+        backend = lang.get_backend()
+
+        if source == "verified":
+            programs = _extract_verified_programs(agenda, lang)
+            features: list[dict[str, Counter]] = []
+            for prog in programs:
+                try:
+                    features.append(backend.feature_sets(prog))
+                except Exception:
+                    continue
+            n_total = len(programs)
+        elif source == "dataset":
+            dataset_objs = [
+                o for k, o in agenda["objects"].items() if k.startswith("dataset/")
+            ]
+            features = []
+            for o in dataset_objs:
+                text = o.content.decode("utf-8") if isinstance(o.content, bytes) else o.content
+                try:
+                    features.append(backend.feature_sets(Program(text, lang)))
+                except Exception:
+                    continue
+            n_total = len(dataset_objs)
+        else:
+            raise ValueError(f"unknown source: {source}")
+
+        pooled: dict[str, Counter] = {}
+        for ft in features:
+            for metric, counter in ft.items():
+                pooled.setdefault(metric, Counter()).update(counter)
+
+        per_agenda[label] = {
+            "n_total": n_total,
+            "n_parseable": len(features),
+            "pooled": pooled,
+        }
+
+    print("=" * 80)
+    print(f"ENTROPY (source: {source})")
+    print("=" * 80)
+
+    col_w = max(20, *(len(l) for l in labels)) + 2
+    header = f"{'Metric':<40}" + "".join(f"{l:>{col_w}}" for l in labels)
+    print(header)
+    print("-" * len(header))
+
+    rows: list[tuple[str, list[str]]] = []
+    rows.append(("Programs", [str(per_agenda[l]["n_total"]) for l in labels]))
+    rows.append(("Programs (parseable)",
+                 [str(per_agenda[l]["n_parseable"]) for l in labels]))
+
+    feature_keys = sorted({m for l in labels for m in per_agenda[l]["pooled"]})
+
+    rows.append(("", [""] * len(labels)))
+    rows.append(("Entropy (bits)", [""] * len(labels)))
+    for fk in feature_keys:
+        vals = []
+        for l in labels:
+            counter = per_agenda[l]["pooled"].get(fk, Counter())
+            vals.append(f"{_entropy(counter):.2f}" if counter else "-")
+        rows.append((f"  {fk}", vals))
+
+    rows.append(("", [""] * len(labels)))
+    rows.append(("Unique features", [""] * len(labels)))
+    for fk in feature_keys:
+        vals = []
+        for l in labels:
+            counter = per_agenda[l]["pooled"].get(fk, Counter())
+            vals.append(str(len(counter)) if counter else "-")
+        rows.append((f"  {fk}", vals))
+
+    rows.append(("", [""] * len(labels)))
+    rows.append(("Total observations", [""] * len(labels)))
+    for fk in feature_keys:
+        vals = []
+        for l in labels:
+            counter = per_agenda[l]["pooled"].get(fk, Counter())
+            vals.append(str(sum(counter.values())) if counter else "-")
+        rows.append((f"  {fk}", vals))
+
+    for metric, vals in rows:
+        print(f"{metric:<40}" + "".join(f"{v:>{col_w}}" for v in vals))
+    print()
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -980,6 +1093,23 @@ def main():
     p_pak.add_argument("--name", default="fixer-pass-at-k",
                        help="Output filename base (default: fixer-pass-at-k)")
 
+    # entropy (numerical entropy/diversity report over an agenda)
+    p_ent = subparsers.add_parser(
+        "entropy",
+        help="Print per-feature entropy and unique-feature counts for one or "
+             "more agenda checkpoints",
+    )
+    p_ent.add_argument("agendas", nargs="+", help="Paths to agenda .pkl files")
+    p_ent.add_argument("--language", default=None,
+                       help="Language (default: auto-detect from agenda objects)")
+    p_ent.add_argument("--labels", default=None,
+                       help="Comma-separated display labels matching agenda order")
+    p_ent.add_argument("--source", default="verified",
+                       choices=["verified", "dataset"],
+                       help="Programs to include: 'verified' uses longest "
+                            "verified program per source idea (default); "
+                            "'dataset' uses every dataset/ object as-is.")
+
     # plot-program-diversity
     p_div = subparsers.add_parser("plot-program-diversity",
                                   help="Bar charts of diversity metrics per run")
@@ -1007,6 +1137,12 @@ def main():
         curve = [_parse_label_path(s) for s in args.curve]
         ks = [int(x) for x in args.ks.split(",")]
         plot_fixer_pass_at_k(horizontal, curve, ks, name=args.name)
+        return
+
+    if args.command == "entropy":
+        labels = resolve_labels(args.agendas, args.labels)
+        lang = Language[args.language.upper()] if args.language else None
+        entropy_report(args.agendas, language=lang, labels=labels, source=args.source)
         return
 
     if args.command in ("plot-program-complexity", "plot-program-diversity"):
