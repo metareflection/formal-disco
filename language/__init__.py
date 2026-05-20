@@ -9,10 +9,13 @@ Each backend provides:
 """
 
 import math
+import random
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, TypedDict
+from functools import cached_property
+from pathlib import Path
+from typing import Any, Optional, TypedDict
 
 
 class VerificationOutcome(Enum):
@@ -77,8 +80,19 @@ class PromptBuilder:
     def idea(self, repo: str, readme: str) -> list[ChatMessage]:
         raise NotImplementedError
 
-    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
-        """Prompt the model to come up with an idea and implement it in one shot."""
+    def initiate(
+        self,
+        *,
+        repo: str,
+        readme: str,
+        doc_snippets: Optional[list[tuple[str, str]]] = None,
+    ) -> list[ChatMessage]:
+        """Prompt the model to come up with an idea and implement it in one shot.
+
+        `doc_snippets` is an optional list of (feature_id, text) pairs sampled
+        from the backend's documentation. Backends should surface them in the
+        prompt as supplementary inspiration for which language constructs to use.
+        """
         raise NotImplementedError
 
     def generate(self, *, repo: str | None = None, readme: str | None = None) -> list[ChatMessage]:
@@ -167,6 +181,56 @@ class LanguageBackend:
         """
         raise NotImplementedError
 
+    @property
+    def features_dir(self) -> Optional[Path]:
+        """Directory holding per-feature documentation snippets (*.txt).
+
+        Each .txt filename stem is the feature id; its content is a focused
+        prose+example snippet describing one language construct. Backends
+        that have no such corpus return None.
+        """
+        return None
+
+    @cached_property
+    def doc_snippets(self) -> dict[str, str]:
+        """Map from feature id (filename stem) to snippet text."""
+        d = self.features_dir
+        if d is None or not d.is_dir():
+            return {}
+        return {p.stem: p.read_text(encoding='utf-8') for p in sorted(d.glob('*.txt'))}
+
+    def sample_doc_snippets(
+        self,
+        rng: random.Random,
+        n: int,
+        weights: Optional[dict[str, float]] = None,
+    ) -> list[tuple[str, str]]:
+        """Sample n distinct (feature_id, snippet) pairs from this backend's docs.
+
+        With weights=None, samples uniformly without replacement. Otherwise,
+        weights[feature_id] is an unnormalized sampling probability (ids absent
+        or with non-positive weight are excluded). This is the hook for later
+        entropy-maximizing selection — pass weights inversely proportional to
+        a feature's current corpus coverage.
+        """
+        snippets = self.doc_snippets
+        if not snippets or n <= 0:
+            return []
+        ids = list(snippets.keys())
+        n = min(n, len(ids))
+        if weights is None:
+            chosen = rng.sample(ids, n)
+        else:
+            remaining_ids = ids[:]
+            remaining_w = [max(0.0, weights.get(i, 0.0)) for i in remaining_ids]
+            chosen = []
+            while len(chosen) < n and any(w > 0 for w in remaining_w):
+                idx = rng.choices(range(len(remaining_ids)), weights=remaining_w, k=1)[0]
+                chosen.append(remaining_ids[idx])
+                remaining_ids.pop(idx)
+                remaining_w.pop(idx)
+        return [(i, snippets[i]) for i in chosen]
+
     def surprisal(
         self,
         program: 'Program',
@@ -176,7 +240,7 @@ class LanguageBackend:
 
         For each feature metric, computes the self-information
         -log2(count(v) / total) for every value v the program exhibits, and
-        returns the maximum — i.e., how surprising the program's rarest value
+        returns the maximum -- i.e., how surprising the program's rarest value
         of that feature is relative to the pooled corpus distribution.
 
         corpus_stats[metric] is the pooled Counter across the corpus. The

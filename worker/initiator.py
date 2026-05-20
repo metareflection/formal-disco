@@ -40,6 +40,8 @@ class Initiator(Worker):
         interest_fail: float = 0.5,
         interest_recursion_gamma: float = 0.0,
         distill: Optional[Literal['success-only', 'all']] = 'success-only',
+        doc_snippets_min: int = 1,
+        doc_snippets_max: int = 3,
     ):
         self._rng = rng or random.Random()
         self._rows = self._load_jsonl(jsonl_path)
@@ -55,6 +57,9 @@ class Initiator(Worker):
         self._interest_fail = float(interest_fail)
         self._interest_recursion_gamma = float(interest_recursion_gamma)
         self._distill = distill
+        # Setting doc_snippets_max to 0 disables sampling doc snippets for the initiator.
+        self._doc_snippets_min = min(int(doc_snippets_min), int(doc_snippets_max))
+        self._doc_snippets_max = int(doc_snippets_max)
         self._chain = self._llm | CodeOutputParser()
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
@@ -73,11 +78,19 @@ class Initiator(Worker):
             task_id = await agenda.add_task(task_obj)
             await agenda.update_task(task_id, work_status=WorkStatus.DOING)
 
+            # Sample a small number of doc snippets to seed the prompt with
+            # specific language constructs. Uniform for now; weights= is the
+            # hook for entropy-maximizing selection later.
+            n_snippets = self._rng.randint(self._doc_snippets_min, self._doc_snippets_max)
+            doc_snippets = self._backend.sample_doc_snippets(self._rng, n_snippets)
+
             try:
                 # Single LLM call combining ideation and implementation.
                 # This is a simplification of the IdeaGenerator and Implementer workers.
                 msgs = _to_langchain_messages(
-                    self._backend.prompt_builder.initiate(repo=repo, readme=readme)
+                    self._backend.prompt_builder.initiate(
+                        repo=repo, readme=readme, doc_snippets=doc_snippets
+                    )
                 )
                 program_text = self._chain.invoke(msgs).strip()
 
@@ -120,7 +133,14 @@ class Initiator(Worker):
                 if should_distill:
                     distill_obj = {
                         "prompt": "initiate",
-                        "arguments": {"repo": repo, "readme": readme},
+                        "arguments": {
+                            "repo": repo,
+                            "readme": readme,
+                            "doc_snippets": [
+                                {"feature": fid, "text": text}
+                                for fid, text in doc_snippets
+                            ],
+                        },
                         "response": program_text,
                         "outcome": ver.outcome.name.lower(),
                     }

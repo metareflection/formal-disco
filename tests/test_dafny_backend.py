@@ -67,34 +67,37 @@ class TestFeatureSets:
         assert set(b.feature_sets(load("max.dfy")).keys()) == b.feature_metrics
 
     def test_subject_words_are_counters(self):
-        assert isinstance(backend().feature_sets(load("max.dfy"))["subject_words"], Counter)
+        assert isinstance(backend().feature_sets(load("max.dfy"))["subject_word"], Counter)
 
     def test_subject_words_from_decl_names(self):
-        words = backend().feature_sets(load("binary_search.dfy"))["subject_words"]
+        words = backend().feature_sets(load("binary_search.dfy"))["subject_word"]
         # "BinarySearch" → split → ['binary', 'search']
         # 'binary' is an adjective → filtered by POS tagger; 'search' is a noun → kept
         assert "binary" not in words
         assert "search" in words
 
     def test_invariant_templates_extracted(self):
-        invs = backend().feature_sets(load("binary_search.dfy"))["invariant_templates"]
+        templates = backend().feature_sets(load("binary_search.dfy"))["annotation_template"]
+        invs = [t for t in templates if t.startswith("invariant: ")]
         assert len(invs) > 0
         for template in invs:
             assert isinstance(template, str)
 
     def test_ensures_templates_extracted(self):
-        assert len(backend().feature_sets(load("max.dfy"))["ensures_templates"]) > 0
+        templates = backend().feature_sets(load("max.dfy"))["annotation_template"]
+        assert any(t.startswith("ensures: ") for t in templates)
 
     def test_requires_templates_extracted(self):
-        assert len(backend().feature_sets(load("binary_search.dfy"))["requires_templates"]) > 0
+        templates = backend().feature_sets(load("binary_search.dfy"))["annotation_template"]
+        assert any(t.startswith("requires: ") for t in templates)
 
     def test_loop_skeletons_for_loops(self):
-        skeletons = backend().feature_sets(load("binary_search.dfy"))["loop_skeletons"]
+        skeletons = backend().feature_sets(load("binary_search.dfy"))["loop_skeleton"]
         assert len(skeletons) > 0
         assert any("while" in sk for sk in skeletons)
 
     def test_loop_skeletons_empty_for_no_loops(self):
-        assert len(backend().feature_sets(load("max.dfy"))["loop_skeletons"]) == 0
+        assert len(backend().feature_sets(load("max.dfy"))["loop_skeleton"]) == 0
 
     def test_nested_loops_skeleton(self):
         source = (
@@ -109,7 +112,7 @@ class TestFeatureSets:
             "  }\n"
             "}\n"
         )
-        skeletons = backend().feature_sets(Program(source, Language.DAFNY))["loop_skeletons"]
+        skeletons = backend().feature_sets(Program(source, Language.DAFNY))["loop_skeleton"]
         assert any("while" in sk and sk.count("while") == 2 for sk in skeletons)
 
     def test_template_replaces_identifiers(self):
@@ -118,11 +121,14 @@ class TestFeatureSets:
             "  ensures y == x + 1\n"
             "{ y := x + 1; }\n"
         )
-        templates = backend().feature_sets(Program(source, Language.DAFNY))["ensures_templates"]
-        for tmpl in templates:
-            assert "x" not in tmpl
-            assert "y" not in tmpl
-            assert "*" in tmpl
+        templates = backend().feature_sets(Program(source, Language.DAFNY))["annotation_template"]
+        ensures = [t for t in templates if t.startswith("ensures: ")]
+        assert ensures
+        for tmpl in ensures:
+            body = tmpl[len("ensures: "):]
+            assert "x" not in body
+            assert "y" not in body
+            assert "*" in body
 
     def test_empty_program(self):
         fs = backend().feature_sets(Program("", Language.DAFNY))
@@ -133,27 +139,29 @@ class TestFeatureSets:
 class TestNumericFeatureSets:
     """Numeric feature metrics (formerly complexity) — pure Python, no Dafny invocation."""
 
-    def test_body_sizes_positive(self):
-        c = backend().feature_sets(load("binary_search.dfy"))["body_sizes"]
+    def test_method_body_sizes_positive(self):
+        c = backend().feature_sets(load("binary_search.dfy"))["method_body_size"]
         assert sum(c.values()) > 0
         assert all(s > 0 for s in c.elements())
 
-    def test_no_loops_in_max(self):
-        c = backend().feature_sets(load("max.dfy"))["n_loops_per_method"]
-        assert all(n == 0 for n in c.elements())
-
-    def test_loops_in_binary_search(self):
-        c = backend().feature_sets(load("binary_search.dfy"))["n_loops_per_method"]
-        assert any(n > 0 for n in c.elements())
-
-    def test_idents_in_asserts(self):
-        source = "method Check(x: int) {\n  assert x > 0;\n}\n"
-        c = backend().feature_sets(Program(source, Language.DAFNY))["n_idents_in_asserts"]
-        assert sum(c.values()) == 1
+    def test_annotations_per_method_for_max(self):
+        # max.dfy has at least one ensures clause -> annotations_per_method records it.
+        c = backend().feature_sets(load("max.dfy"))["annotations_per_method"]
+        assert sum(c.values()) > 0
         assert all(n >= 1 for n in c.elements())
 
+    def test_lemma_body_size_empty_for_non_lemma_file(self):
+        # max.dfy has no lemmas, so the lemma_body_size counter is empty.
+        c = backend().feature_sets(load("max.dfy"))["lemma_body_size"]
+        assert len(c) == 0
+
+    def test_language_features_detect_arrays(self):
+        c = backend().feature_sets(load("binary_search.dfy"))["language_features"]
+        # binary_search uses `array<T>` syntax → arrays feature should fire.
+        assert c.get("arrays", 0) > 0
+
     def test_multiple_functions_body_sizes(self):
-        c = backend().feature_sets(load("sum_array.dfy"))["body_sizes"]
+        c = backend().feature_sets(load("sum_array.dfy"))["method_body_size"]
         assert sum(c.values()) >= 2
 
 
@@ -280,7 +288,8 @@ class TestStrip:
             "}\n"
         )
         fs = b.feature_sets(Program(source, Language.DAFNY))
-        assert sum(fs["n_idents_in_asserts"].values()) == 0
+        templates = fs["annotation_template"]
+        assert not any(t.startswith("assert: ") for t in templates)
 
     def test_invariant_in_line_comment_not_counted(self):
         b = backend()
@@ -296,7 +305,7 @@ class TestStrip:
             "}\n"
         )
         fs = b.feature_sets(Program(source, Language.DAFNY))
-        assert len(fs["invariant_templates"]) == 0
+        assert not any(t.startswith("invariant: ") for t in fs["annotation_template"])
 
     def test_assert_in_block_comment_not_counted(self):
         b = backend()
@@ -307,7 +316,7 @@ class TestStrip:
             "}\n"
         )
         fs = b.feature_sets(Program(source, Language.DAFNY))
-        assert sum(fs["n_idents_in_asserts"].values()) == 0
+        assert not any(t.startswith("assert: ") for t in fs["annotation_template"])
 
     def test_ensures_in_comment_not_counted(self):
         b = backend()
@@ -318,7 +327,7 @@ class TestStrip:
             "}\n"
         )
         fs = b.feature_sets(Program(source, Language.DAFNY))
-        assert len(fs["ensures_templates"]) == 0
+        assert not any(t.startswith("ensures: ") for t in fs["annotation_template"])
 
     def test_feature_sets_invariant_to_strip(self):
         b = backend()

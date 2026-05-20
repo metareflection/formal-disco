@@ -57,27 +57,30 @@ class TestFeatureSets:
         assert set(b.feature_sets(load("max.rs")).keys()) == b.feature_metrics
 
     def test_subject_words_are_counters(self):
-        assert isinstance(backend().feature_sets(load("max.rs"))["subject_words"], Counter)
+        assert isinstance(backend().feature_sets(load("max.rs"))["subject_word"], Counter)
 
     def test_invariant_templates_extracted(self):
-        invs = backend().feature_sets(load("binary_search.rs"))["invariant_templates"]
+        templates = backend().feature_sets(load("binary_search.rs"))["annotation_template"]
+        invs = [t for t in templates if t.startswith("invariant: ")]
         assert len(invs) > 0
         for template in invs:
             assert isinstance(template, str)
 
     def test_ensures_templates_extracted(self):
-        assert len(backend().feature_sets(load("max.rs"))["ensures_templates"]) > 0
+        templates = backend().feature_sets(load("max.rs"))["annotation_template"]
+        assert any(t.startswith("ensures: ") for t in templates)
 
     def test_requires_templates_extracted(self):
-        assert len(backend().feature_sets(load("binary_search.rs"))["requires_templates"]) > 0
+        templates = backend().feature_sets(load("binary_search.rs"))["annotation_template"]
+        assert any(t.startswith("requires: ") for t in templates)
 
     def test_loop_skeletons_for_loops(self):
-        skeletons = backend().feature_sets(load("binary_search.rs"))["loop_skeletons"]
+        skeletons = backend().feature_sets(load("binary_search.rs"))["loop_skeleton"]
         assert len(skeletons) > 0
         assert any("while" in sk for sk in skeletons)
 
     def test_loop_skeletons_empty_for_no_loops(self):
-        assert len(backend().feature_sets(load("max.rs"))["loop_skeletons"]) == 0
+        assert len(backend().feature_sets(load("max.rs"))["loop_skeleton"]) == 0
 
     def test_nested_loops_skeleton(self):
         source = (
@@ -96,7 +99,7 @@ class TestFeatureSets:
             "}\n"
             "} // verus!\n"
         )
-        skeletons = backend().feature_sets(Program(source, Language.VERUS))["loop_skeletons"]
+        skeletons = backend().feature_sets(Program(source, Language.VERUS))["loop_skeleton"]
         assert any("while" in sk and sk.count("while") == 2 for sk in skeletons)
 
     def test_template_replaces_identifiers(self):
@@ -107,47 +110,40 @@ class TestFeatureSets:
             "{ x + 1 }\n"
             "} // verus!\n"
         )
-        templates = backend().feature_sets(Program(source, Language.VERUS))["ensures_templates"]
-        for tmpl in templates:
-            assert "x" not in tmpl
-            assert "y" not in tmpl
-            assert "*" in tmpl
+        templates = backend().feature_sets(Program(source, Language.VERUS))["annotation_template"]
+        ensures = [t for t in templates if t.startswith("ensures: ")]
+        assert ensures
+        for tmpl in ensures:
+            body = tmpl[len("ensures: "):]
+            assert "x" not in body
+            assert "y" not in body
+            assert "*" in body
 
     def test_empty_program(self):
         fs = backend().feature_sets(Program("", Language.VERUS))
-        for k, v in fs.items():
-            # n_annotations_per_program always emits the whole-program count,
-            # even when 0 (it's not per-fn, so there's no notion of "no items").
-            if k == "n_annotations_per_program":
-                assert v == Counter([0])
-            else:
-                assert len(v) == 0
+        for v in fs.values():
+            assert len(v) == 0
 
 
 class TestNumericFeatureSets:
     """Numeric feature metrics (formerly complexity) — pure Python, no Verus invocation."""
 
-    def test_body_sizes_positive(self):
-        c = backend().feature_sets(load("binary_search.rs"))["body_sizes"]
+    def test_method_body_sizes_positive(self):
+        c = backend().feature_sets(load("binary_search.rs"))["method_body_size"]
         assert sum(c.values()) > 0
         assert all(s > 0 for s in c.elements())
 
-    def test_no_loops_in_max(self):
-        c = backend().feature_sets(load("max.rs"))["n_loops_per_fn"]
-        assert all(n == 0 for n in c.elements())
-
-    def test_loops_in_binary_search(self):
-        c = backend().feature_sets(load("binary_search.rs"))["n_loops_per_fn"]
-        assert any(n > 0 for n in c.elements())
-
-    def test_idents_in_asserts(self):
-        source = "verus! {\nfn check(x: i64) {\n  assert(x > 0);\n}\n}\n"
-        c = backend().feature_sets(Program(source, Language.VERUS))["n_idents_in_asserts"]
-        assert sum(c.values()) == 1
+    def test_annotations_per_method_for_max(self):
+        c = backend().feature_sets(load("max.rs"))["annotations_per_method"]
+        assert sum(c.values()) > 0
         assert all(n >= 1 for n in c.elements())
 
+    def test_lemma_body_size_empty_for_non_lemma_file(self):
+        c = backend().feature_sets(load("max.rs"))["lemma_body_size"]
+        assert len(c) == 0
+
     def test_multiple_fns_body_sizes(self):
-        c = backend().feature_sets(load("sum_vec.rs"))["body_sizes"]
+        c = backend().feature_sets(load("sum_vec.rs"))["method_body_size"]
         assert sum(c.values()) >= 2
 
 
@@ -274,7 +270,7 @@ class TestStrip:
             "}\n"
         )
         fs = b.feature_sets(Program(source, Language.VERUS))
-        assert sum(fs["n_idents_in_asserts"].values()) == 0
+        assert not any(t.startswith("assert: ") for t in fs["annotation_template"])
 
     def test_ensures_in_comment_not_counted(self):
         b = backend()
@@ -285,7 +281,7 @@ class TestStrip:
             "}\n"
         )
         fs = b.feature_sets(Program(source, Language.VERUS))
-        assert len(fs["ensures_templates"]) == 0
+        assert not any(t.startswith("ensures: ") for t in fs["annotation_template"])
 
     def test_feature_sets_invariant_to_strip(self):
         b = backend()

@@ -4,8 +4,18 @@ DafnyPromptBuilder implements the PromptBuilder interface for the four
 standard tasks: implement, repair, extend, and idea generation.
 """
 
-from typing import Mapping, Any
+from typing import Mapping, Any, Optional
 from .. import ChatMessage, PromptBuilder
+
+
+def _format_doc_snippets(snippets: Optional[list[tuple[str, str]]]) -> str:
+    """Render sampled doc snippets as a single prompt section, or empty if none."""
+    if not snippets:
+        return ""
+    parts = ["Reference snippets for some Dafny language constructs you may find useful:"]
+    for fid, text in snippets:
+        parts.append(f"\n--- {fid} ---\n{text.strip()}")
+    return "\n".join(parts) + "\n\n"
 
 
 class DafnyPromptBuilder(PromptBuilder):
@@ -118,7 +128,13 @@ class DafnyPromptBuilder(PromptBuilder):
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
-    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
+    def initiate(
+        self,
+        *,
+        repo: str,
+        readme: str,
+        doc_snippets: Optional[list[tuple[str, str]]] = None,
+    ) -> list[ChatMessage]:
         """Prompt the model to propose an idea and implement it as Dafny code in one shot."""
         system = (
             "You are an expert Dafny programmer. You will receive a GitHub repository name and"
@@ -140,6 +156,7 @@ class DafnyPromptBuilder(PromptBuilder):
         user = (
             f"Repository: {repo}\n\n"
             f"README:\n{readme}\n\n"
+            f"{_format_doc_snippets(doc_snippets)}"
             "Come up with an idea for a Dafny program inspired by this repository and implement it."
             " Output only Dafny source code."
         )
