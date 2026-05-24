@@ -1,0 +1,19 @@
+ACSL's `boolean` is the two-valued logic type whose literals are `\true` and `\false`. It is distinct from C's `int`-based booleans and from ACSL predicates: a `logic boolean` function returns a `boolean` term that can be compared with `==` and embedded in larger terms, whereas a `predicate` is a formula. Use `boolean` when a truth value must itself be a first-class result.
+
+```c
+/*@
+  logic boolean is_even(integer n) = (n % 2 == 0);
+
+  lemma even_four: is_even(4) == \true;
+  lemma odd_three: is_even(3) == \false;
+*/
+
+/*@
+  assigns \nothing;
+  ensures \result == is_even(n);
+*/
+int even(int n)
+{
+  return (n % 2 == 0);
+}
+```

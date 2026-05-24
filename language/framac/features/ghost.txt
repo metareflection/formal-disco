@@ -1,0 +1,26 @@
+Ghost code exists only for verification and is erased before compilation. Declared with the `ghost` keyword inside annotations, ghost variables and statements can track auxiliary state (such as a step counter or a witness) that the specification refers to but the real program does not need. Ghost code may read program state but may not modify it, keeping the compiled behavior unchanged.
+
+```c
+/*@
+  requires n >= 0;
+  assigns  \nothing;
+  ensures  \result == n;
+*/
+int count(int n)
+{
+  //@ ghost int steps = 0;
+  int i = 0;
+  /*@
+    loop invariant 0 <= i <= n;
+    loop invariant steps == i;
+    loop assigns   i, steps;
+    loop variant   n - i;
+  */
+  while (i < n) {
+    i++;
+    //@ ghost steps++;
+  }
+  //@ assert steps == n;
+  return i;
+}
+```

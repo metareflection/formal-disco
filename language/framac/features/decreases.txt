@@ -1,0 +1,15 @@
+A `decreases` clause supplies a recursion measure for a (possibly recursive) function: an expression, well-founded and non-negative, that strictly decreases on each recursive call. It is the function-level analogue of a `loop variant`, letting WP prove termination of recursion. The measure is evaluated in the pre-state of each call.
+
+```c
+/*@
+  requires n >= 0;
+  decreases n;
+  assigns  \nothing;
+  ensures  \result == n;
+*/
+int count_down(int n)
+{
+  if (n == 0) return 0;
+  return 1 + count_down(n - 1);
+}
+```

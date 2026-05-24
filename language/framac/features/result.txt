@@ -1,0 +1,13 @@
+The `\result` term denotes the value returned by a function and is only meaningful inside `ensures` clauses (and the `ensures` of normal-return behaviors). Its type is the function's return type. Postconditions relate `\result` to the parameters and to `\old(...)` pre-state values to specify exactly what the function computes.
+
+```c
+/*@
+  assigns \nothing;
+  ensures \result == x || \result == y;
+  ensures \result >= x && \result >= y;
+*/
+int max2(int x, int y)
+{
+  return (x < y) ? y : x;
+}
+```

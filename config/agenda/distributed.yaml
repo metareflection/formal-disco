@@ -1,2 +1,2 @@
 _target_: agenda_distributed.AgendaClient
-server_address_path: /n/home03/poesia/agenda_server_address.json
+server_address_path: ${oc.env:HOME}/agenda_server_address.json

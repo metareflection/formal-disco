@@ -1,17 +1,16 @@
 #!/bin/bash
 #SBATCH --job-name=vllm_server
-#SBATCH --account=kempner_fellows
-#SBATCH --partition=kempner_h100_priority3
-#SBATCH --gres=gpu:4
+#SBATCH --partition=kempner_h100_priority
+#SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=600G
+#SBATCH --mem=300G
 #SBATCH --time=3-00:00:00
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 
 cd "$FORMAL_DISCO_ROOT" || { echo "FORMAL_DISCO_ROOT not found"; exit 1; }
 
-source vllm-venv/bin/activate
+source ../vllm-venv/bin/activate
 
 # Runs a simple wandb monitor to collect system metrics
 python monitor.py &
@@ -31,9 +30,10 @@ echo "http://${HOSTNAME}:${PORT}/v1" >> "$HOME/vllm_servers"
 # vllm serve /n/holylabs/amin_lab/Lab/kempner-accelerator/models/gpt-oss-20b-sft-v1/merged \
 # vllm serve /n/holylabs/amin_lab/Lab/kempner-accelerator/models/gpt-oss-20b-distill-v2/merged \
 # vllm serve /n/holylabs/amin_lab/Lab/kempner-accelerator/models/qwen3-coder-ideafix-v6/merged \
-vllm serve /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen3-coder-claude+self-v7/merged \
+# vllm serve /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen3-coder-claude+self-v7/merged \
+vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
     --max-model-len 8K \
-    --tensor-parallel-size 4 \
+    --tensor-parallel-size 2 \
     --dtype auto \
     --served-model-name llm \
     --host 0.0.0.0 \

@@ -1,0 +1,22 @@
+A `loop variant` is an integer (or `real`) expression that WP must prove strictly decreases on each iteration while staying non-negative, establishing that the loop terminates. It is the loop-level counterpart of a `decreases` measure. The variant need not relate to correctness; it only bounds the number of remaining iterations.
+
+```c
+/*@
+  requires n >= 0;
+  terminates \true;
+  assigns    \nothing;
+  ensures    \result == 0;
+*/
+int count_down(int n)
+{
+  /*@
+    loop invariant 0 <= n;
+    loop assigns   n;
+    loop variant   n;
+  */
+  while (n > 0) {
+    n--;
+  }
+  return n;
+}
+```

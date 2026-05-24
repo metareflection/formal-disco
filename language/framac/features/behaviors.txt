@@ -1,0 +1,17 @@
+A `behavior` introduces a named case within a contract, grouping its own `assumes`, `requires`, `assigns`, and `ensures`. Each behavior's `ensures` is required to hold only when its `assumes` guard is true in the pre-state. Behaviors let a single contract describe distinct cases (such as negative versus non-negative input) without one monolithic postcondition.
+
+```c
+/*@
+  assigns \nothing;
+  behavior neg:
+    assumes x < 0;
+    ensures \result == -x;
+  behavior nonneg:
+    assumes x >= 0;
+    ensures \result == x;
+*/
+int my_abs(int x)
+{
+  return (x < 0) ? -x : x;
+}
+```

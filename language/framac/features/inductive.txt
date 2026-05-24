@@ -1,0 +1,16 @@
+An `inductive` definition introduces a predicate as the smallest relation closed under a set of named inference rules (the `case`s). Each case is an implication whose conclusion is an instance of the predicate. Inductive predicates are ideal for defining reachability, well-formedness, or relations like "is even" whose membership is built up from base and step rules.
+
+```c
+/*@
+  inductive is_even(integer n) {
+    case even_zero:
+      is_even(0);
+    case even_step:
+      \forall integer n; n >= 0 && is_even(n) ==> is_even(n + 2);
+  }
+*/
+
+/*@
+  lemma four_is_even: is_even(4);
+*/
+```

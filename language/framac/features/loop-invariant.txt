@@ -1,0 +1,22 @@
+A `loop invariant` is a property that holds before the loop and is preserved by every iteration. WP proves it on entry (establishment) and across one arbitrary iteration (preservation), then uses it together with the negated loop test to reason about the state after the loop. Strong enough invariants are the key to verifying loops.
+
+```c
+/*@
+  requires n >= 0;
+  assigns  \nothing;
+  ensures  \result == n;
+*/
+int count_up(int n)
+{
+  int i = 0;
+  /*@
+    loop invariant 0 <= i <= n;
+    loop assigns i;
+    loop variant n - i;
+  */
+  while (i < n) {
+    i++;
+  }
+  return i;
+}
+```

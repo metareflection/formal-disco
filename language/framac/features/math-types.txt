@@ -1,0 +1,13 @@
+ACSL provides unbounded mathematical types for specification: `integer` is the mathematical (arbitrary-precision) integer and `real` is the mathematical real number. Using `integer` for quantified indices and logic results avoids the overflow and wraparound semantics of C's bounded `int`, so reasoning matches ordinary arithmetic. Conversions to and from C types happen automatically where well defined.
+
+```c
+/*@
+  logic integer cube(integer x) = x * x * x;
+
+  lemma cube_no_overflow:
+    \forall integer x; cube(x) == x * x * x;
+
+  lemma real_average:
+    \forall real x, y; (x + y) / 2 <= \max(x, y);
+*/
+```

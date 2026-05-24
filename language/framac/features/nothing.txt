@@ -1,0 +1,12 @@
+The `\nothing` term denotes the empty set of memory locations and is used as the right-hand side of an `assigns` (or `loop assigns`) clause to declare that nothing is modified. `assigns \nothing;` is the canonical signature of a pure function: it computes a result without any side effect, letting WP preserve all facts about memory across the call.
+
+```c
+/*@
+  assigns \nothing;
+  ensures \result == x;
+*/
+int identity(int x)
+{
+  return x;
+}
+```
