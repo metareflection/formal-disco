@@ -1,4 +1,4 @@
-`assert P;` asks the verifier to prove `P` at this point and adds it as a fact afterwards. `assume P;` tells the verifier to take `P` as given (unsound if wrong — useful for staging proofs). `expect P;` is a runtime check (compiled). `assert P by { ... }` discharges `P` using a local proof block whose internal facts are not exported.
+`assert P;` asks the verifier to prove `P` at this point and adds it as a fact afterwards. `expect P;` is a runtime check (compiled). `assert P by { ... }` discharges `P` using a local proof block whose internal facts are not exported.
 
 ```dafny
 method AssertionsDemo(x: int) returns (y: int)
@@ -6,9 +6,6 @@ method AssertionsDemo(x: int) returns (y: int)
   ensures y == 2 * x
 {
   assert x >= 1;
-
-  // staging assumption (would need a real proof in production)
-  assume x < 1_000_000;
 
   y := x + x;
 

@@ -1,4 +1,4 @@
-Verification attributes use the `{:name args}` syntax and tune the SMT-based prover. Common ones: `{:fuel f, n}` controls function unfolding depth; `{:trigger t}` provides a quantifier instantiation pattern; `{:induction k}` chooses induction variables; `{:opaque}` hides a definition; `{:axiom}` trusts a body-less declaration.
+Verification attributes use the `{:name args}` syntax and tune the SMT-based prover. Common ones: `{:fuel f, n}` controls function unfolding depth; `{:trigger t}` provides a quantifier instantiation pattern; `{:induction k}` chooses induction variables; `{:opaque}` hides a definition.
 
 ```dafny
 function {:fuel 3} Pow(b: int, n: nat): int

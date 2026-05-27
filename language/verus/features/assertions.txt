@@ -1,4 +1,4 @@
-`assert(P)` asks the SMT solver to prove `P` at this point. `assume(P)` tells the solver to take `P` for granted (unsound if wrong, useful while developing). `assert(P) by { ... }` discharges `P` using a local proof block whose intermediate steps are not exported.
+`assert(P)` asks the SMT solver to prove `P` at this point. `assert(P) by { ... }` discharges `P` using a local proof block whose intermediate steps are not exported.
 
 ```rust
 use vstd::prelude::*;
@@ -9,8 +9,6 @@ fn demo(x: i32, y: i32)
     requires 0 <= x <= 100, 0 <= y <= 100,
 {
     assert(x + y >= 0);
-
-    assume(x * y < 100_000);  // dev placeholder
 
     assert(x + y == y + x) by {
         assert(x + y == y + x);
