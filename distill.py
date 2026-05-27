@@ -562,6 +562,10 @@ def _train_with_trl(
             list(record["prompt"]) + list(record["completion"]),
             tokenize=True, add_generation_prompt=False,
         )
+        # apply_chat_template returns a BatchEncoding (dict) for some fast
+        # tokenizers and a flat list for others; normalize to the token list.
+        if hasattr(ids, "keys"):
+            ids = ids["input_ids"]
         fits = len(ids) <= max_seq_length
         if fits:
             total_kept_tokens[0] += len(ids)
