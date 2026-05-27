@@ -1,4 +1,4 @@
-`Vec<T>` is the executable counterpart to `Seq<T>`. Specifications about a vector use its *view* — `v@` (sugar for `v.view()`) returns a ghost `Seq<T>` reflecting the vector's contents. Verifying code typically states postconditions in terms of `v@`.
+`Vec<T>` is the executable counterpart to `Seq<T>`. Specifications about a vector use its *view* -- `v@` (sugar for `v.view()`) returns a ghost `Seq<T>` reflecting the vector's contents. Verifying code typically states postconditions in terms of `v@`.
 
 ```rust
 use vstd::prelude::*;

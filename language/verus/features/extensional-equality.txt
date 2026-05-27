@@ -1,4 +1,4 @@
-`Seq`, `Set`, `Map`, and structs/enums are equal extensionally — same elements/fields means equal — but the SMT solver does not always derive that automatically. `=~=` (and the deeper `=~~=`) is a Verus operator that asks the solver to prove extensional equality.
+`Seq`, `Set`, `Map`, and structs/enums are equal extensionally -- same elements/fields means equal -- but the SMT solver does not always derive that automatically. `=~=` (and the deeper `=~~=`) is a Verus operator that asks the solver to prove extensional equality.
 
 ```rust
 use vstd::prelude::*;

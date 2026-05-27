@@ -1,4 +1,4 @@
-Classes are heap-allocated reference types with mutable fields, methods, and constructors. Traits are abstract supertypes — they declare members that classes implement via `extends`. A class may extend multiple traits. `this` is the implicit receiver; `reads`/`modifies` clauses must mention objects whose state is read or written.
+Classes are heap-allocated reference types with mutable fields, methods, and constructors. Traits are abstract supertypes -- they declare members that classes implement via `extends`. A class may extend multiple traits. `this` is the implicit receiver; `reads`/`modifies` clauses must mention objects whose state is read or written.
 
 ```dafny
 trait Shape {

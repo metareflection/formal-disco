@@ -1,4 +1,4 @@
-A `least predicate` denotes the least fixpoint of its body — the smallest set closed under the recursive definition (inductive). A `greatest predicate` denotes the greatest fixpoint (coinductive). Their accompanying `least lemma` / `greatest lemma` declarations get specialized induction/coinduction principles for proofs.
+A `least predicate` denotes the least fixpoint of its body -- the smallest set closed under the recursive definition (inductive). A `greatest predicate` denotes the greatest fixpoint (coinductive). Their accompanying `least lemma` / `greatest lemma` declarations get specialized induction/coinduction principles for proofs.
 
 ```dafny
 least predicate Reaches(x: int, y: int)

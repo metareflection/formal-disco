@@ -1,4 +1,4 @@
-`forall|x: T| P(x)` and `exists|x: T| P(x)` are spec-level quantifier expressions. The SMT solver instantiates them via *triggers* — patterns of terms that, when matched, cause the solver to specialize the quantifier. Mark a sub-term with `#[trigger]` to choose the trigger explicitly.
+`forall|x: T| P(x)` and `exists|x: T| P(x)` are spec-level quantifier expressions. The SMT solver instantiates them via *triggers* -- patterns of terms that, when matched, cause the solver to specialize the quantifier. Mark a sub-term with `#[trigger]` to choose the trigger explicitly.
 
 ```rust
 use vstd::prelude::*;

@@ -1,4 +1,4 @@
-Iterators are stateful objects that produce a stream of values via `yield`. They have implicit history sequences (`xs`, `ys`, …) recording yielded values. Codatatypes (`codatatype`) describe possibly-infinite values defined by their observations; functions over codatatypes can be co-recursive, and `greatest lemma` (a.k.a. `colemma`) supports coinductive proofs.
+Iterators are stateful objects that produce a stream of values via `yield`. They have implicit history sequences (`xs`, `ys`, ...) recording yielded values. Codatatypes (`codatatype`) describe possibly-infinite values defined by their observations; functions over codatatypes can be co-recursive, and `greatest lemma` (a.k.a. `colemma`) supports coinductive proofs.
 
 ```dafny
 iterator Counter(n: nat) yields (x: nat)

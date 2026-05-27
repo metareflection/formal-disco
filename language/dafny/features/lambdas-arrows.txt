@@ -1,4 +1,4 @@
-Lambda expressions create anonymous functions: `(x: T) => e` or simply `x => e`. Arrow types come in three flavors: `T -> U` (total, no heap reads), `T --> U` (partial, no heap reads), and `T ~> U` (most general — partial and may read heap state, with `reads`/`requires` clauses).
+Lambda expressions create anonymous functions: `(x: T) => e` or simply `x => e`. Arrow types come in three flavors: `T -> U` (total, no heap reads), `T --> U` (partial, no heap reads), and `T ~> U` (most general -- partial and may read heap state, with `reads`/`requires` clauses).
 
 ```dafny
 function Apply<T, U>(f: T -> U, x: T): U
