@@ -1,6 +1,7 @@
 _target_: scheduler.RoundRobinScheduler
 
 turn_fuel: 5
+language: framac
 
 workers:
   - _target_: worker.readme_idea_generator.ReadmeInspiredIdeaGenerator
