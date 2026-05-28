@@ -6,9 +6,11 @@ import json
 import pickle
 import sys
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
+from tqdm import tqdm
 
 from language import Language, Program
 
@@ -233,6 +235,10 @@ def _safe_median(xs):
     return float(np.median(xs)) if xs else 0.0
 
 
+def _safe_percentile(xs, q):
+    return float(np.percentile(xs, q)) if xs else 0.0
+
+
 def _entropy(counter: Counter) -> float:
     """Shannon entropy in bits."""
     total = sum(counter.values())
@@ -256,6 +262,24 @@ def _detect_language(agenda: dict) -> Language:
                     f"Unknown language in agenda object type: {o.type} (object path: {obj_path})"
                 ) from exc
     raise ValueError("Could not detect language from agenda objects")
+
+
+_WORKER_LANG: Language | None = None
+_WORKER_BACKEND = None
+
+
+def _init_feature_worker(lang: Language) -> None:
+    global _WORKER_LANG, _WORKER_BACKEND
+    _WORKER_LANG = lang
+    _WORKER_BACKEND = lang.get_backend()
+
+
+def _compute_features_in_worker(content):
+    text = content.decode("utf-8") if isinstance(content, bytes) else content
+    try:
+        return _WORKER_BACKEND.feature_sets(Program(text, _WORKER_LANG))
+    except Exception:
+        return None
 
 
 def _is_numeric_counter(counter: Counter) -> bool:
@@ -283,21 +307,30 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
             per_agenda[label] = None
             continue
 
-        lang = _detect_language(a)
-        backend = lang.get_backend()
-
-        all_features = []
-        n_parseable = 0
-
+        # Deduplicate by parent_idea: keep the longest program per lineage.
+        # Objects without a parent_idea bucket on their own key (so each stands alone).
+        by_idea: dict[str, tuple[str, object]] = {}
         for k, o in dataset_objs.items():
-            text = o.content.decode("utf-8") if isinstance(o.content, bytes) else o.content
-            prog = Program(text, lang)
-            try:
-                ft = backend.feature_sets(prog)
-                all_features.append(ft)
-                n_parseable += 1
-            except Exception:
-                continue
+            idea = o.properties.get("parent_idea") or k
+            cur = by_idea.get(idea)
+            if cur is None or len(o.content) > len(cur[1].content):
+                by_idea[idea] = (k, o)
+        dataset_objs = {k: o for k, o in by_idea.values()}
+
+        lang = _detect_language(a)
+
+        contents = [o.content for o in dataset_objs.values()]
+        with ProcessPoolExecutor(
+            max_workers=8,
+            initializer=_init_feature_worker,
+            initargs=(lang,),
+        ) as pool:
+            results = list(tqdm(
+                pool.map(_compute_features_in_worker, contents, chunksize=8),
+                total=len(contents),
+            ))
+        all_features = [ft for ft in results if ft is not None]
+        n_parseable = len(all_features)
 
         per_agenda[label] = {
             "n_total": len(dataset_objs),
@@ -333,20 +366,33 @@ def diversity_complexity_table(agendas: dict[str, dict]) -> None:
     ]
     if numeric_keys:
         rows.append(("", [""] * len(labels)))
-        rows.append(("NUMERIC FEATURES (mean of per-program means)", [""] * len(labels)))
+        rows.append(("NUMERIC FEATURES (across per-program means)", [""] * len(labels)))
         for ck in numeric_keys:
-            row_vals = []
+            per_agenda_means: dict[str, list[float] | None] = {}
             for label in labels:
                 d = per_agenda[label]
                 if not d or not d["features"]:
-                    row_vals.append("-")
+                    per_agenda_means[label] = None
                     continue
-                per_prog_means = [
+                per_agenda_means[label] = [
                     _safe_mean(list(ft[ck].elements()))
                     for ft in d["features"] if ck in ft and ft[ck]
                 ]
-                row_vals.append(f"{_safe_mean(per_prog_means):.2f}")
-            rows.append((f"  {ck}", row_vals))
+
+            rows.append((f"  {ck}", [""] * len(labels)))
+            for stat_label, stat_fn in (
+                ("mean", _safe_mean),
+                ("p90", lambda xs: _safe_percentile(xs, 90)),
+                ("p95", lambda xs: _safe_percentile(xs, 95)),
+            ):
+                row_vals = []
+                for label in labels:
+                    xs = per_agenda_means[label]
+                    if xs is None:
+                        row_vals.append("-")
+                    else:
+                        row_vals.append(f"{stat_fn(xs):.2f}")
+                rows.append((f"    {stat_label}", row_vals))
 
     # Diversity: entropy of pooled feature counters.
     rows.append(("", [""] * len(labels)))
