@@ -24,6 +24,12 @@ success_only: true
 # Whether to also accept goal_unproven as success
 treat_goal_unproven_as_success: false
 
+# If non-null (in (0, 1]), filter SFT examples per prompt type to the top
+# fraction by best per-metric surprisal rank under the prompt-type-pooled
+# feature distribution. Used as an entropy-maximization-style data selection
+# for iterative SFT. Set to null to disable.
+top_surprisal_fraction: 0.33
+
 # Training
 max_seq_length: 8192
 # max_steps: 20000
