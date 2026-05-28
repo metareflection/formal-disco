@@ -554,9 +554,7 @@ def _train_with_trl(
         tokenizer.pad_token = tokenizer.eos_token
 
     # Drop records whose prompt+completion don't fit in max_seq_length.
-    # (TRL would otherwise right-truncate past the ask and zero out the loss.)
-    total_kept_tokens = [0]
-
+    # (TRL would otherwise right-truncate and zero out the loss.)
     def _fits(record) -> bool:
         ids = tokenizer.apply_chat_template(
             list(record["prompt"]) + list(record["completion"]),
@@ -566,10 +564,7 @@ def _train_with_trl(
         # tokenizers and a flat list for others; normalize to the token list.
         if hasattr(ids, "keys"):
             ids = ids["input_ids"]
-        fits = len(ids) <= max_seq_length
-        if fits:
-            total_kept_tokens[0] += len(ids)
-        return fits
+        return len(ids) <= max_seq_length
 
     n_before = len(records)
     records = [r for r in records if _fits(r)]
@@ -620,17 +615,15 @@ def _train_with_trl(
     )
 
     # Treat max_steps as an upper bound: only force it when training for the full
-    # num_train_epochs would exceed it. With packing=True we estimate per-epoch
-    # steps from total tokens / max_seq_length; otherwise from record count.
+    # num_train_epochs would exceed it. Estimate per-epoch steps from the record
+    # count (ignoring packing): with the prompt/completion schema TRL doesn't
+    # actually compact multiple records into one sequence, so a tokens/max_len
+    # estimate would massively underestimate the real step count.
     world_size = 4  # This is hardcoded for now: slurm/sft.sbatch requests 4 GPUs
     effective_batch_size = (
         int(per_device_train_batch_size) * int(gradient_accumulation_steps) * world_size
     )
-    if training_args.packing:
-        packed_samples = max(1, math.ceil(total_kept_tokens[0] / max_seq_length))
-    else:
-        packed_samples = len(records)
-    steps_per_epoch = max(1, math.ceil(packed_samples / effective_batch_size))
+    steps_per_epoch = max(1, math.ceil(len(records) / effective_batch_size))
     estimated_epoch_steps = math.ceil(steps_per_epoch * float(num_train_epochs))
 
     if max_steps and int(max_steps) > 0 and estimated_epoch_steps > int(max_steps):
