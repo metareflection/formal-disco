@@ -196,8 +196,9 @@ def _select_top_surprisal_indices(
     group, or None if it couldn't be reconstructed.
 
     For each rankable example, compute the per-metric maximum surprisal under
-    the pooled feature distribution of the group. Rank examples within each
-    metric (rank 1 = most surprising). Each example's score is the *best*
+    the pooled feature distribution of the group, restricted to the backend's
+    `surprisal_metrics`. Rank examples within each metric (rank 1 = most
+    surprising). Each example's score is the *best*
     (smallest) rank it achieves across any metric — i.e. examples that are top
     on any single feature are favored. We keep the top `fraction` by score.
 
@@ -208,6 +209,9 @@ def _select_top_surprisal_indices(
 
     backend = Language[language.upper()].get_backend()
     lang_enum = Language[language.upper()]
+    # Only the backend's designated optimization metrics drive ranking; the
+    # rest of feature_metrics are still tracked elsewhere for diversity.
+    metrics = backend.surprisal_metrics
 
     pooled: dict[str, Counter] = defaultdict(Counter)
     feats_by_i: dict[int, dict[str, Counter]] = {}
@@ -218,6 +222,7 @@ def _select_top_surprisal_indices(
             fs = backend.feature_sets(Program(p_text, lang_enum))
         except Exception:
             continue
+        fs = {m: c for m, c in fs.items() if m in metrics}
         feats_by_i[i] = fs
         for metric, c in fs.items():
             pooled[metric].update(c)

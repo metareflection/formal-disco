@@ -146,6 +146,17 @@ class LanguageBackend:
         raise NotImplementedError
 
     @property
+    def surprisal_metrics(self) -> frozenset[str]:
+        """Subset of feature_metrics that drives entropy-maximizing data
+        selection (distill.py surprisal ranking). The remaining metrics are
+        still computed for diversity tracking and in-context selection, but
+        do not influence SFT example selection.
+
+        Must be a subset of feature_metrics. Defaults to all of them.
+        """
+        return frozenset(self.feature_metrics)
+
+    @property
     def file_extension(self) -> str:
         """File extension used for programs in this language (e.g. 'dfy', 'rs')."""
         raise NotImplementedError

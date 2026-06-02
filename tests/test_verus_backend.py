@@ -316,6 +316,11 @@ class TestBackendMetadata:
     def test_feature_metrics_nonempty(self):
         assert len(backend().feature_metrics) > 0
 
+    def test_surprisal_metrics_subset(self):
+        b = backend()
+        assert b.surprisal_metrics
+        assert b.surprisal_metrics <= b.feature_metrics
+
     def test_language_enum_returns_verus_backend(self):
         assert type(Language.VERUS.get_backend()).__name__ == "VerusBackend"
 

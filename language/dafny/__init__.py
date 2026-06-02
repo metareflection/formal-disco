@@ -446,6 +446,12 @@ class DafnyBackend(LanguageBackend):
         'annotations_per_method',
     })
 
+    # Subset of _FEATURE_METRICS that drives iterative-SFT surprisal ranking.
+    _SURPRISAL_METRICS = frozenset({
+        'annotation_template', 'loop_skeleton', 'method_body_size',
+        'lemma_body_size', 'annotations_per_method',
+    })
+
     # Previous feature set (pre-2026-05) — kept here for reference / easy revert:
     #   subject_words, invariant_templates, assert_templates,
     #   ensures_templates, requires_templates, loop_skeletons,
@@ -467,6 +473,10 @@ class DafnyBackend(LanguageBackend):
     @property
     def feature_metrics(self) -> frozenset[str]:
         return self._FEATURE_METRICS
+
+    @property
+    def surprisal_metrics(self) -> frozenset[str]:
+        return self._SURPRISAL_METRICS
 
     @property
     def features_dir(self) -> Path:
