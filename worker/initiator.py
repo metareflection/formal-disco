@@ -17,6 +17,7 @@ from code_output_parser import CodeOutputParser
 from language import Language, Program, VerificationOutcome
 
 from . import Worker, _to_langchain_messages
+from .limits import DEFAULT_MAX_PROGRAM_TOKENS, program_within_limit
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +43,10 @@ class Initiator(Worker):
         distill: Optional[Literal['success-only', 'all']] = 'success-only',
         doc_snippets_min: int = 1,
         doc_snippets_max: int = 3,
+        max_program_tokens: Optional[int] = DEFAULT_MAX_PROGRAM_TOKENS,
     ):
         self._rng = rng or random.Random()
+        self._max_program_tokens = max_program_tokens
         self._rows = self._load_jsonl(jsonl_path)
         if not self._rows:
             raise ValueError(f"No valid rows found in JSONL: {jsonl_path}")
@@ -183,19 +186,21 @@ class Initiator(Worker):
                     ))
 
                     # Enqueue extend task.
-                    await agenda.add_task(Task(
-                        id="ext", type="extend",
-                        properties={"program": prog_obj_path},
-                        interest_dependencies=[prog_obj_path],
-                    ))
+                    if program_within_limit(program_text, self._max_program_tokens):
+                        await agenda.add_task(Task(
+                            id="ext", type="extend",
+                            properties={"program": prog_obj_path},
+                            interest_dependencies=[prog_obj_path],
+                        ))
                     await agenda.update_task(task_id, work_status=WorkStatus.DONE, new_notes=status_notes)
                 else:
                     # Enqueue repair task.
-                    await agenda.add_task(Task(
-                        id="rep", type="repair",
-                        properties={"program": prog_obj_path},
-                        interest_dependencies=[prog_obj_path],
-                    ))
+                    if program_within_limit(program_text, self._max_program_tokens):
+                        await agenda.add_task(Task(
+                            id="rep", type="repair",
+                            properties={"program": prog_obj_path},
+                            interest_dependencies=[prog_obj_path],
+                        ))
                     await agenda.update_task(task_id, work_status=WorkStatus.FAILED, new_notes=status_notes)
 
             except Exception as e:

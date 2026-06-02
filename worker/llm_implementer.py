@@ -10,6 +10,7 @@ from code_output_parser import CodeOutputParser
 from language import Language, Program, VerificationOutcome
 
 from . import Worker, _to_langchain_messages
+from .limits import DEFAULT_MAX_PROGRAM_TOKENS, program_within_limit
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,12 @@ class LLMImplementer(Worker):
         interest_fail: float = 0.5,
         interest_recursion_gamma: float = 0.0,
         distill: Optional[Literal['success-only', 'all']] = 'success-only',
+        max_program_tokens: Optional[int] = DEFAULT_MAX_PROGRAM_TOKENS,
     ) -> None:
         self._llm = llm
         self._backend = Language[language.upper()].get_backend()
         self._language = language.lower()
+        self._max_program_tokens = max_program_tokens
         self._attempt_priority_factor = float(attempt_priority_factor)
         self._interest_success = float(interest_success)
         self._interest_goal_unproven = float(interest_goal_unproven)
@@ -140,18 +143,20 @@ class LLMImplementer(Worker):
                     ))
 
                     followup_type = "extend" if ver.outcome == VerificationOutcome.SUCCESS else "repair"
-                    await agenda.add_task(Task(
-                        id="ext", type=followup_type,
-                        properties={"program": prog_obj_path},
-                        interest_dependencies=[prog_obj_path],
-                    ))
+                    if program_within_limit(program_text, self._max_program_tokens):
+                        await agenda.add_task(Task(
+                            id="ext", type=followup_type,
+                            properties={"program": prog_obj_path},
+                            interest_dependencies=[prog_obj_path],
+                        ))
                     await agenda.update_task(task.id, work_status=WorkStatus.DONE, new_notes=status_notes)
                 else:
-                    await agenda.add_task(Task(
-                        id="rep", type="repair",
-                        properties={"program": prog_obj_path},
-                        interest_dependencies=[prog_obj_path],
-                    ))
+                    if program_within_limit(program_text, self._max_program_tokens):
+                        await agenda.add_task(Task(
+                            id="rep", type="repair",
+                            properties={"program": prog_obj_path},
+                            interest_dependencies=[prog_obj_path],
+                        ))
                     await agenda.update_task(
                         task.id,
                         work_status=WorkStatus.ATTEMPTED,

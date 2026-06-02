@@ -11,6 +11,7 @@ from language import Language, Program, VerificationOutcome
 from patch import apply_text_diff, TEXT_DIFF_EXAMPLE, TEXT_BEFORE_EXAMPLE, TEXT_AFTER_EXAMPLE
 
 from . import Worker, _to_langchain_messages
+from .limits import DEFAULT_MAX_PROGRAM_TOKENS, program_within_limit
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,12 @@ class LLMFixer(Worker):
         interest_success_boost: float = 1.2,
         interest_recursion_gamma: float = 0.0,
         distill: Optional[Literal['success-only', 'all']] = 'success-only',
+        max_program_tokens: Optional[int] = DEFAULT_MAX_PROGRAM_TOKENS,
     ) -> None:
         self._llm = llm
         self._backend = Language[language.upper()].get_backend()
         self._language = language.lower()
+        self._max_program_tokens = max_program_tokens
         self._max_attempts = max_attempts
         self._attempt_priority_factor = float(attempt_priority_factor)
         self._interest_success_boost = float(interest_success_boost)
@@ -170,11 +173,12 @@ class LLMFixer(Worker):
                         interest_factor=self._interest_success_boost,
                         interest_recursion_gamma=self._interest_recursion_gamma,
                     )
-                    await agenda.add_task(Task(
-                        id="ext", type="extend",
-                        properties={"program": program_path},
-                        interest_dependencies=[program_path],
-                    ))
+                    if program_within_limit(repaired_text, self._max_program_tokens):
+                        await agenda.add_task(Task(
+                            id="ext", type="extend",
+                            properties={"program": program_path},
+                            interest_dependencies=[program_path],
+                        ))
                     await agenda.update_task(
                         task.id, work_status=WorkStatus.DONE,
                         new_notes=status_notes,
