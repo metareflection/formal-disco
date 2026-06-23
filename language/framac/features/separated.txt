@@ -1,0 +1,16 @@
+The `\separated` predicate asserts that two or more memory locations or ranges do not overlap. It is essential when a function writes through several pointers and must guarantee that updating one does not alias another, so the prover can treat their contents independently. It accepts pointer ranges such as `\separated(a + (0..n-1), b + (0..m-1))`.
+
+```c
+/*@
+  requires \valid(p);
+  requires \valid(q);
+  requires \separated(p, q);
+  assigns  *p, *q;
+  ensures  *p == 1 && *q == 2;
+*/
+void set_both(int *p, int *q)
+{
+  *p = 1;
+  *q = 2;
+}
+```

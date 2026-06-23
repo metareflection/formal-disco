@@ -1,0 +1,14 @@
+The `\valid` predicate asserts that a pointer (or pointer range `p + (0..n-1)`) may be safely dereferenced for reading and writing in the current state. `\valid_read` is the weaker variant that only guarantees read access, suitable for `const` inputs. These predicates are the foundation of memory-safety preconditions in ACSL contracts.
+
+```c
+/*@
+  requires \valid(p);
+  requires \valid_read(q);
+  assigns  *p;
+  ensures  *p == \old(*q);
+*/
+void store(int *p, int *q)
+{
+  *p = *q;
+}
+```

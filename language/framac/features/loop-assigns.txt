@@ -1,0 +1,22 @@
+A `loop assigns` clause is the frame condition of a loop: it lists every location the loop body may modify over all its iterations. WP uses it to know what stays unchanged across the loop, which is essential for carrying facts about untouched memory past the loop. The loop counter and any written array ranges typically appear here.
+
+```c
+/*@
+  requires \valid(a + (0 .. n-1));
+  requires n >= 0;
+  assigns  a[0 .. n-1];
+  ensures  \forall integer k; 0 <= k < n ==> a[k] == 0;
+*/
+void zero(int *a, int n)
+{
+  /*@
+    loop invariant 0 <= i <= n;
+    loop invariant \forall integer k; 0 <= k < i ==> a[k] == 0;
+    loop assigns   i, a[0 .. n-1];
+    loop variant   n - i;
+  */
+  for (int i = 0; i < n; i++) {
+    a[i] = 0;
+  }
+}
+```

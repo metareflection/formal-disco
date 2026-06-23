@@ -1,0 +1,12 @@
+The `\forall` quantifier introduces a universally quantified logic formula: `\forall <type> x; P(x)` is true when `P` holds for every value of `x`. It is most often combined with an implication to range over array indices, e.g. `\forall integer i; 0 <= i < n ==> a[i] > 0`. Bound variables typically use logic types such as `integer`.
+
+```c
+/*@
+  requires \valid_read(a + (0 .. n-1));
+  requires n >= 0;
+  requires \forall integer i; 0 <= i < n ==> a[i] > 0;
+  assigns  \nothing;
+  ensures  \forall integer i; 0 <= i < n ==> a[i] >= 1;
+*/
+void all_positive(int *a, int n) { return; }
+```

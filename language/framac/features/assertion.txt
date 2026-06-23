@@ -1,0 +1,15 @@
+An `//@ assert` annotation states a predicate that must hold at a specific program point inside a function body. WP generates a goal to prove it from the facts available there, and the asserted fact then becomes available to subsequent reasoning. Assertions are useful as intermediate lemmas that guide the prover toward the postcondition.
+
+```c
+/*@
+  requires 0 <= x <= 100;
+  assigns  \nothing;
+  ensures  \result == 2 * x;
+*/
+int double_it(int x)
+{
+  int y = x + x;
+  //@ assert y == 2 * x;
+  return y;
+}
+```

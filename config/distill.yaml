@@ -1,22 +1,18 @@
 # Distillation training config (used by: `python distill.py sft`)
 
-defaults:
-    - data: null
-    - _self_
+# Input agenda checkpoint(s): single pickle path or list of paths.
+data:
+    - /n/holylabs/amin_lab/Lab/namin/agenda-framac-opus47-fewshot.pkl
 
 # HF model id
-# model_id: Qwen/Qwen3-Coder-30B-A3B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B # 
-model_id: Qwen/Qwen2.5-Coder-32B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B # 
+# model_id: Qwen/Qwen3-Coder-30B-A3B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B #
+model_id: Qwen/Qwen2.5-Coder-32B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B #
 
 # Output directory (relative to Hydra run dir unless absolute)
-output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-distilled_si1-lemma
-# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-distilled_si2
-# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-verus-distilled_si1
-# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_sonnet+opus-verus-distilled
-# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_verus-fixer
+output_dir: /n/holylabs/amin_lab/Lab/namin/sft-out-framac-opus-fewshot
 
-# Formal language (dafny, verus)
-language: dafny
+# Formal language (dafny, verus, framac)
+language: framac
 
 # Whether to filter to success only examples
 success_only: true

@@ -1,0 +1,142 @@
+[
+  {
+    "id": "requires",
+    "title": "Function preconditions (requires)",
+    "regex": "\\brequires\\b"
+  },
+  {
+    "id": "ensures",
+    "title": "Function postconditions (ensures)",
+    "regex": "\\bensures\\b"
+  },
+  {
+    "id": "assigns",
+    "title": "Frame conditions (assigns)",
+    "regex": "\\bassigns\\b"
+  },
+  {
+    "id": "terminates",
+    "title": "Termination clause (terminates)",
+    "regex": "\\bterminates\\b"
+  },
+  {
+    "id": "exits",
+    "title": "Exit behavior clause (exits)",
+    "regex": "\\bexits\\b"
+  },
+  {
+    "id": "behaviors",
+    "title": "Named behaviors (behavior)",
+    "regex": "\\bbehavior\\b"
+  },
+  {
+    "id": "complete-disjoint",
+    "title": "Complete / disjoint behaviors",
+    "regex": "\\b(?:complete|disjoint)\\s+behaviors\\b"
+  },
+  {
+    "id": "assumes",
+    "title": "Behavior assumptions (assumes)",
+    "regex": "\\bassumes\\b"
+  },
+  {
+    "id": "loop-invariant",
+    "title": "Loop invariants",
+    "regex": "\\bloop\\s+invariant\\b"
+  },
+  {
+    "id": "loop-variant",
+    "title": "Loop variants for termination",
+    "regex": "\\bloop\\s+variant\\b"
+  },
+  {
+    "id": "loop-assigns",
+    "title": "Loop frame conditions (loop assigns)",
+    "regex": "\\bloop\\s+assigns\\b"
+  },
+  {
+    "id": "assertion",
+    "title": "In-code assertions (assert)",
+    "regex": "@\\s*assert\\b"
+  },
+  {
+    "id": "predicate",
+    "title": "Logic predicates",
+    "regex": "\\bpredicate\\b"
+  },
+  {
+    "id": "logic-function",
+    "title": "Logic functions",
+    "regex": "\\blogic\\b"
+  },
+  {
+    "id": "lemma",
+    "title": "Lemmas",
+    "regex": "\\blemma\\b"
+  },
+  {
+    "id": "axiomatic",
+    "title": "Axiomatic definitions",
+    "regex": "\\baxiomatic\\b"
+  },
+  {
+    "id": "inductive",
+    "title": "Inductive predicates",
+    "regex": "\\binductive\\b"
+  },
+  {
+    "id": "forall",
+    "title": "Universal quantifier (\\forall)",
+    "regex": "\\\\forall\\b"
+  },
+  {
+    "id": "exists",
+    "title": "Existential quantifier (\\exists)",
+    "regex": "\\\\exists\\b"
+  },
+  {
+    "id": "valid",
+    "title": "Pointer validity (\\valid / \\valid_read)",
+    "regex": "\\\\valid(?:_read)?\\b"
+  },
+  {
+    "id": "separated",
+    "title": "Pointer separation (\\separated)",
+    "regex": "\\\\separated\\b"
+  },
+  {
+    "id": "result",
+    "title": "Result references (\\result)",
+    "regex": "\\\\result\\b"
+  },
+  {
+    "id": "old-at",
+    "title": "Past-state references (\\old / \\at)",
+    "regex": "\\\\(?:old|at)\\b"
+  },
+  {
+    "id": "ghost",
+    "title": "Ghost code",
+    "regex": "\\bghost\\b"
+  },
+  {
+    "id": "math-types",
+    "title": "ACSL mathematical types (integer, real)",
+    "regex": "\\b(?:integer|real)\\b"
+  },
+  {
+    "id": "boolean",
+    "title": "ACSL boolean type",
+    "regex": "\\bboolean\\b"
+  },
+  {
+    "id": "nothing",
+    "title": "Empty frame (\\nothing)",
+    "regex": "\\\\nothing\\b"
+  },
+  {
+    "id": "decreases",
+    "title": "Recursion measure (decreases)",
+    "regex": "\\bdecreases\\b"
+  }
+]

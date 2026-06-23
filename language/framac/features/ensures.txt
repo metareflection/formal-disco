@@ -1,0 +1,14 @@
+An `ensures` clause states a function postcondition: a property guaranteed to hold when the function returns normally. It may refer to the formals, to `\result` (the returned value), and to `\old(...)` for pre-state values. WP must prove every `ensures` from the body assuming the `requires`; callers may then rely on them. Multiple `ensures` clauses are conjoined.
+
+```c
+/*@
+  requires 0 <= a <= 1000;
+  requires 0 <= b <= 1000;
+  assigns  \nothing;
+  ensures  \result == a + b;
+*/
+int add(int a, int b)
+{
+  return a + b;
+}
+```

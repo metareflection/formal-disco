@@ -1,0 +1,30 @@
+The `\exists` quantifier introduces an existentially quantified formula: `\exists <type> x; P(x)` is true when some value of `x` satisfies `P`. Over an array it is usually written with a conjunction, e.g. `\exists integer i; 0 <= i < n && a[i] == 0`. It pairs naturally with `\forall` in `assumes` guards to split a contract into a "present" and an "absent" case.
+
+```c
+/*@
+  requires \valid_read(a + (0 .. n-1));
+  requires n >= 0;
+  assigns  \nothing;
+  behavior found:
+    assumes \exists integer i; 0 <= i < n && a[i] == 0;
+    ensures \result == 1;
+  behavior absent:
+    assumes \forall integer i; 0 <= i < n ==> a[i] != 0;
+    ensures \result == 0;
+  complete behaviors;
+  disjoint behaviors;
+*/
+int has_zero(int *a, int n)
+{
+  /*@
+    loop invariant 0 <= i <= n;
+    loop invariant \forall integer k; 0 <= k < i ==> a[k] != 0;
+    loop assigns   i;
+    loop variant   n - i;
+  */
+  for (int i = 0; i < n; i++) {
+    if (a[i] == 0) return 1;
+  }
+  return 0;
+}
+```

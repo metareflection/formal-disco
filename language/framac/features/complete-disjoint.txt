@@ -1,0 +1,19 @@
+The `complete behaviors;` and `disjoint behaviors;` clauses are meta-assertions about a contract's named behaviors. `complete` requires that the `assumes` guards cover every admissible pre-state (their disjunction is implied by the preconditions); `disjoint` requires at most one guard to hold at a time. Together they certify that the behaviors form an exhaustive, non-overlapping case split, which WP checks as extra goals.
+
+```c
+/*@
+  assigns \nothing;
+  behavior less:
+    assumes a < b;
+    ensures \result == b;
+  behavior ge:
+    assumes a >= b;
+    ensures \result == a;
+  complete behaviors;
+  disjoint behaviors;
+*/
+int max2(int a, int b)
+{
+  return (a < b) ? b : a;
+}
+```

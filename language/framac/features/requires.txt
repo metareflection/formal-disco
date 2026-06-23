@@ -1,0 +1,16 @@
+A `requires` clause states a function precondition: a property the caller must guarantee on entry. It appears inside the `/*@ ... */` contract attached to a function and may reference the formal parameters. WP assumes every `requires` holds when proving the body, and obliges each call site to establish them. Multiple `requires` clauses are conjoined, and each may carry an optional `name:` label.
+
+```c
+/*@
+  requires lower <= upper;
+  assigns  \nothing;
+  ensures  \result <= upper;
+  ensures  lower <= \result;
+*/
+int clamp_upper(int v, int lower, int upper)
+{
+  if (v > upper) return upper;
+  if (v < lower) return lower;
+  return v;
+}
+```

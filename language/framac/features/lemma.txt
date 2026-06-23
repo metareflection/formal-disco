@@ -1,0 +1,8 @@
+A `lemma` states a named logical fact, typically a universally quantified property over logic variables. WP discharges the lemma as its own goal, after which it becomes a hypothesis available to every other proof. Lemmas factor out reusable mathematical reasoning that the solvers might not otherwise find automatically.
+
+```c
+/*@
+  lemma square_monotone:
+    \forall integer a, b; 0 <= a <= b ==> a * a <= b * b;
+*/
+```

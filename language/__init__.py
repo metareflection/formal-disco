@@ -286,6 +286,7 @@ class Language(Enum):
     DAFNY = 0
     VERUS = 1
     LEAN = 2
+    FRAMAC = 3
 
     def get_backend(self) -> LanguageBackend:
         if self == Language.DAFNY:
@@ -294,6 +295,9 @@ class Language(Enum):
         if self == Language.VERUS:
             from .verus import VerusBackend
             return VerusBackend()
+        if self == Language.FRAMAC:
+            from .framac import FramaCBackend
+            return FramaCBackend()
         raise NotImplementedError(f"Unsupported language: {self}")
 
 

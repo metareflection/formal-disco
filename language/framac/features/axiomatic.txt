@@ -1,0 +1,17 @@
+An `axiomatic` block groups related logic declarations (functions, predicates) together with `axiom`s that constrain them. It is the standard way to define a logic function recursively or implicitly: the function is declared, and axioms characterize its values. Use a `reads` clause to declare which memory a logic function depends on. Axioms are taken as truths, so they must be stated carefully to remain consistent.
+
+```c
+/*@
+  axiomatic Power {
+    logic integer power(integer x, integer n);
+
+    axiom power_zero:
+      \forall integer x; power(x, 0) == 1;
+
+    axiom power_step:
+      \forall integer x, n; n > 0 ==> power(x, n) == x * power(x, n-1);
+  }
+
+  lemma power_two_one: power(2, 1) == 2;
+*/
+```
