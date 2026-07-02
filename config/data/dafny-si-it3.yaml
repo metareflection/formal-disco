@@ -1,0 +1,6 @@
+# Union of all Dafny agendas through SI iteration 2 — used to train SI it3
+# (`slurm/sft-it3.sbatch`).
+- /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-sn-disco3__claude-opus__10k.pkl
+- /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-sn-disco3__qwen2.5-coder-32B_opus-distilled.pkl
+- /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-sn-disco3__qwen2.5-coder-32B_opus-distilled_si1.pkl
+- /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-sn-disco3__qwen2.5-coder-32B_opus-distilled_si2.pkl

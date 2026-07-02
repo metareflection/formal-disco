@@ -1,0 +1,15 @@
+_target_: scheduler.RoundRobinScheduler
+
+turn_fuel: 100
+
+workers:
+  - _target_: worker.llm_fixer.LLMFixer
+    distill: "success-only"
+    attempt_priority_factor: 0.9
+    interest_success_boost: 1.2
+    interest_recursion_gamma: 0.0
+    llm:
+        _target_: langchain_openai.ChatOpenAI
+        model: llm
+        base_url: ${oc.env:VLLM_BASE_URL,http://localhost:8000/v1}
+        api_key: ${oc.env:VLLM_API_KEY,EMPTY}

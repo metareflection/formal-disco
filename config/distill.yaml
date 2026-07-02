@@ -1,8 +1,8 @@
 # Distillation training config (used by: `python distill.py sft`)
 
-# Input agenda checkpoint(s): single pickle path or list of paths.
-data:
-    - /n/holylabs/amin_lab/Lab/namin/agenda-framac-opus47-fewshot.pkl
+defaults:
+  - data: null
+  - _self_
 
 # HF model id
 # model_id: Qwen/Qwen3-Coder-30B-A3B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B #
@@ -28,7 +28,7 @@ top_surprisal_fraction: 0.33
 
 # Training
 max_seq_length: 8192
-# max_steps: 20000
+max_steps: null
 per_device_train_batch_size: 2
 gradient_accumulation_steps: 1
 learning_rate: 2.0e-4

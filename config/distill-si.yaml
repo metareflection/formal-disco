@@ -1,0 +1,63 @@
+# Distillation training config (used by: `python distill.py sft`)
+
+# Input agenda checkpoint(s)
+# Can be a single pickle path (string), or a list of pickle paths.
+# data: local-agenda.pkl
+# Example:
+
+data:
+#    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/dafny_sanity_check_fixer.pkl
+#
+    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-sn-disco3__claude-opus__10k.pkl
+#    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-sn-disco3__qwen2.5-coder-32B_opus-distilled.pkl
+    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-sn-disco3__qwen2.5-coder-32B_opus-distilled.pkl
+    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-sn-disco3__qwen2.5-coder-32B_opus-distilled_si1.pkl
+
+#    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/fixer_qwen2.5_distilled_si1_train.pkl
+#
+#    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-verus-sn-disco3__claude-opus__10k.pkl
+#    - /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-verus-sn-disco3__claude-sonnet__10k.pkl
+
+# HF model id
+# model_id: Qwen/Qwen3-Coder-30B-A3B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B # 
+model_id: Qwen/Qwen2.5-Coder-32B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B # 
+
+# Output directory (relative to Hydra run dir unless absolute)
+# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-distilled_si2
+# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-verus-distilled
+output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-distilled_si2
+# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_sonnet+opus-verus-distilled
+
+# Formal language (dafny, verus)
+language: dafny
+
+# Whether to filter to success only examples
+success_only: true
+
+# Whether to also accept goal_unproven as success
+treat_goal_unproven_as_success: false
+
+# Training
+max_seq_length: 8192
+max_steps: 30000
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 1
+learning_rate: 2.0e-4
+num_train_epochs: 5.0
+warmup_ratio: 0.02
+lr_scheduler_type: linear # cosine
+logging_steps: 10
+max_grad_norm: 1.0
+save_steps: 500
+seed: 0
+
+# LoRA
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.05
+
+wandb: true
+wandb_project: formal-disco
+wandb_run_name: null
+
+dry_run: false
