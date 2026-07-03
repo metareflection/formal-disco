@@ -1,9 +1,0 @@
-write:
-  _target_: langchain_aws.ChatBedrock
-  model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
-  region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
-
-code:
-  _target_: langchain_aws.ChatBedrock
-  model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
-  region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
