@@ -1,6 +1,7 @@
 _target_: scheduler.RoundRobinScheduler
 
 turn_fuel: 5
+language: lean
 
 workers:
   - _target_: worker.concept_seeder.ConceptSeeder
