@@ -1,0 +1,32 @@
+`Vec<T>` is the executable counterpart to `Seq<T>`. Specifications about a vector use its *view* -- `v@` (sugar for `v.view()`) returns a ghost `Seq<T>` reflecting the vector's contents. Verifying code typically states postconditions in terms of `v@`.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn make_three() -> (v: Vec<u32>)
+    ensures v@.len() == 3,
+            v@[0] == 10,
+            v@[1] == 20,
+            v@[2] == 30,
+{
+    let mut v: Vec<u32> = Vec::new();
+    v.push(10);
+    v.push(20);
+    v.push(30);
+    v
+}
+
+fn first_or_zero(v: &Vec<u32>) -> (r: u32)
+    ensures (v@.len() > 0 ==> r == v@[0]) && (v@.len() == 0 ==> r == 0),
+{
+    if v.len() > 0 {
+        v[0]
+    } else {
+        0
+    }
+}
+
+} // verus!
+```

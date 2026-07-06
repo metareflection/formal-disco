@@ -1,0 +1,18 @@
+Dafny supports fixed-width bit-vector types written `bvN` for any width N (e.g., `bv8`, `bv16`, `bv32`). Bit-vectors support bitwise ops (&, |, ^, !), shifts (<<, >>), and modular arithmetic that wraps around at width N.
+
+```dafny
+method BitVectorOps() {
+  var x: bv8 := 0x0F;
+  var y: bv8 := 0xF0;
+
+  assert x | y == 0xFF;
+  assert x & y == 0x00;
+  assert x ^ y == 0xFF;
+  assert !x == 0xF0;             // bitwise complement at width 8
+  assert x << 4 == 0xF0;
+  assert y >> 4 == 0x0F;
+
+  var w: bv16 := 0xFFFF;
+  assert w + 1 == 0;             // wraps modulo 2^16
+}
+```

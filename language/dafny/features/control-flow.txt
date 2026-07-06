@@ -1,0 +1,41 @@
+Dafny supports the usual structured control flow: `if/else`, `while` loops with `invariant` and `decreases`, indexed `for i := lo to hi` loops, `match` over datatypes, and `break`/`continue` (optionally with labels). All loops require enough invariants for the verifier to discharge their pre/postconditions.
+
+```dafny
+datatype Color = Red | Green | Blue
+
+method ClassifyColor(c: Color) returns (n: int)
+  ensures 0 <= n <= 2
+{
+  match c
+  case Red => n := 0;
+  case Green => n := 1;
+  case Blue => n := 2;
+}
+
+method SumWhile(n: nat) returns (s: nat)
+  ensures s == n * (n + 1) / 2
+{
+  s := 0;
+  var i := 0;
+  while i < n
+    invariant 0 <= i <= n
+    invariant s == i * (i + 1) / 2
+  {
+    i := i + 1;
+    s := s + i;
+  }
+}
+
+method SumFor(n: nat) returns (s: nat)
+{
+  s := 0;
+  for i := 0 to n
+    invariant 0 <= i <= n
+  {
+    s := s + i;
+    if s > 1000 {
+      break;
+    }
+  }
+}
+```

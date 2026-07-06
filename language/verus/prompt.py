@@ -4,7 +4,19 @@ VerusPromptBuilder implements the PromptBuilder interface for the four
 standard tasks: implement, repair, extend, and idea generation.
 """
 
+from typing import Optional
+
 from .. import ChatMessage, PromptBuilder
+
+
+def _format_doc_snippets(snippets: Optional[list[tuple[str, str]]]) -> str:
+    """Render sampled doc snippets as a single prompt section, or empty if none."""
+    if not snippets:
+        return ""
+    parts = ["Reference snippets for some Verus language constructs you may find useful:"]
+    for fid, text in snippets:
+        parts.append(f"\n--- {fid} ---\n{text.strip()}")
+    return "\n".join(parts) + "\n\n"
 
 
 class VerusPromptBuilder(PromptBuilder):
@@ -163,7 +175,13 @@ class VerusPromptBuilder(PromptBuilder):
         )
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
-    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
+    def initiate(
+        self,
+        *,
+        repo: str,
+        readme: str,
+        doc_snippets: Optional[list[tuple[str, str]]] = None,
+    ) -> list[ChatMessage]:
         """Prompt the model to propose an idea and implement it as Verus code in one shot."""
         system = (
             "You are an expert Verus programmer. You will receive a GitHub repository name and"
@@ -184,6 +202,7 @@ class VerusPromptBuilder(PromptBuilder):
         user = (
             f"Repository: {repo}\n\n"
             f"README:\n{readme}\n\n"
+            f"{_format_doc_snippets(doc_snippets)}"
             "Come up with an idea for a Verus program inspired by this repository and implement it."
             " Output only Verus source code."
         )

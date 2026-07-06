@@ -1,0 +1,13 @@
+An `assigns` clause is a frame condition listing the memory locations a function may modify; everything else is guaranteed unchanged. Write `assigns \nothing;` for a pure function, or list lvalues and ranges (e.g. `*p`, `a[0..n-1]`). WP both checks the body respects the frame and uses the frame at call sites to preserve facts about untouched memory.
+
+```c
+/*@
+  requires \valid(p);
+  assigns  *p;
+  ensures  *p == \old(*p) + 1;
+*/
+void incr(int *p)
+{
+  *p = *p + 1;
+}
+```

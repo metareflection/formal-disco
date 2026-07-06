@@ -1,0 +1,152 @@
+[
+  {
+    "id": "numeric-types",
+    "title": "Numeric types (int, nat, real)",
+    "regex": "\\b(int|nat|real)\\b"
+  },
+  {
+    "id": "bitvectors",
+    "title": "Bit-vector types",
+    "regex": "\\bbv\\d+\\b"
+  },
+  {
+    "id": "chars-strings",
+    "title": "Characters and strings",
+    "regex": "\\b(char|string)\\b"
+  },
+  {
+    "id": "sets-multisets",
+    "title": "Sets and multisets",
+    "regex": "\\b(set|iset|multiset)\\b\\s*[<{(]"
+  },
+  {
+    "id": "sequences",
+    "title": "Sequences",
+    "regex": "\\bseq\\s*[<(]"
+  },
+  {
+    "id": "maps",
+    "title": "Maps and imaps",
+    "regex": "\\b(map|imap)\\s*[<\\[]"
+  },
+  {
+    "id": "arrays",
+    "title": "Arrays (1D and multi-D)",
+    "regex": "\\barray\\d*\\b|\\bnew\\s+\\w+\\s*\\["
+  },
+  {
+    "id": "datatypes",
+    "title": "Inductive datatypes",
+    "regex": "\\bdatatype\\b"
+  },
+  {
+    "id": "subset-types-newtypes",
+    "title": "Subset types and newtypes",
+    "regex": "\\bnewtype\\b|\\btype\\s+\\w+(\\s*<[^>]*>)?\\s*="
+  },
+  {
+    "id": "classes-traits",
+    "title": "Classes and traits",
+    "regex": "\\b(class|trait)\\s+\\w+"
+  },
+  {
+    "id": "methods",
+    "title": "Methods (in/out parameters, constructors)",
+    "regex": "\\bmethod\\s+\\w+|\\bconstructor\\b"
+  },
+  {
+    "id": "functions-predicates",
+    "title": "Functions and predicates",
+    "regex": "\\b(function|predicate)\\b"
+  },
+  {
+    "id": "lemmas",
+    "title": "Lemmas (including two-state)",
+    "regex": "\\blemma\\b|\\btwostate\\s+lemma\\b"
+  },
+  {
+    "id": "extreme-predicates",
+    "title": "Least/greatest predicates and lemmas",
+    "regex": "\\b(least|greatest)\\s+(predicate|lemma)\\b"
+  },
+  {
+    "id": "modules-imports",
+    "title": "Modules, imports, and refinement",
+    "regex": "\\bmodule\\s+\\w+|\\bimport\\b"
+  },
+  {
+    "id": "decreases-termination",
+    "title": "Termination via decreases",
+    "regex": "\\bdecreases\\b"
+  },
+  {
+    "id": "reads-modifies-frames",
+    "title": "Frame clauses (reads, modifies, fresh, unchanged, old)",
+    "regex": "\\b(reads|modifies|fresh|unchanged|old)\\b"
+  },
+  {
+    "id": "ghost-code",
+    "title": "Ghost code, reveal, opaque",
+    "regex": "\\bghost\\b|\\b(reveal|hide)\\b|\\{:opaque\\}|\\bopaque\\s+(function|predicate)"
+  },
+  {
+    "id": "control-flow",
+    "title": "Control flow (if, while, for, match, break)",
+    "regex": "\\b(while|match|break|continue)\\b|\\bfor\\s+\\w+\\s*:="
+  },
+  {
+    "id": "assertions",
+    "title": "Assertions (assert/assume/expect, assert ... by)",
+    "regex": "\\b(assert|assume|expect)\\b"
+  },
+  {
+    "id": "calc-proofs",
+    "title": "Calculational proofs (calc blocks)",
+    "regex": "\\bcalc\\b"
+  },
+  {
+    "id": "forall-statement",
+    "title": "Forall proof/update statement",
+    "regex": "\\bforall\\s+[\\w,\\s|<>=:!()]*(\\{|\\bensures\\b)"
+  },
+  {
+    "id": "failure-compatible",
+    "title": "Failure-compatible types and :- operator",
+    "regex": ":-"
+  },
+  {
+    "id": "quantifiers",
+    "title": "Quantifier expressions (forall/exists)",
+    "regex": "\\b(forall|exists)\\b[^{}\\n]*::"
+  },
+  {
+    "id": "comprehensions",
+    "title": "Set/map/sequence comprehensions",
+    "regex": "\\b(set|map|imap|iset)\\s+\\w+[^{};]*::|\\bseq\\s*\\("
+  },
+  {
+    "id": "lambdas-arrows",
+    "title": "Lambda expressions and arrow types",
+    "regex": "->|~>|=>"
+  },
+  {
+    "id": "let-if-match-exprs",
+    "title": "Let, if, and match expressions",
+    "regex": "\\bif\\b[^{;]*\\bthen\\b[^{;]*\\belse\\b|\\bmatch\\b\\s+[^{]*\\bcase\\b|\\bvar\\s+\\w+\\s*:[^=]*:="
+  },
+  {
+    "id": "logical-ops",
+    "title": "Logical operators (==>, <==, <==>, &&, ||)",
+    "regex": "==>|<==|<==>|&&|\\|\\|"
+  },
+  {
+    "id": "attributes",
+    "title": "Verification attributes ({:fuel}, {:trigger}, {:induction}, ...)",
+    "regex": "\\{:[a-zA-Z_]\\w*"
+  },
+  {
+    "id": "iterators-coinduction",
+    "title": "Iterators and coinductive datatypes",
+    "regex": "\\biterator\\b|\\bcodatatype\\b|\\bcolemma\\b"
+  }
+]

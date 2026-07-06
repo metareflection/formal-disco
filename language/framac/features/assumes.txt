@@ -1,0 +1,17 @@
+An `assumes` clause is the guard of a named behavior: it is evaluated in the pre-state and selects when that behavior applies. Unlike `requires`, an `assumes` is not an obligation on the caller; it simply conditions the behavior's `ensures` and `assigns`. The behavior's postconditions must hold only in calls where the `assumes` predicate is true.
+
+```c
+/*@
+  assigns \nothing;
+  behavior zero:
+    assumes n == 0;
+    ensures \result == 1;
+  behavior pos:
+    assumes n > 0;
+    ensures \result == n;
+*/
+int factorial_base(int n)
+{
+  return (n == 0) ? 1 : n;
+}
+```

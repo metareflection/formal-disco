@@ -1,0 +1,13 @@
+The `\old(e)` term evaluates `e` in the function's pre-state and is used in postconditions to compare results against the inputs as they were on entry. The more general `\at(e, L)` evaluates `e` in the state labeled `L` (e.g. `Pre`, `Here`, `Post`, or a user label), which is indispensable for relating loop invariants across program points.
+
+```c
+/*@
+  requires \valid(p);
+  assigns  *p;
+  ensures  *p == \old(*p) + n;
+*/
+void add_to(int *p, int n)
+{
+  *p = *p + n;
+}
+```

@@ -1,22 +1,18 @@
 # Distillation training config (used by: `python distill.py sft`)
 
 defaults:
-    - data: null
-    - _self_
+  - data: null
+  - _self_
 
 # HF model id
-# model_id: Qwen/Qwen3-Coder-30B-A3B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B # 
-model_id: Qwen/Qwen2.5-Coder-32B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B # 
+# model_id: Qwen/Qwen3-Coder-30B-A3B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B #
+model_id: Qwen/Qwen2.5-Coder-32B-Instruct # deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct # Qwen/Qwen2.5-Coder-32B #
 
 # Output directory (relative to Hydra run dir unless absolute)
-output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-distilled_si1-lemma
-# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-distilled_si2
-# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_opus-verus-distilled_si1
-# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_sonnet+opus-verus-distilled
-# output_dir: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/models/qwen2.5-32B_verus-fixer
+output_dir: /n/holylabs/amin_lab/Lab/namin/sft-out-framac-opus-fewshot
 
-# Formal language (dafny, verus)
-language: dafny
+# Formal language (dafny, verus, framac)
+language: framac
 
 # Whether to filter to success only examples
 success_only: true
@@ -24,9 +20,15 @@ success_only: true
 # Whether to also accept goal_unproven as success
 treat_goal_unproven_as_success: false
 
+# If non-null (in (0, 1]), filter SFT examples per prompt type to the top
+# fraction by best per-metric surprisal rank under the prompt-type-pooled
+# feature distribution. Used as an entropy-maximization-style data selection
+# for iterative SFT. Set to null to disable.
+top_surprisal_fraction: 0.33
+
 # Training
 max_seq_length: 8192
-# max_steps: 20000
+max_steps: null
 per_device_train_batch_size: 2
 gradient_accumulation_steps: 1
 learning_rate: 2.0e-4

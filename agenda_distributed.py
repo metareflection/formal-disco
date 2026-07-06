@@ -166,12 +166,25 @@ class AgendaServer:
 
             # Write server address to file if requested
             if self.server_address_path:
-                hostname = socket.gethostname()
-                self._write_server_address(hostname, self.port)
+                self._write_server_address(self._discoverable_host(), self.port)
 
         self._running = True
         async with self.server:
             await self.server.serve_forever()
+
+    def _discoverable_host(self) -> str:
+        # If bound to a specific interface, advertise that; gethostname() is
+        # right on hosts where it resolves (e.g. cluster nodes), but on macOS
+        # the bare hostname often isn't in DNS or /etc/hosts. Fall back to
+        # loopback when we can't resolve our own name.
+        if self.host and self.host not in ("0.0.0.0", "::", ""):
+            return self.host
+        hostname = socket.gethostname()
+        try:
+            socket.gethostbyname(hostname)
+            return hostname
+        except OSError:
+            return "127.0.0.1"
 
     def _write_server_address(self, host: str, port: int):
         """Write server address info to a JSON file for clients to discover."""

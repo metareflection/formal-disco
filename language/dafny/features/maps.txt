@@ -1,0 +1,24 @@
+Maps `map<K, V>` are finite key-value associations; `imap<K, V>` are potentially infinite. Maps support display syntax `map[k1 := v1, ...]`, lookup `m[k]`, membership `k in m`, key/value sets `m.Keys`/`m.Values`, and functional update `m[k := v]`.
+
+```dafny
+method Maps() {
+  var m: map<string, int> := map["one" := 1, "two" := 2, "three" := 3];
+
+  assert "one" in m;
+  assert "four" !in m;
+  assert m["two"] == 2;
+  assert m.Keys == {"one", "two", "three"};
+  assert |m| == 3;
+
+  var m2 := m["four" := 4];
+  assert m2["four"] == 4;
+  assert m2.Keys == m.Keys + {"four"};
+
+  var m3 := m - {"one"};
+  assert "one" !in m3;
+
+  // Infinite map via comprehension
+  var doubles: imap<int, int> := imap k :: 2 * k;
+  assert doubles[5] == 10;
+}
+```

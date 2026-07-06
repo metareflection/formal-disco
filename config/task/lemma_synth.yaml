@@ -1,2 +1,2 @@
 _target_: tasks.lemma_synth.LemmaSynthTask
-max_attempts: 3
+max_attempts: 4

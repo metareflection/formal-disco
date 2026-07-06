@@ -1,0 +1,31 @@
+Lambda expressions create anonymous functions: `(x: T) => e` or simply `x => e`. Arrow types come in three flavors: `T -> U` (total, no heap reads), `T --> U` (partial, no heap reads), and `T ~> U` (most general -- partial and may read heap state, with `reads`/`requires` clauses).
+
+```dafny
+function Apply<T, U>(f: T -> U, x: T): U
+{
+  f(x)
+}
+
+function Compose<A, B, C>(f: A -> B, g: B -> C): A -> C
+{
+  x => g(f(x))
+}
+
+method Lambdas()
+{
+  var inc: int -> int := x => x + 1;
+  var sq: int -> int := x => x * x;
+  assert Apply(inc, 5) == 6;
+  assert Apply(sq, 4) == 16;
+
+  var incThenSq := Compose(inc, sq);
+  assert incThenSq(3) == 16;
+
+  var add: (int, int) -> int := (a, b) => a + b;
+  assert add(2, 3) == 5;
+
+  // Partial / reading arrow with a precondition
+  var safe: int ~> int := x requires x != 0 => 100 / x;
+  assert safe(2) == 50;
+}
+```

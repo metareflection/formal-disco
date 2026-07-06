@@ -1,0 +1,21 @@
+`#[verifier::external_body]` tells Verus to trust the function's `requires`/`ensures` without checking the body. This is the standard way to wrap Rust I/O, FFI, or std-library calls so that verified callers can rely on a contract while the body itself is not verified.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+#[verifier::external_body]
+fn print_u32(x: u32) {
+    println!("{}", x);
+}
+
+fn show_double(x: u32)
+    requires x < 1_000_000,
+{
+    let d = x + x;
+    print_u32(d);
+}
+
+} // verus!
+```

@@ -1,0 +1,16 @@
+Dafny has a `char` type for individual Unicode scalar values and a `string` type which is a synonym for `seq<char>`. String literals use double quotes and support the usual escapes (\n, \t, \", \\). All sequence operations apply to strings.
+
+```dafny
+method CharsAndStrings() {
+  var c: char := 'A';
+  var s: string := "hello";
+  var t: string := s + " world";
+
+  assert |s| == 5;
+  assert s[0] == 'h';
+  assert t == "hello world";
+  assert "abc"[1..] == "bc";
+  assert c as int == 65;
+  assert (65 as char) == 'A';
+}
+```

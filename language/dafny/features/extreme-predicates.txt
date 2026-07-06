@@ -1,0 +1,31 @@
+A `least predicate` denotes the least fixpoint of its body -- the smallest set closed under the recursive definition (inductive). A `greatest predicate` denotes the greatest fixpoint (coinductive). Their accompanying `least lemma` / `greatest lemma` declarations get specialized induction/coinduction principles for proofs.
+
+```dafny
+least predicate Reaches(x: int, y: int)
+{
+  x == y || (x < y && Reaches(x + 1, y))
+}
+
+least lemma ReachesIsBounded(x: int, y: int)
+  requires Reaches(x, y)
+  ensures x <= y
+{
+}
+
+codatatype Stream<T> = Cons(head: T, tail: Stream<T>)
+
+function Zeros(): Stream<int>
+{
+  Cons(0, Zeros())
+}
+
+greatest predicate AllZero(s: Stream<int>)
+{
+  s.head == 0 && AllZero(s.tail)
+}
+
+greatest lemma ZerosAreAllZero()
+  ensures AllZero(Zeros())
+{
+}
+```

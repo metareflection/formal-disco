@@ -1,0 +1,28 @@
+`Map<K, V>` is a ghost partial map. Useful operations: `m.contains_key(k)`, `m[k]` (when the key is present), `m.insert(k, v)`, `m.remove(k)`, `m.dom()` (key set), and the `map![...]` macro for literal maps.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+proof fn map_insert_lookup<K, V>(m: Map<K, V>, k: K, v: V) {
+    let m2 = m.insert(k, v);
+    assert(m2.contains_key(k));
+    assert(m2[k] == v);
+}
+
+proof fn map_literal() {
+    let m: Map<int, int> = map![1 => 10, 2 => 20];
+    assert(m.contains_key(1));
+    assert(m[1] == 10);
+    assert(m[2] == 20);
+}
+
+proof fn map_remove_then_insert<K, V>(m: Map<K, V>, k: K, v: V)
+    requires !m.contains_key(k),
+    ensures m.insert(k, v).remove(k) =~= m,
+{
+}
+
+} // verus!
+```

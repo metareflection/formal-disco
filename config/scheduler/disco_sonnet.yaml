@@ -1,11 +1,15 @@
 _target_: scheduler.RoundRobinScheduler
 
 turn_fuel: 5
+language: dafny
 
 workers:
   - _target_: worker.initiator.Initiator
     jsonl_path: data/gh-readmes-100k.jsonl
     distill: all
+    language: ${...language}
+    doc_snippets_min: 0
+    doc_snippets_max: 2
     llm:
       _target_: langchain_aws.ChatBedrock
       model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
@@ -17,6 +21,7 @@ workers:
     attempt_priority_factor: 0.9
     interest_success_boost: 1.2
     interest_recursion_gamma: 0.0
+    language: ${...language}
     llm:
       _target_: langchain_aws.ChatBedrock
       model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0
@@ -27,6 +32,7 @@ workers:
     distill: all
     interest_success_boost: 1.05
     interest_recursion_gamma: 0.0
+    language: ${...language}
     llm:
       _target_: langchain_aws.ChatBedrock
       model_id: global.anthropic.claude-sonnet-4-5-20250929-v1:0

@@ -1,0 +1,16 @@
+Dafny has three built-in numeric types: int (unbounded integers), nat (non-negative integers, a subset of int), and real (unbounded rationals). Integer and real arithmetic do not overflow and are kept exact for verification.
+
+```dafny
+method NumericTypes() {
+  var i: int := -42;
+  var n: nat := 7;
+  var r: real := 3.5;
+
+  assert i + 50 == 8;
+  assert n * 3 == 21;
+  assert r * 2.0 == 7.0;
+  assert (n as real) + r == 10.5;
+  assert i / 5 == -9;          // integer division truncates toward negative infinity
+  assert i % 5 == 3;           // Dafny mod is always non-negative
+}
+```

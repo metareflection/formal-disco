@@ -32,6 +32,7 @@ import argparse
 import json
 import logging
 import pickle
+import re
 import sys
 from pathlib import Path
 from typing import Iterator
@@ -97,6 +98,30 @@ def _iter_records(path: Path, fmt: str) -> Iterator[dict]:
     raise ValueError(f"Unknown format: {fmt}")
 
 
+_FENCE_RE = re.compile(r"```(?:rust|Rust)?\s*\n?(.*?)```", re.DOTALL)
+
+
+def _extract_verified_code(rec: dict) -> str | None:
+    """Pull the verified Verus program out of a record.
+
+    The HF files actually ship with `prompt`/`input`/`output` columns, where
+    `output` is the verified code wrapped in a ```rust ... ``` fence. Older
+    docs mention `verified_code`/`status`; we accept either shape.
+    """
+    code = rec.get("verified_code")
+    if code:
+        return code
+
+    out = rec.get("output")
+    if not out:
+        return None
+
+    m = _FENCE_RE.search(out)
+    if m:
+        return m.group(1)
+    return out
+
+
 def convert_source(
     source: str,
     output_dir: Path,
@@ -121,10 +146,15 @@ def convert_source(
 
     for rec in _iter_records(local_path, fmt):
         n_seen += 1
-        status = str(rec.get("status", "")).lower()
+        # The published files don't ship with a `status` column — they only
+        # include curated/verified outputs. When the column is missing we
+        # treat every row as `success` (matching the dataset's intent); when
+        # it's present (older snapshots), we honor the filter.
+        raw_status = rec.get("status")
+        status = "success" if raw_status is None else str(raw_status).lower()
         if status_filter and status not in status_filter:
             continue
-        code = rec.get("verified_code") or ""
+        code = _extract_verified_code(rec) or ""
         if not code or not code.strip():
             n_no_code += 1
             continue
@@ -140,7 +170,7 @@ def convert_source(
             "source_index": idx,
         }
         # Keep the original status when we accept non-success records.
-        if status and status != "success":
+        if raw_status is not None and status != "success":
             properties["status"] = status
 
         objects[path] = Object(

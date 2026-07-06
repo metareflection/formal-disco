@@ -1,0 +1,34 @@
+Lemmas are ghost methods used purely for proof; their body provides hints (e.g., recursive calls, assertions) and their `ensures` clauses become facts the verifier can use at the call site. `twostate lemma` relates two heap states (the state at the start and at the call) and is useful for reasoning about mutations.
+
+```dafny
+function Sum(n: nat): nat
+{
+  if n == 0 then 0 else n + Sum(n - 1)
+}
+
+lemma SumFormula(n: nat)
+  ensures 2 * Sum(n) == n * (n + 1)
+{
+  if n == 0 {
+  } else {
+    SumFormula(n - 1);
+  }
+}
+
+class Counter {
+  var v: int
+  constructor() ensures v == 0 { v := 0; }
+}
+
+twostate lemma CounterIncreases(c: Counter)
+  requires old(c.v) <= c.v
+  ensures old(c.v) <= c.v
+{
+}
+
+method UseLemmas()
+{
+  SumFormula(10);
+  assert 2 * Sum(10) == 110;
+}
+```

@@ -1,0 +1,36 @@
+A `&mut T` parameter lets a function mutate the caller's value. Postconditions refer to the entry value with `*old(x)` and to the exit value with `*final(x)` (an explicit `*x` is ambiguous and must be wrapped). This is how Verus reasons about in-place updates.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn add_one(x: &mut u32)
+    requires *old(x) < u32::MAX,
+    ensures *final(x) == *old(x) + 1,
+{
+    *x = *x + 1;
+}
+
+fn swap(a: &mut i32, b: &mut i32)
+    ensures *final(a) == *old(b),
+            *final(b) == *old(a),
+{
+    let tmp = *a;
+    *a = *b;
+    *b = tmp;
+}
+
+fn use_mut() {
+    let mut n: u32 = 5;
+    add_one(&mut n);
+    assert(n == 6);
+
+    let mut x: i32 = 1;
+    let mut y: i32 = 2;
+    swap(&mut x, &mut y);
+    assert(x == 2 && y == 1);
+}
+
+} // verus!
+```

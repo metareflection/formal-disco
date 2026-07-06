@@ -30,7 +30,7 @@ class RoundRobinScheduler:
     Simple scheduler that cycles through workers, giving each `turn_fuel` units of fuel per turn.
     """
 
-    def __init__(self, turn_fuel: int, workers: list[Worker]) -> None:
+    def __init__(self, turn_fuel: int, workers: list[Worker], language: str) -> None:
         self.turn_fuel = max(0, int(turn_fuel))
         self.workers = list(workers)
 

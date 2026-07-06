@@ -8,10 +8,14 @@ Each backend provides:
     (implement, repair, extend, idea generation).
 """
 
+import math
+import random
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, TypedDict
+from functools import cached_property
+from pathlib import Path
+from typing import Any, Optional, TypedDict
 
 
 class VerificationOutcome(Enum):
@@ -76,8 +80,19 @@ class PromptBuilder:
     def idea(self, repo: str, readme: str) -> list[ChatMessage]:
         raise NotImplementedError
 
-    def initiate(self, *, repo: str, readme: str) -> list[ChatMessage]:
-        """Prompt the model to come up with an idea and implement it in one shot."""
+    def initiate(
+        self,
+        *,
+        repo: str,
+        readme: str,
+        doc_snippets: Optional[list[tuple[str, str]]] = None,
+    ) -> list[ChatMessage]:
+        """Prompt the model to come up with an idea and implement it in one shot.
+
+        `doc_snippets` is an optional list of (feature_id, text) pairs sampled
+        from the backend's documentation. Backends should surface them in the
+        prompt as supplementary inspiration for which language constructs to use.
+        """
         raise NotImplementedError
 
     def generate(self, *, repo: str | None = None, readme: str | None = None) -> list[ChatMessage]:
@@ -92,42 +107,32 @@ class PromptBuilder:
 class LanguageBackend:
     """Implements language-specific operations over programs.
 
-    A backend supports verification, program metrics (complexity and diversity),
-    and LLM prompt construction.  Each backend may also expose additional
-    language-specific operations used when deriving training examples.
+    A backend supports verification, program feature metrics, and LLM prompt
+    construction.  Each backend may also expose additional language-specific
+    operations used when deriving training examples.
 
-    The metrics work as follows.
+    A program feature metric is a Counter of occurrences of a given feature
+    in the program. Keys must be discrete (str, int, bool)
+    so that discrete entropy is a meaningful diversity measure.
 
-    - A program complexity metric is a single number associated with the program
-      that measures one dimension of its complexity. These can include:
-        - Average loops per method
-        - Average function/method body size
-        - Average assertion/loop invariant complexity (e.g., number of identifiers)
-        - Average loop invariants per method
-        - Average lemma body length
+    Examples of features:
+      - Subject words in identifiers (str)
+      - Logical templates of assertions/invariants/pre/post-conditions (str)
+      - Loop skeletons (str)
+      - Per-method body size (int)
+      - Number of loops per method (int)
+      - Number of identifiers in each assertion or invariant (int)
 
-      As a rule of thumb, ideally these metrics should not be just related to program size
-      (e.g., lines of code). A program can be short and complex, or long and trivial.
-      We're still exploring what these metrics /should/ be, but the idea is that the discovery
-      system will optimize for finding programs maximizing these metrics, so they should
-      reflect properties we want to encourage in our synthetic corpus.
-
-    - A program feature metric counts occurrences of certain features in the program,
-      and should be useful for measuring diversity, or semantic program similarity.
-      These can include things like:
-        - Words appearing in method/lemma/datatype/class names
-        - Logical templates of assertions, loop invariants, pre/post-conditions
-        - Number of assertions per method
-        - Lemma body lengths
-        - Loop structures (e.g., "for { for {} }", "while {}")
-
-      These metrics will allow us to do two things:
-      1. Compare the feature distributions in our synthetic vs a reference corpus
-         (e.g., DafnyBench), allowing us to compare diversity. Entropy is a simple metric for this.
-      2. For each program, measure its "uniqueness" with respect to the whole corpus.
-         This will allow us to select good in-context examples for workers in the distributed system.
-         For instance, a program that uses a very unique loop structure or post-condition might be
-         selected over programs using extremely common ones.
+    These metrics support two consumers:
+      1. Diversity: entropy of the pooled Counter across a corpus measures
+         how varied the feature is. For ordered (int) features we may
+         additionally compute statistics like median/p90 to track how the
+         discovery system pushes those values up over time
+         (once we do entropy maximization, and diversity pushes towards higher values).
+      2. Per-program uniqueness: how rare are this program's features
+         relative to the corpus, used to select in-context examples for
+         workers, to prioritize things in the agenda, and to do entropy
+         maximization via iterative SFT ranking by uniqueness/surprisal.
     """
 
     @property
@@ -136,14 +141,20 @@ class LanguageBackend:
         raise NotImplementedError
 
     @property
-    def complexity_metrics(self) -> set[str]:
-        """Return the set of program complexity metrics supported by this backend."""
-        raise NotImplementedError
-
-    @property
     def feature_metrics(self) -> set[str]:
         """Return the set of program feature metrics supported by this backend."""
         raise NotImplementedError
+
+    @property
+    def surprisal_metrics(self) -> frozenset[str]:
+        """Subset of feature_metrics that drives entropy-maximizing data
+        selection (distill.py surprisal ranking). The remaining metrics are
+        still computed for diversity tracking and in-context selection, but
+        do not influence SFT example selection.
+
+        Must be a subset of feature_metrics. Defaults to all of them.
+        """
+        return frozenset(self.feature_metrics)
 
     @property
     def file_extension(self) -> str:
@@ -173,20 +184,100 @@ class LanguageBackend:
         """Call the verifier on a batch of programs in parallel and return the outcomes."""
         raise NotImplementedError
 
-    def complexity(self, program: 'Program') -> dict[str, Any]:
-        """Return a dict of complexity metrics for the given program.
-
-        All keys must be present in complexity_metrics().
-        """
-        raise NotImplementedError
-
     def feature_sets(self, program: 'Program') -> dict[str, Counter[Any]]:
         """Return a dict of feature Counters for the given program.
 
-        Intended for measuring corpus diversity and individual program
-        uniqueness.  All keys must be present in feature_metrics().
+        Counter keys must be discrete (str, int, bool) — see class docstring.
+        All metric names returned must be present in feature_metrics().
         """
         raise NotImplementedError
+
+    @property
+    def features_dir(self) -> Optional[Path]:
+        """Directory holding per-feature documentation snippets (*.txt).
+
+        Each .txt filename stem is the feature id; its content is a focused
+        prose+example snippet describing one language construct. Backends
+        that have no such corpus return None.
+        """
+        return None
+
+    @cached_property
+    def doc_snippets(self) -> dict[str, str]:
+        """Map from feature id (filename stem) to snippet text."""
+        d = self.features_dir
+        if d is None or not d.is_dir():
+            return {}
+        return {p.stem: p.read_text(encoding='utf-8') for p in sorted(d.glob('*.txt'))}
+
+    def sample_doc_snippets(
+        self,
+        rng: random.Random,
+        n: int,
+        weights: Optional[dict[str, float]] = None,
+    ) -> list[tuple[str, str]]:
+        """Sample n distinct (feature_id, snippet) pairs from this backend's docs.
+
+        With weights=None, samples uniformly without replacement. Otherwise,
+        weights[feature_id] is an unnormalized sampling probability (ids absent
+        or with non-positive weight are excluded). This is the hook for later
+        entropy-maximizing selection — pass weights inversely proportional to
+        a feature's current corpus coverage.
+        """
+        snippets = self.doc_snippets
+        if not snippets or n <= 0:
+            return []
+        ids = list(snippets.keys())
+        n = min(n, len(ids))
+        if weights is None:
+            chosen = rng.sample(ids, n)
+        else:
+            remaining_ids = ids[:]
+            remaining_w = [max(0.0, weights.get(i, 0.0)) for i in remaining_ids]
+            chosen = []
+            while len(chosen) < n and any(w > 0 for w in remaining_w):
+                idx = rng.choices(range(len(remaining_ids)), weights=remaining_w, k=1)[0]
+                chosen.append(remaining_ids[idx])
+                remaining_ids.pop(idx)
+                remaining_w.pop(idx)
+        return [(i, snippets[i]) for i in chosen]
+
+    def surprisal(
+        self,
+        program: 'Program',
+        corpus_stats: dict[str, Counter[Any]],
+    ) -> dict[str, float]:
+        """Per-metric maximum surprisal (in bits) of a program under a corpus.
+
+        For each feature metric, computes the self-information
+        -log2(count(v) / total) for every value v the program exhibits, and
+        returns the maximum -- i.e., how surprising the program's rarest value
+        of that feature is relative to the pooled corpus distribution.
+
+        corpus_stats[metric] is the pooled Counter across the corpus. The
+        program is typically itself in the corpus, so any value it has should
+        already be counted; if a value is nevertheless unseen, its surprisal
+        is +inf. Metrics for which the program has no values are omitted from
+        the result.
+        """
+        feats = self.feature_sets(program)
+        result: dict[str, float] = {}
+        for metric, counter in feats.items():
+            if not counter:
+                continue
+            pooled = corpus_stats[metric]
+            total = sum(pooled.values())
+            max_s = 0.0
+            for v in counter:
+                c = pooled[v]
+                if c == 0:
+                    max_s = math.inf
+                    break
+                s = math.log2(total / c)
+                if s > max_s:
+                    max_s = s
+            result[metric] = max_s
+        return result
 
 
 class Language(Enum):
@@ -195,6 +286,7 @@ class Language(Enum):
     DAFNY = 0
     VERUS = 1
     LEAN = 2
+    FRAMAC = 3
 
     def get_backend(self) -> LanguageBackend:
         if self == Language.DAFNY:
@@ -203,6 +295,9 @@ class Language(Enum):
         if self == Language.VERUS:
             from .verus import VerusBackend
             return VerusBackend()
+        if self == Language.FRAMAC:
+            from .framac import FramaCBackend
+            return FramaCBackend()
         if self == Language.LEAN:
             from .lean import LeanBackend
             return LeanBackend()

@@ -1,0 +1,23 @@
+# Used for the downstream tasks.
+sources:
+  - type: pickle
+    extract_from_verified: true
+    path: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-verus-sn-disco3__claude-opus__docs__10k.pkl
+  - type: pickle
+    extract_from_verified: true
+    path: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-verus-sn-disco3__claude-sonnet__docs__10k.pkl
+  - type: pickle
+    extract_from_verified: true
+    path: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-verus-sn-disco3__qwen-docs-distilled_it0.pkl
+  - type: pickle
+    extract_from_verified: true
+    path: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-verus-sn-disco3__qwen-docs-distilled_it1.pkl
+  - type: pickle
+    extract_from_verified: true
+    path: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-verus-sn-disco3__qwen-docs-distilled_it2.pkl
+  - type: pickle
+    extract_from_verified: true
+    path: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-verus-sn-disco3__qwen-docs-distilled_it3.pkl
+  - type: pickle
+    extract_from_verified: true
+    path: /n/holylabs/kempner_poesia_lab/Lab/formal-disco/agendas/agenda-verus-sn-disco3__qwen-docs-distilled_it4.pkl

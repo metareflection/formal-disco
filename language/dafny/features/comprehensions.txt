@@ -1,0 +1,25 @@
+Comprehensions construct collections from a bound variable, a range/predicate, and a body. Set: `set x | P(x)`; with body: `set x | P(x) :: f(x)`. Map: `map x | P(x) :: k(x) := v(x)`. Sequence: `seq(n, i => f(i))` builds a sequence of length `n` where index `i` has value `f(i)`.
+
+```dafny
+method Comprehensions()
+{
+  // Set comprehension
+  var evens := set i | 0 <= i < 10 && i % 2 == 0;
+  assert evens == {0, 2, 4, 6, 8};
+  assert |evens| == 5;
+
+  // Set comprehension with body
+  var squaresSet := set i | 0 <= i < 4 :: i * i;
+  assert 0 * 0 in squaresSet;
+  assert 3 * 3 in squaresSet;
+
+  // Map comprehension
+  var squareMap := map i | 0 <= i < 4 :: i := i * i;
+  assert squareMap[3] == 9;
+  assert squareMap.Keys == {0, 1, 2, 3};
+
+  // Sequence comprehension
+  var doubles := seq(5, i => 2 * i);
+  assert doubles == [0, 2, 4, 6, 8];
+}
+```

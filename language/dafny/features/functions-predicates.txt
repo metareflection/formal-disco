@@ -1,0 +1,33 @@
+Functions are pure mathematical mappings from inputs to a single output value; predicates are functions returning `bool`. Both are by default ghost (used only for specification/verification) but can be declared compilable. They are defined by a single expression, may be recursive (with `decreases`), and can be invoked inside specifications.
+
+```dafny
+function Abs(x: int): int
+{
+  if x < 0 then -x else x
+}
+
+predicate IsSorted(s: seq<int>)
+{
+  forall i, j :: 0 <= i < j < |s| ==> s[i] <= s[j]
+}
+
+function Fact(n: nat): nat
+  decreases n
+{
+  if n == 0 then 1 else n * Fact(n - 1)
+}
+
+predicate Divides(d: int, n: int)
+  requires d != 0
+{
+  n % d == 0
+}
+
+method UseFunctionsAndPredicates()
+{
+  assert Abs(-5) == 5;
+  assert IsSorted([1, 2, 2, 3]);
+  assert Fact(4) == 24;
+  assert Divides(3, 12);
+}
+```

@@ -1,4 +1,4 @@
-"""Verus language backend implementing verification, complexity metrics, and diversity features.
+"""Verus language backend implementing verification and feature metrics.
 
 Verification is performed by invoking `verus` on a temporary file.
 
@@ -6,15 +6,21 @@ Metrics are computed with regex-based analyses adapted for Verus (Rust with
 verification annotations), after stripping comments.
 """
 
+import json
 import os
 import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Optional
+from functools import cached_property
+from pathlib import Path
+from typing import Optional
 
 from execute import execute
 from .. import LanguageBackend, VerificationOutcome, VerificationOutput
 from .prompt import VerusPromptBuilder
+
+_FEATURES_DIR = Path(__file__).parent / 'features'
+_LANGUAGE_FEATURES_JSON = _FEATURES_DIR / 'language-features.json'
 
 
 VERUS_KEYWORDS = frozenset({
@@ -59,6 +65,13 @@ _INV_RE = re.compile(r'^\s*invariant\b\s*(.+)', re.MULTILINE)
 _ASSERT_RE = re.compile(r'^\s*assert\s*\((.+)', re.MULTILINE)
 _ENSURES_RE = re.compile(r'^\s*ensures\b\s*(.+)', re.MULTILINE)
 _REQUIRES_RE = re.compile(r'^\s*requires\b\s*(.+)', re.MULTILINE)
+# "Annotations" = body-level proof hints (asserts + loop invariants).
+# Specifications (requires/ensures/decreases) are not counted here.
+_ANNOTATION_REGEXES = (_INV_RE, _ASSERT_RE)
+
+
+def _count_annotations(text: str) -> int:
+    return sum(len(rx.findall(text)) for rx in _ANNOTATION_REGEXES)
 _QUANTIFIER_RE = re.compile(r'\b(forall|exists)\b')
 _LOOP_KW_RE = re.compile(r'\b(while|for|loop)\b')
 
@@ -70,6 +83,24 @@ _FN_LINE_RE = re.compile(
 _EXEC_FN_LINE_RE = re.compile(
     r'^\s*(?:pub\s+)?(?:proof\s+)?fn\b',
 )
+# Captures the qualifier on a fn declaration so we can bucket it:
+#   - proof fn        -> 'lemma' bucket
+#   - spec fn (+open/closed) -> 'method' bucket (per design 2026-05)
+#   - fn (no qualifier) -> 'method' bucket (exec)
+_FN_QUALIFIER_RE = re.compile(
+    r'^\s*(?:pub\s+)?(?:(proof|spec|open\s+spec|closed\s+spec)\s+)?fn\b',
+)
+
+
+def _classify_fn(line: str) -> Optional[str]:
+    """Return 'method' or 'lemma' for a Verus fn declaration line, else None."""
+    m = _FN_QUALIFIER_RE.match(line)
+    if not m:
+        return None
+    qualifier = (m.group(1) or '').strip()
+    if qualifier == 'proof':
+        return 'lemma'
+    return 'method'
 
 
 def _remove_comments(source: str) -> str:
@@ -263,6 +294,36 @@ def _extract_fn_loop_features(source: str) -> list[dict]:
     return results
 
 
+def _extract_annotations_per_fn(source: str) -> list[int]:
+    """Annotation counts (signature + body) for each fn in source.
+
+    Annotations counted: invariant, assert, ensures, requires, decreases, assume.
+    Signature-level annotations (requires/ensures/decreases between the fn line
+    and the opening brace) are included by scanning lines[fn..close_brace].
+    """
+    clean = _remove_comments(source)
+    lines = clean.split('\n')
+    counts: list[int] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _FN_LINE_RE.match(line):
+            brace_line, brace_col = _find_body_brace(lines, i)
+            if brace_line is None:
+                i += 1
+                continue
+            full = '\n'.join(lines[brace_line:])
+            close = _find_matching_brace(full, brace_col)
+            sig_text = '\n'.join(lines[i:brace_line])
+            body_text = full[brace_col + 1:close]
+            fn_text = sig_text + '\n' + body_text
+            counts.append(_count_annotations(fn_text))
+            i = brace_line + body_text.count('\n') + 1
+        else:
+            i += 1
+    return counts
+
+
 def _extract_body_sizes(source: str) -> list[int]:
     """Return non-blank line counts for each fn body."""
     clean = _remove_comments(source)
@@ -286,6 +347,47 @@ def _extract_body_sizes(source: str) -> list[int]:
     return sizes
 
 
+# Spec keywords whose occurrences anywhere in a fn (signature or body) count
+# as annotations for the per-fn annotation total.
+_ANNOTATION_KW_RE = re.compile(
+    r'(?<!\w)(invariant|assert|requires|ensures|decreases)(?!\w)'
+)
+
+
+def _extract_fns(source: str) -> list[dict]:
+    """Walk fn declarations and return one dict per fn:
+      {'kind': 'method' | 'lemma',
+       'body_size': int,                # non-blank lines in body
+       'annotations': int}              # spec/annotation keyword count over signature+body
+    """
+    clean = _remove_comments(source)
+    lines = clean.split('\n')
+    results: list[dict] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        kind = _classify_fn(line)
+        if kind is None:
+            i += 1
+            continue
+        brace_line, brace_col = _find_body_brace(lines, i)
+        if brace_line is None:
+            i += 1
+            continue
+        full = '\n'.join(lines[brace_line:])
+        close = _find_matching_brace(full, brace_col)
+        body = full[brace_col + 1:close]
+        sig_text = '\n'.join(lines[i:brace_line])
+        fn_text = sig_text + '\n' + body
+        results.append({
+            'kind': kind,
+            'body_size': sum(1 for ln in body.split('\n') if ln.strip()),
+            'annotations': len(_ANNOTATION_KW_RE.findall(fn_text)),
+        })
+        i = brace_line + body.count('\n') + 1
+    return results
+
+
 class VerusBackend(LanguageBackend):
     """Language backend for Verus (Rust) programs.
 
@@ -293,14 +395,23 @@ class VerusBackend(LanguageBackend):
     Most metrics are computed with simple regex-based heuristics.
     """
 
-    _COMPLEXITY_METRICS = frozenset({
-        'body_sizes', 'n_loops_per_fn', 'n_idents_in_asserts', 'n_idents_in_invs',
+    _FEATURE_METRICS = frozenset({
+        'subject_word', 'annotation_template', 'loop_skeleton',
+        'method_body_size', 'lemma_body_size', 'language_features',
+        'annotations_per_method',
     })
 
-    _FEATURE_METRICS = frozenset({
-        'subject_words', 'invariant_templates', 'assert_templates',
-        'ensures_templates', 'requires_templates', 'loop_skeletons',
+    # Subset of _FEATURE_METRICS that drives iterative-SFT surprisal ranking.
+    _SURPRISAL_METRICS = frozenset({
+        'annotation_template', 'loop_skeleton', 'method_body_size',
+        'lemma_body_size', 'annotations_per_method',
     })
+
+    # Previous feature set (pre-2026-05) — kept here for reference / easy revert:
+    #   subject_words, invariant_templates, assert_templates,
+    #   ensures_templates, requires_templates, loop_skeletons,
+    #   body_sizes, n_loops_per_fn, n_idents_in_asserts, n_idents_in_invs,
+    #   n_annotations_per_fn, n_annotations_per_program
 
     def __init__(self, verus_binary: str | None = None, verus_root: str | None = None) -> None:
         self._verus_binary = verus_binary or os.environ.get("VERUS_BINARY", "verus")
@@ -320,12 +431,25 @@ class VerusBackend(LanguageBackend):
         return VerusPromptBuilder()
 
     @property
-    def complexity_metrics(self) -> frozenset[str]:
-        return self._COMPLEXITY_METRICS
-
-    @property
     def feature_metrics(self) -> frozenset[str]:
         return self._FEATURE_METRICS
+
+    @property
+    def surprisal_metrics(self) -> frozenset[str]:
+        return self._SURPRISAL_METRICS
+
+    @property
+    def features_dir(self) -> Path:
+        return _FEATURES_DIR
+
+    @cached_property
+    def _language_feature_regexes(self) -> dict[str, re.Pattern]:
+        """Compile the regexes in features/language-features.json once."""
+        if not _LANGUAGE_FEATURES_JSON.is_file():
+            return {}
+        with _LANGUAGE_FEATURES_JSON.open('r', encoding='utf-8') as f:
+            entries = json.load(f)
+        return {e['id']: re.compile(e['regex']) for e in entries}
 
     def strip(self, program: 'Program') -> 'Program':
         clean = _remove_comments(str(program))
@@ -387,43 +511,60 @@ class VerusBackend(LanguageBackend):
                     )
         return results
 
-    def complexity(self, program: 'Program') -> dict[str, Any]:
-        source = str(program)
-        clean = _remove_comments(source)
-
-        asserts = [_first_line_stripped(m.group(1)) for m in _ASSERT_RE.finditer(clean)]
-        invariants = [_first_line_stripped(m.group(1)) for m in _INV_RE.finditer(clean)]
-
-        fn_loop_features = _extract_fn_loop_features(source)
-
-        return {
-            'body_sizes': _extract_body_sizes(source),
-            'n_loops_per_fn': [f['n_loops'] for f in fn_loop_features],
-            'n_idents_in_asserts': [len(_IDENT_RE.findall(a)) for a in asserts],
-            'n_idents_in_invs': [len(_IDENT_RE.findall(inv)) for inv in invariants],
-        }
-
     def feature_sets(self, program: 'Program') -> dict[str, Counter]:
         source = str(program)
         clean = _remove_comments(source)
 
+        # subject_word: nouns/verbs lemmatized from declaration identifiers.
         decl_names = [m.group(1) for m in _DECL_NAME_RE.finditer(source)]
         raw_words = [w for name in decl_names for w in _split_identifier(name)]
         subject_words = _nltk.lemmatize_subject_words(raw_words)
 
-        invariants = [_first_line_stripped(m.group(1)) for m in _INV_RE.finditer(clean)]
-        asserts = [_first_line_stripped(m.group(1)) for m in _ASSERT_RE.finditer(clean)]
-        ensures = [_first_line_stripped(m.group(1)) for m in _ENSURES_RE.finditer(clean)]
-        requires = [_first_line_stripped(m.group(1)) for m in _REQUIRES_RE.finditer(clean)]
+        # annotation_template: invariant/assert/ensures/requires templates,
+        # namespaced with the keyword so kinds remain distinguishable.
+        annotation_templates: list[str] = []
+        for kind, rx in (
+            ('invariant', _INV_RE), ('assert', _ASSERT_RE),
+            ('ensures', _ENSURES_RE), ('requires', _REQUIRES_RE),
+        ):
+            annotation_templates.extend(
+                f'{kind}: {_make_template(_first_line_stripped(m.group(1)))}'
+                for m in rx.finditer(clean)
+            )
 
-        fn_loop_features = _extract_fn_loop_features(source)
-        loop_skeletons = [f['loop_skeleton'] for f in fn_loop_features if f['loop_skeleton']]
+        # loop_skeleton: per exec/proof fn body.
+        loop_skeletons = [
+            f['loop_skeleton']
+            for f in _extract_fn_loop_features(source)
+            if f['loop_skeleton']
+        ]
+
+        # method_body_size / lemma_body_size / annotations_per_method.
+        # Mapping (per design 2026-05): exec fn + spec fn -> 'method',
+        # proof fn -> 'lemma'.
+        method_body_sizes: list[int] = []
+        lemma_body_sizes: list[int] = []
+        annotations_per_method: list[int] = []
+        for d in _extract_fns(source):
+            if d['kind'] == 'method':
+                method_body_sizes.append(d['body_size'])
+                annotations_per_method.append(d['annotations'])
+            elif d['kind'] == 'lemma':
+                lemma_body_sizes.append(d['body_size'])
+
+        # language_features: per-feature occurrence counts on comment-stripped source.
+        language_feature_counts: dict[str, int] = {}
+        for fid, rx in self._language_feature_regexes.items():
+            n = len(rx.findall(clean))
+            if n:
+                language_feature_counts[fid] = n
 
         return {
-            'subject_words': Counter(subject_words),
-            'invariant_templates': Counter(_make_template(s) for s in invariants),
-            'assert_templates': Counter(_make_template(s) for s in asserts),
-            'ensures_templates': Counter(_make_template(s) for s in ensures),
-            'requires_templates': Counter(_make_template(s) for s in requires),
-            'loop_skeletons': Counter(loop_skeletons),
+            'subject_word': Counter(subject_words),
+            'annotation_template': Counter(annotation_templates),
+            'loop_skeleton': Counter(loop_skeletons),
+            'method_body_size': Counter(method_body_sizes),
+            'lemma_body_size': Counter(lemma_body_sizes),
+            'language_features': Counter(language_feature_counts),
+            'annotations_per_method': Counter(annotations_per_method),
         }

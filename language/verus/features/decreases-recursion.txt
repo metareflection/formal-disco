@@ -1,0 +1,27 @@
+A `decreases` clause names a value that strictly decreases on each recursive call (or loop iteration), with respect to a well-founded order. Verus uses it to prove termination of `spec fn`s, `proof fn`s, and loops. Lexicographic tuples (`decreases m, n`) compare left-to-right.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+spec fn fact(n: nat) -> nat
+    decreases n,
+{
+    if n == 0 { 1 } else { n * fact((n - 1) as nat) }
+}
+
+proof fn fact_positive(n: nat)
+    ensures fact(n) >= 1,
+    decreases n,
+{
+    if n == 0 {
+    } else {
+        fact_positive((n - 1) as nat);
+        assert(n * fact((n - 1) as nat) >= 1) by(nonlinear_arith)
+            requires n >= 1, fact((n - 1) as nat) >= 1;
+    }
+}
+
+} // verus!
+```

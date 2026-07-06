@@ -1,0 +1,16 @@
+Every Verus program imports `vstd::prelude::*` to bring in spec types and verification primitives, then wraps verified code inside `verus! { ... }`. The `verus!` proc-macro extends Rust syntax with `requires`, `ensures`, ghost types, and quantifiers; outside the macro the code is plain Rust.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn add_one(x: u32) -> (r: u32)
+    requires x < 1000,
+    ensures r == x + 1,
+{
+    x + 1
+}
+
+} // verus!
+```

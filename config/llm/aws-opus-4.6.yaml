@@ -1,0 +1,9 @@
+write:
+  _target_: langchain_aws.ChatBedrock
+  model_id: us.anthropic.claude-opus-4-6-v1
+  region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
+
+code:
+  _target_: langchain_aws.ChatBedrock
+  model_id: us.anthropic.claude-opus-4-6-v1
+  region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}

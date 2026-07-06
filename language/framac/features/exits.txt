@@ -1,0 +1,14 @@
+An `exits` clause specifies behavior when a function leaves abnormally (e.g. via `exit`) rather than returning. `exits \false;` states the function never exits abnormally and always returns normally. A non-trivial `exits` predicate can describe the state at the point of abnormal termination, complementing the normal-return `ensures`.
+
+```c
+/*@
+  terminates \true;
+  exits      \false;
+  assigns    \nothing;
+  ensures    \result == a * a;
+*/
+int square(int a)
+{
+  return a * a;
+}
+```

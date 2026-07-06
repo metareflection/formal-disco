@@ -1,0 +1,33 @@
+Quantifier expressions `forall x :: P(x)` and `exists x :: P(x)` are first-class boolean expressions. Bound variables may be constrained by a range (`forall x | C(x) :: P(x)`). Triggers (e.g., `{:trigger}` or matched terms appearing in P) guide the SMT solver in instantiating quantifiers.
+
+```dafny
+predicate AllPositive(s: seq<int>)
+{
+  forall i :: 0 <= i < |s| ==> s[i] > 0
+}
+
+predicate HasZero(s: seq<int>)
+{
+  exists i :: 0 <= i < |s| && s[i] == 0
+}
+
+lemma PositiveImpliesNoZero(s: seq<int>)
+  requires AllPositive(s)
+  ensures !HasZero(s)
+{
+}
+
+lemma BoundedRange(n: int)
+  requires n >= 0
+  ensures forall k :: 0 <= k <= n ==> 0 <= k && k <= n
+{
+}
+
+method UseQuantifiers()
+{
+  var s := [1, 2, 3];
+  assert AllPositive(s);
+  PositiveImpliesNoZero(s);
+  assert !HasZero(s);
+}
+```

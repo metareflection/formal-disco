@@ -1,12 +1,13 @@
 _target_: scheduler.RoundRobinScheduler
 
 turn_fuel: 5
+language: dafny
 
 workers:
   - _target_: worker.initiator.Initiator
-    language: verus
     jsonl_path: data/gh-readmes-100k.jsonl
     distill: "success-only"
+    language: ${...language}
     llm:
         _target_: langchain_openai.ChatOpenAI
         model: llm
@@ -14,11 +15,11 @@ workers:
         api_key: ${oc.env:VLLM_API_KEY,EMPTY}
 
   - _target_: worker.llm_fixer.LLMFixer
-    language: verus
     distill: "success-only"
     attempt_priority_factor: 0.9
     interest_success_boost: 1.2
     interest_recursion_gamma: 0.0
+    language: ${...language}
     llm:
         _target_: langchain_openai.ChatOpenAI
         model: llm
@@ -26,10 +27,10 @@ workers:
         api_key: ${oc.env:VLLM_API_KEY,EMPTY}
 
   - _target_: worker.editor_worker.EditorWorker
-    language: verus
     distill: "success-only"
     interest_success_boost: 1.0
     interest_recursion_gamma: 0.0
+    language: ${...language}
     llm:
         _target_: langchain_openai.ChatOpenAI
         model: llm

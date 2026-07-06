@@ -1,0 +1,22 @@
+`Ghost<T>` and `Tracked<T>` are wrapper types that carry verification-only data alongside executable code. `Ghost` is fully erased at compile time; `Tracked` is also erased but participates in linear (resource) reasoning. Inside an executable function, `proof { ... }` opens a block where ghost statements (assertions, lemma calls) may run.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+fn double_with_ghost(x: u32) -> (r: u32)
+    requires x < 1_000_000,
+    ensures r == 2 * x,
+{
+    let g: Ghost<int> = Ghost(x as int);
+    let r = x + x;
+    proof {
+        assert(g@ == x as int);
+        assert(r as int == 2 * g@);
+    }
+    r
+}
+
+} // verus!
+```

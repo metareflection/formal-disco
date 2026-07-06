@@ -1,0 +1,16 @@
+A `logic` function defines a named mathematical function usable in annotations. It returns a logic type such as `integer`, `real`, or `boolean` (or a C type), and its body is a side-effect-free term. Unlike C functions, logic functions are total and pure, so they can appear freely in `requires`, `ensures`, lemmas, and assertions.
+
+```c
+/*@
+  logic integer sq(integer x) = x * x;
+
+  lemma sq_nonneg: \forall integer x; sq(x) >= 0;
+*/
+
+/*@
+  requires -1000 <= x <= 1000;
+  assigns  \nothing;
+  ensures  \result == sq(x);
+*/
+int square(int x) { return x * x; }
+```

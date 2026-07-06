@@ -1,0 +1,26 @@
+Sequences `seq<T>` are immutable, indexed, finite lists. They support indexing `s[i]`, slicing `s[i..j]`, concatenation `s + t`, functional update `s[i := v]`, prefix/suffix tests, and the constructor `seq(n, i => f(i))`.
+
+```dafny
+method Sequences() {
+  var s: seq<int> := [1, 2, 3, 4, 5];
+
+  assert s[0] == 1;
+  assert s[..2] == [1, 2];
+  assert s[2..] == [3, 4, 5];
+  assert s[1..4] == [2, 3, 4];
+  assert |s| == 5;
+
+  var t := s + [6, 7];
+  assert t == [1, 2, 3, 4, 5, 6, 7];
+
+  var u := s[2 := 99];
+  assert u == [1, 2, 99, 4, 5];
+
+  // Prefix relation
+  assert [1, 2] <= s;
+
+  // Sequence built from a function
+  var squares := seq(4, i => i * i);
+  assert squares == [0, 1, 4, 9];
+}
+```

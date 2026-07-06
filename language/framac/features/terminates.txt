@@ -1,0 +1,14 @@
+A `terminates` clause gives a predicate under which the function is guaranteed to terminate. The common form `terminates \true;` asserts unconditional termination; a guarded form names the cases in which the call returns. Combined with loop variants and `decreases` measures, it lets WP discharge termination obligations alongside functional correctness.
+
+```c
+/*@
+  requires \valid(p);
+  terminates \true;
+  assigns  *p;
+  ensures  *p == 0;
+*/
+void reset(int *p)
+{
+  *p = 0;
+}
+```

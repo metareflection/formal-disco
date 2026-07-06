@@ -1,0 +1,30 @@
+A spec-mode anonymous function `|x: T| body` has type `spec_fn(T) -> U`. These first-class spec functions can be stored in variables, passed around in proofs, and invoked with normal call syntax.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+
+spec fn apply(f: spec_fn(int) -> int, x: int) -> int {
+    f(x)
+}
+
+proof fn use_spec_closure() {
+    let inc: spec_fn(int) -> int = |x: int| x + 1;
+    let sq:  spec_fn(int) -> int = |x: int| x * x;
+
+    assert(apply(inc, 5) == 6);
+    assert(apply(sq, 4) == 16);
+}
+
+spec fn map_spec(s: Seq<int>, f: spec_fn(int) -> int) -> Seq<int> {
+    Seq::new(s.len(), |i: int| f(s[i]))
+}
+
+proof fn map_len(s: Seq<int>, f: spec_fn(int) -> int)
+    ensures map_spec(s, f).len() == s.len(),
+{
+}
+
+} // verus!
+```

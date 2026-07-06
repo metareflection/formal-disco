@@ -1,0 +1,36 @@
+Dafny has expression-level forms of let, if, and match that yield values. `var x := e; e2` (let-expression) binds `x` in `e2`. `if c then e1 else e2` is a conditional expression. `match e case ...` destructures a datatype value. These appear in function bodies and within larger expressions.
+
+```dafny
+datatype Tree = Leaf(v: int) | Node(l: Tree, r: Tree)
+
+function Sum(t: Tree): int
+{
+  match t
+  case Leaf(v) => v
+  case Node(l, r) => Sum(l) + Sum(r)
+}
+
+function Classify(x: int): string
+{
+  if x < 0 then "negative"
+  else if x == 0 then "zero"
+  else "positive"
+}
+
+function PolyEval(a: int, b: int, c: int, x: int): int
+{
+  // expression-level let chain
+  var x2 := x * x;
+  var ax2 := a * x2;
+  var bx := b * x;
+  ax2 + bx + c
+}
+
+method Test()
+{
+  var t := Node(Leaf(1), Node(Leaf(2), Leaf(3)));
+  assert Sum(t) == 6;
+  assert Classify(-3) == "negative";
+  assert PolyEval(1, 2, 3, 4) == 27;
+}
+```

@@ -7,7 +7,6 @@ For now we only have a local implementation of the agenda, but the idea is that 
 be distributed so that we can spawn async workers on many machines.
 """
 
-import atexit
 import asyncio
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
@@ -17,6 +16,7 @@ import signal
 import threading
 import pickle
 import os
+import secrets
 import uuid
 import logging
 from dataclasses import dataclass, field
@@ -281,9 +281,12 @@ class LocalAgenda(Agenda):
              else datetime.datetime.now() +
                   datetime.timedelta(seconds=benchmark_codebase_time))
 
-        # FIXME: add handlers to handle SIGTERM, SIGINT, etc.
-        # atexit alone is not really robust.
-        atexit.register(self._checkpoint)
+        # We used to checkpoint at atexit and register that here, but not
+        # anymore: now, if the run is killed before it finishes, we will
+        # just keep the last checkpoint and lose a bit of work. It is tricky
+        # to checkpoint on a signal because checkpointing takes time when
+        # the agenda is large, and usually times out and potentially leaves
+        # corrupt files on disk.
 
 
     def _load(self):
@@ -325,7 +328,15 @@ class LocalAgenda(Agenda):
         if self._checkpoint_path is None:
             return
 
-        tmp_path = f"{self._checkpoint_path}.new"
+        # Add a random suffix so concurrent checkpoints don't interfere on
+        # each other's temp file (the rename is still atomic; last writer wins).
+        # We don't really have concurrent checkpoints anymore, but this is still here
+        # for precaution if we change again in the future.
+        tmp_path = f"{self._checkpoint_path}.{os.getpid()}.{secrets.token_hex(4)}.new"
+        # No lock acquisition: the body contains no awaits, so within a single
+        # asyncio event loop no other coroutine can interleave mutations while
+        # _checkpoint runs. Signal/atexit callers (agenda_distributed.py) also
+        # need this to be sync.
         try:
             with open(tmp_path, 'wb') as f:
                 data = {
@@ -356,7 +367,7 @@ class LocalAgenda(Agenda):
 
             d = self._compute_diversity_metrics()
             self._logger.log_metrics(d)
-            logger.info(f"Diversity/complexity metrics: {d}")
+            logger.info(f"Diversity metrics: {d}")
 
             self._logger.log_task_outcomes(self._task_outcomes)
             logger.info(f"Task outcomes: {self._task_outcomes}")
@@ -763,12 +774,12 @@ class LocalAgenda(Agenda):
         return stats
 
     def _compute_diversity_metrics(self) -> dict[str, float]:
-        """Compute diversity and complexity metrics over dataset programs.
+        """Compute feature-set metrics over dataset programs.
 
         For each feature metric, computes the entropy of the pooled distribution
         across all programs (one per parent idea, taking the longest).
-        For each complexity metric, computes the median and 90th percentile of
-        all values collected across all programs.
+        For numeric features (Counter[int]), additionally computes median and
+        p90 over the multiset of observed values.
         """
         from language import Program, Language as Lang
 
@@ -789,7 +800,6 @@ class LocalAgenda(Agenda):
                 programs_by_idea[parent_idea] = (obj.path, text, n_lines)
 
         feature_totals: dict[str, Counter] = {}
-        complexity_values: dict[str, list] = {}
 
         for path, text, _ in programs_by_idea.values():
             prog = Program(text, Lang[self._language.upper()], name=path)
@@ -798,14 +808,6 @@ class LocalAgenda(Agenda):
                     if metric not in feature_totals:
                         feature_totals[metric] = Counter()
                     feature_totals[metric] += counter
-            except Exception:
-                pass
-            try:
-                for metric, values in self._backend.complexity(prog).items():
-                    if isinstance(values, list):
-                        if metric not in complexity_values:
-                            complexity_values[metric] = []
-                        complexity_values[metric].extend(values)
             except Exception:
                 pass
 
@@ -820,13 +822,12 @@ class LocalAgenda(Agenda):
                 for c in counter.values() if c > 0
             )
             stats[f"diversity/{metric}-entropy"] = entropy
-
-        for metric, values in complexity_values.items():
-            if not values:
-                continue
-            arr = np.array(values, dtype=float)
-            stats[f"complexity/{metric}-median"] = float(np.median(arr))
-            stats[f"complexity/{metric}-p90"] = float(np.percentile(arr, 90))
+            # Numeric features (int keys): also report median/p90 of the multiset.
+            if counter and all(isinstance(k, int) and not isinstance(k, bool)
+                               for k in counter.keys()):
+                arr = np.array(list(counter.elements()), dtype=float)
+                stats[f"diversity/{metric}-median"] = float(np.median(arr))
+                stats[f"diversity/{metric}-p90"] = float(np.percentile(arr, 90))
 
         return stats
 

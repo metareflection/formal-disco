@@ -17,6 +17,7 @@ from code_output_parser import CodeOutputParser
 from language import Language, Program, VerificationOutcome
 
 from . import Worker, _to_langchain_messages
+from .limits import DEFAULT_MAX_PROGRAM_TOKENS, program_within_limit
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,12 @@ class Initiator(Worker):
         interest_fail: float = 0.5,
         interest_recursion_gamma: float = 0.0,
         distill: Optional[Literal['success-only', 'all']] = 'success-only',
+        doc_snippets_min: int = 1,
+        doc_snippets_max: int = 3,
+        max_program_tokens: Optional[int] = DEFAULT_MAX_PROGRAM_TOKENS,
     ):
         self._rng = rng or random.Random()
+        self._max_program_tokens = max_program_tokens
         self._rows = self._load_jsonl(jsonl_path)
         if not self._rows:
             raise ValueError(f"No valid rows found in JSONL: {jsonl_path}")
@@ -55,6 +60,9 @@ class Initiator(Worker):
         self._interest_fail = float(interest_fail)
         self._interest_recursion_gamma = float(interest_recursion_gamma)
         self._distill = distill
+        # Setting doc_snippets_max to 0 disables sampling doc snippets for the initiator.
+        self._doc_snippets_min = min(int(doc_snippets_min), int(doc_snippets_max))
+        self._doc_snippets_max = int(doc_snippets_max)
         self._chain = self._llm | CodeOutputParser()
 
     async def work(self, agenda: Agenda, fuel: int) -> None:
@@ -73,11 +81,19 @@ class Initiator(Worker):
             task_id = await agenda.add_task(task_obj)
             await agenda.update_task(task_id, work_status=WorkStatus.DOING)
 
+            # Sample a small number of doc snippets to seed the prompt with
+            # specific language constructs. Uniform for now; weights= is the
+            # hook for entropy-maximizing selection later.
+            n_snippets = self._rng.randint(self._doc_snippets_min, self._doc_snippets_max)
+            doc_snippets = self._backend.sample_doc_snippets(self._rng, n_snippets)
+
             try:
                 # Single LLM call combining ideation and implementation.
                 # This is a simplification of the IdeaGenerator and Implementer workers.
                 msgs = _to_langchain_messages(
-                    self._backend.prompt_builder.initiate(repo=repo, readme=readme)
+                    self._backend.prompt_builder.initiate(
+                        repo=repo, readme=readme, doc_snippets=doc_snippets
+                    )
                 )
                 program_text = self._chain.invoke(msgs).strip()
 
@@ -120,7 +136,14 @@ class Initiator(Worker):
                 if should_distill:
                     distill_obj = {
                         "prompt": "initiate",
-                        "arguments": {"repo": repo, "readme": readme},
+                        "arguments": {
+                            "repo": repo,
+                            "readme": readme,
+                            "doc_snippets": [
+                                {"feature": fid, "text": text}
+                                for fid, text in doc_snippets
+                            ],
+                        },
                         "response": program_text,
                         "outcome": ver.outcome.name.lower(),
                     }
@@ -163,19 +186,21 @@ class Initiator(Worker):
                     ))
 
                     # Enqueue extend task.
-                    await agenda.add_task(Task(
-                        id="ext", type="extend",
-                        properties={"program": prog_obj_path},
-                        interest_dependencies=[prog_obj_path],
-                    ))
+                    if program_within_limit(program_text, self._max_program_tokens):
+                        await agenda.add_task(Task(
+                            id="ext", type="extend",
+                            properties={"program": prog_obj_path},
+                            interest_dependencies=[prog_obj_path],
+                        ))
                     await agenda.update_task(task_id, work_status=WorkStatus.DONE, new_notes=status_notes)
                 else:
                     # Enqueue repair task.
-                    await agenda.add_task(Task(
-                        id="rep", type="repair",
-                        properties={"program": prog_obj_path},
-                        interest_dependencies=[prog_obj_path],
-                    ))
+                    if program_within_limit(program_text, self._max_program_tokens):
+                        await agenda.add_task(Task(
+                            id="rep", type="repair",
+                            properties={"program": prog_obj_path},
+                            interest_dependencies=[prog_obj_path],
+                        ))
                     await agenda.update_task(task_id, work_status=WorkStatus.FAILED, new_notes=status_notes)
 
             except Exception as e:

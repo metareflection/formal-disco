@@ -1,0 +1,34 @@
+Inductive datatypes are finite, well-founded algebraic data types declared with `datatype`. They have one or more constructors, each with named fields. Use `match` to destructure them and recursion to fold over them. Constructor discriminators (`t.Cons?`) and named field access (`t.field`) are auto-generated.
+
+```dafny
+datatype List<T> = Nil | Cons(head: T, tail: List<T>)
+
+function Length<T>(xs: List<T>): nat
+{
+  match xs
+  case Nil => 0
+  case Cons(_, t) => 1 + Length(t)
+}
+
+function Append<T>(xs: List<T>, ys: List<T>): List<T>
+{
+  match xs
+  case Nil => ys
+  case Cons(h, t) => Cons(h, Append(t, ys))
+}
+
+lemma AppendNil<T>(xs: List<T>)
+  ensures Append(xs, Nil) == xs
+{
+  match xs
+  case Nil =>
+  case Cons(_, t) => AppendNil(t);
+}
+
+method UseDatatype() {
+  var xs := Cons(1, Cons(2, Cons(3, Nil)));
+  assert Length(xs) == 3;
+  assert xs.Cons?;
+  assert xs.head == 1;
+}
+```

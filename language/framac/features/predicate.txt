@@ -1,0 +1,17 @@
+A `predicate` introduces a named boolean-valued logic definition that can be reused throughout annotations. Predicates take logic and C-pointer parameters, may quantify internally, and may be parameterized by program labels (e.g. `predicate P{L}(...)`) to refer to memory in a given state. Naming a property once keeps contracts and invariants readable and lets the prover fold/unfold it.
+
+```c
+/*@
+  predicate sorted(int *a, integer n) =
+    \forall integer i, j; 0 <= i <= j < n ==> a[i] <= a[j];
+*/
+
+/*@
+  requires \valid_read(a + (0 .. n-1));
+  requires n >= 0;
+  requires sorted(a, n);
+  assigns  \nothing;
+  ensures  \forall integer k; 0 < k < n ==> a[k-1] <= a[k];
+*/
+void uses_sorted(int *a, int n) { return; }
+```

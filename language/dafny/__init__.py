@@ -9,14 +9,26 @@ Some of the diversity metrics are based on analyzing word distributions.
 We focus on verbs and nouns, and use NLTK to canonicalize and classify words.
 """
 
+import json
 import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import cached_property
+from pathlib import Path
 from typing import Any, Optional
 
 from execute import execute
 from .. import LanguageBackend, VerificationOutcome, VerificationOutput
 from .prompt import DafnyPromptBuilder
+
+_FEATURES_DIR = Path(__file__).parent / 'features'
+_LANGUAGE_FEATURES_JSON = _FEATURES_DIR / 'language-features.json'
+
+# Decl kinds bucketed for body-size and per-method annotation features.
+# Per design (2026-05): `predicate` is treated as a method, not a lemma —
+# a predicate is a boolean-valued function, not a proof.
+_METHOD_DECL_KINDS = frozenset({'method', 'function', 'predicate', 'constructor'})
+_LEMMA_DECL_KINDS = frozenset({'lemma'})
 
 
 DAFNY_KEYWORDS = frozenset({
@@ -47,6 +59,10 @@ _DECL_NAME_RE = re.compile(
     r'\b(?:method|function|lemma|predicate|class|trait|datatype|newtype|constructor|iterator)'
     r'\s+([a-zA-Z_][a-zA-Z0-9_\']*)',
     re.MULTILINE,
+)
+_DECL_KIND_RE = re.compile(
+    r'^\s*(?:(?:ghost|static|protected|abstract|opaque)\s+)*'
+    r'(method|function|lemma|predicate|constructor)\b',
 )
 _INV_RE = re.compile(r'^\s*invariant\s+(.+)', re.MULTILINE)
 _ASSERT_RE = re.compile(r'^\s*assert\s+(.+)', re.MULTILINE)
@@ -308,6 +324,8 @@ def _extract_methods(source: str) -> list[dict]:
             i += 1
             continue
 
+        kind_match = _DECL_KIND_RE.match(line)
+        kind = kind_match.group(1) if kind_match else None
         name_match = _DECL_NAME_RE.search(line)
         name = name_match.group(1) if name_match else '<anonymous>'
 
@@ -356,16 +374,19 @@ def _extract_methods(source: str) -> list[dict]:
 
         n_assertions = len(_ASSERT_RE.findall(body))
         n_invariants = len(_INV_RE.findall(body))
+        body_size = sum(1 for ln in body.split('\n') if ln.strip())
 
         close_line = brace_line + full[:close].count('\n')
 
         methods.append({
             'name': name,
+            'kind': kind,
             'assertions': n_assertions,
             'invariants': n_invariants,
             **{kw: spec_clauses[kw] for kw in _SPEC_CLAUSE_KEYWORDS},
             'body_begin': i,
             'body_end': close_line,
+            'body_size': body_size,
         })
 
         i = brace_line + body.count('\n') + 1
@@ -419,14 +440,22 @@ class DafnyBackend(LanguageBackend):
     Most metrics are computed with simple regex-based heuristics.
     """
 
-    _COMPLEXITY_METRICS = frozenset({
-        'body_sizes', 'n_loops_per_method', 'n_idents_in_asserts', 'n_idents_in_invs',
+    _FEATURE_METRICS = frozenset({
+        'subject_word', 'annotation_template', 'loop_skeleton',
+        'method_body_size', 'lemma_body_size', 'language_features',
+        'annotations_per_method',
     })
 
-    _FEATURE_METRICS = frozenset({
-        'subject_words', 'invariant_templates', 'assert_templates',
-        'ensures_templates', 'requires_templates', 'loop_skeletons',
+    # Subset of _FEATURE_METRICS that drives iterative-SFT surprisal ranking.
+    _SURPRISAL_METRICS = frozenset({
+        'annotation_template', 'loop_skeleton', 'method_body_size',
+        'lemma_body_size', 'annotations_per_method',
     })
+
+    # Previous feature set (pre-2026-05) — kept here for reference / easy revert:
+    #   subject_words, invariant_templates, assert_templates,
+    #   ensures_templates, requires_templates, loop_skeletons,
+    #   body_sizes, n_loops_per_method, n_idents_in_asserts, n_idents_in_invs
 
     @property
     def file_extension(self) -> str:
@@ -442,12 +471,25 @@ class DafnyBackend(LanguageBackend):
         return DafnyPromptBuilder()
 
     @property
-    def complexity_metrics(self) -> frozenset[str]:
-        return self._COMPLEXITY_METRICS
-
-    @property
     def feature_metrics(self) -> frozenset[str]:
         return self._FEATURE_METRICS
+
+    @property
+    def surprisal_metrics(self) -> frozenset[str]:
+        return self._SURPRISAL_METRICS
+
+    @property
+    def features_dir(self) -> Path:
+        return _FEATURES_DIR
+
+    @cached_property
+    def _language_feature_regexes(self) -> dict[str, re.Pattern]:
+        """Compile the regexes in features/language-features.json once."""
+        if not _LANGUAGE_FEATURES_JSON.is_file():
+            return {}
+        with _LANGUAGE_FEATURES_JSON.open('r', encoding='utf-8') as f:
+            entries = json.load(f)
+        return {e['id']: re.compile(e['regex']) for e in entries}
 
     def strip(self, program: 'Program') -> 'Program':
         clean = _remove_comments(str(program))
@@ -495,44 +537,62 @@ class DafnyBackend(LanguageBackend):
         """Extract per-method stats: name, assertion count, invariant count."""
         return _extract_methods(str(program))
 
-    def complexity(self, program: 'Program') -> dict[str, Any]:
-        source = str(program)
-        clean = _remove_comments(source)
-
-        asserts = [_first_line_stripped(m.group(1)) for m in _ASSERT_RE.finditer(clean)]
-        invariants = [_first_line_stripped(m.group(1)) for m in _INV_RE.finditer(clean)]
-
-        method_loop_features = _extract_method_loop_features(source)
-
-        return {
-            'body_sizes': _extract_body_sizes(source),
-            'n_loops_per_method': [f['n_loops'] for f in method_loop_features],
-            'n_idents_in_asserts': [len(_IDENT_RE.findall(a)) for a in asserts],
-            'n_idents_in_invs': [len(_IDENT_RE.findall(inv)) for inv in invariants],
-        }
-
     def feature_sets(self, program: 'Program') -> dict[str, Counter]:
         source = str(program)
         clean = _remove_comments(source)
 
+        # subject_word: nouns/verbs lemmatized from declaration identifiers.
         decl_names = [m.group(1) for m in _DECL_NAME_RE.finditer(source)]
         raw_words = [w for name in decl_names for w in _split_identifier(name)]
         subject_words = _nltk.lemmatize_subject_words(raw_words)
 
-        invariants = [_first_line_stripped(m.group(1)) for m in _INV_RE.finditer(clean)]
-        asserts = [_first_line_stripped(m.group(1)) for m in _ASSERT_RE.finditer(clean)]
-        ensures = [_first_line_stripped(m.group(1)) for m in _ENSURES_RE.finditer(clean)]
-        requires = [_first_line_stripped(m.group(1)) for m in _REQUIRES_RE.finditer(clean)]
+        # annotation_template: invariant/assert/ensures/requires templates,
+        # namespaced with the keyword so kinds remain distinguishable.
+        annotation_templates: list[str] = []
+        for kind, rx in (
+            ('invariant', _INV_RE), ('assert', _ASSERT_RE),
+            ('ensures', _ENSURES_RE), ('requires', _REQUIRES_RE),
+        ):
+            annotation_templates.extend(
+                f'{kind}: {_make_template(_first_line_stripped(m.group(1)))}'
+                for m in rx.finditer(clean)
+            )
 
-        method_loop_features = _extract_method_loop_features(source)
-        loop_skeletons = [f['loop_skeleton'] for f in method_loop_features if f['loop_skeleton']]
+        # loop_skeleton: shape of the loops nested inside each method body.
+        loop_skeletons = [
+            f['loop_skeleton']
+            for f in _extract_method_loop_features(source)
+            if f['loop_skeleton']
+        ]
+
+        # method_body_size / lemma_body_size / annotations_per_method.
+        method_body_sizes: list[int] = []
+        lemma_body_sizes: list[int] = []
+        annotations_per_method: list[int] = []
+        for d in _extract_methods(source):
+            if d['kind'] in _METHOD_DECL_KINDS:
+                method_body_sizes.append(d['body_size'])
+                annotations_per_method.append(
+                    d['assertions'] + d['invariants']
+                    + len(d['requires']) + len(d['ensures']) + len(d['decreases'])
+                )
+            elif d['kind'] in _LEMMA_DECL_KINDS:
+                lemma_body_sizes.append(d['body_size'])
+
+        # language_features: per-feature occurrence counts on comment-stripped source.
+        language_feature_counts: dict[str, int] = {}
+        for fid, rx in self._language_feature_regexes.items():
+            n = len(rx.findall(clean))
+            if n:
+                language_feature_counts[fid] = n
 
         return {
-            'subject_words': Counter(subject_words),
-            'invariant_templates': Counter(_make_template(s) for s in invariants),
-            'assert_templates': Counter(_make_template(s) for s in asserts),
-            'ensures_templates': Counter(_make_template(s) for s in ensures),
-            'requires_templates': Counter(_make_template(s) for s in requires),
-            'loop_skeletons': Counter(loop_skeletons),
+            'subject_word': Counter(subject_words),
+            'annotation_template': Counter(annotation_templates),
+            'loop_skeleton': Counter(loop_skeletons),
+            'method_body_size': Counter(method_body_sizes),
+            'lemma_body_size': Counter(lemma_body_sizes),
+            'language_features': Counter(language_feature_counts),
+            'annotations_per_method': Counter(annotations_per_method),
         }
 
