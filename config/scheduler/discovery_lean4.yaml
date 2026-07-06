@@ -33,7 +33,7 @@ workers:
     lake_project_dir: ${oc.env:LEAN_PROJECT_DIR}
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: us.anthropic.claude-opus-4-6-v1
+      model_id: us.anthropic.claude-opus-4-8
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
       max_tokens: 10000
 
@@ -44,7 +44,7 @@ workers:
     interest_recursion_gamma: 0.0
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: us.anthropic.claude-opus-4-6-v1
+      model_id: us.anthropic.claude-opus-4-8
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
       max_tokens: 10000
 
@@ -58,7 +58,7 @@ workers:
     lake_project_dir: ${oc.env:LEAN_PROJECT_DIR}
     llm:
       _target_: langchain_aws.ChatBedrock
-      model_id: us.anthropic.claude-opus-4-6-v1
+      model_id: us.anthropic.claude-opus-4-8
       region_name: ${oc.env:AWS_DEFAULT_REGION,us-east-1}
       max_tokens: 10000
 

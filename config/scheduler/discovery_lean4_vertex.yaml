@@ -34,7 +34,7 @@ workers:
     lake_project_dir: ${oc.env:LEAN_PROJECT_DIR}
     llm:
       _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
-      model: claude-opus-4-6
+      model: claude-opus-4-8
       project: ${oc.env:GCP_PROJECT_ID,formal-disco}
       location: ${oc.env:GCP_LOCATION,global}
       max_tokens: 10000
@@ -46,7 +46,7 @@ workers:
     interest_recursion_gamma: 0.0
     llm:
       _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
-      model: claude-opus-4-6
+      model: claude-opus-4-8
       project: ${oc.env:GCP_PROJECT_ID,formal-disco}
       location: ${oc.env:GCP_LOCATION,global}
       max_tokens: 10000
@@ -61,7 +61,7 @@ workers:
     lake_project_dir: ${oc.env:LEAN_PROJECT_DIR}
     llm:
       _target_: langchain_google_vertexai.model_garden.ChatAnthropicVertex
-      model: claude-opus-4-6
+      model: claude-opus-4-8
       project: ${oc.env:GCP_PROJECT_ID,formal-disco}
       location: ${oc.env:GCP_LOCATION,global}
       max_tokens: 10000
