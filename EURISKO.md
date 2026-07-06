@@ -321,6 +321,7 @@ workers:
   - DiscoveryWorker    # fast model (Sonnet), generates conjectures
   - ProofWorker        # strong model (Opus), proves theorems
   - LLMFixer           # strong model, repairs failed proofs
+  - ProofRepairWorker  # strong model, retries failed proof tasks
   - ReflectionWorker   # fast model, meta-learning
 ```
 
