@@ -1,3 +1,5 @@
+[![arXiv](https://img.shields.io/badge/arXiv-2607.04631-pink.svg)](https://arxiv.org/abs/2607.04631)
+
 # Formal Disco
 
 **Scalable open-ended generation of formally verified programs**
@@ -176,3 +178,17 @@ tests/                             # pytest suite
 ## License
 
 MIT
+
+## Citation
+
+```
+@misc{poesia2026formaldiscoscalableopenended,
+      title={Formal Disco: Scalable Open-Ended Generation of Formally Verified Programs}, 
+      author={Gabriel Poesia and Simon Henniger and Tzu-Han Hsu and Yilun Du and Nada Amin},
+      year={2026},
+      eprint={2607.04631},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2607.04631}, 
+}
+```
